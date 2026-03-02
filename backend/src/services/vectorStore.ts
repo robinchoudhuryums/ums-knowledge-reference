@@ -187,6 +187,56 @@ export async function searchVectorStore(
 }
 
 /**
+ * Keyword search across all chunk text, returning matching chunks grouped by document.
+ * Used for the document browse/search feature (not RAG, just text search).
+ */
+export async function searchChunksByKeyword(
+  query: string,
+  collectionId?: string
+): Promise<Array<{ documentId: string; documentName: string; matches: Array<{ text: string; pageNumber?: number; chunkIndex: number }> }>> {
+  if (!cachedIndex) await initializeVectorStore();
+
+  const documents = await getDocumentsIndex();
+  const docMap = new Map(documents.map(d => [d.id, d]));
+
+  let candidates = cachedIndex!.chunks;
+  if (collectionId) {
+    const allowedDocIds = new Set(
+      documents.filter(d => d.collectionId === collectionId).map(d => d.id)
+    );
+    candidates = candidates.filter(c => allowedDocIds.has(c.documentId));
+  }
+
+  const queryLower = query.toLowerCase();
+  const queryTerms = queryLower.split(/\s+/).filter(t => t.length > 1);
+  const matchingChunks = candidates.filter(chunk => {
+    const textLower = chunk.text.toLowerCase();
+    return queryTerms.every(term => textLower.includes(term));
+  });
+
+  // Group by document
+  const grouped = new Map<string, Array<{ text: string; pageNumber?: number; chunkIndex: number }>>();
+  for (const chunk of matchingChunks) {
+    if (!grouped.has(chunk.documentId)) {
+      grouped.set(chunk.documentId, []);
+    }
+    grouped.get(chunk.documentId)!.push({
+      text: chunk.text,
+      pageNumber: chunk.pageNumber,
+      chunkIndex: chunk.chunkIndex,
+    });
+  }
+
+  const results = Array.from(grouped.entries()).map(([documentId, matches]) => ({
+    documentId,
+    documentName: docMap.get(documentId)?.originalName || 'Unknown',
+    matches: matches.slice(0, 10), // Limit matches per document
+  }));
+
+  return results.slice(0, 20); // Limit total documents
+}
+
+/**
  * Get vector store stats.
  */
 export function getVectorStoreStats(): { totalChunks: number; lastUpdated: string | null } {

@@ -9,7 +9,7 @@ import {
   getCollectionsIndex,
   saveCollectionsIndex,
 } from '../services/s3Storage';
-import { removeDocumentChunks } from '../services/vectorStore';
+import { removeDocumentChunks, searchChunksByKeyword } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
 import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -232,6 +232,26 @@ router.delete('/collections/:id', authenticate, requireAdmin, async (req: AuthRe
     res.json({ message: 'Collection deleted' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete collection' });
+  }
+});
+
+// --- Document Search (keyword search across chunk text) ---
+
+router.get('/search/text', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const query = req.query.q as string;
+    if (!query?.trim()) {
+      res.status(400).json({ error: 'Search query (q) is required' });
+      return;
+    }
+
+    const collectionId = req.query.collectionId as string | undefined;
+    const results = await searchChunksByKeyword(query.trim(), collectionId);
+
+    res.json({ results });
+  } catch (error) {
+    logger.error('Document search failed', { error: String(error) });
+    res.status(500).json({ error: 'Search failed' });
   }
 });
 

@@ -3,10 +3,11 @@ import { useAuth } from './hooks/useAuth';
 import { LoginForm } from './components/LoginForm';
 import { ChatInterface } from './components/ChatInterface';
 import { DocumentManager } from './components/DocumentManager';
+import { DocumentSearch } from './components/DocumentSearch';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
-type Tab = 'chat' | 'documents';
+type Tab = 'chat' | 'search' | 'documents';
 
 export default function App() {
   const { auth, login, logout, isAuthenticated, isAdmin } = useAuth();
@@ -32,24 +33,27 @@ export default function App() {
     return <LoginForm onLogin={login} />;
   }
 
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'chat', label: 'Ask Questions' },
+    { key: 'search', label: 'Search' },
+    { key: 'documents', label: 'Documents' },
+  ];
+
   return (
     <div style={styles.app}>
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <h1 style={styles.logo}>UMS Knowledge Base</h1>
           <nav style={styles.nav}>
-            <button
-              onClick={() => setActiveTab('chat')}
-              style={activeTab === 'chat' ? styles.tabActive : styles.tab}
-            >
-              Ask Questions
-            </button>
-            <button
-              onClick={() => setActiveTab('documents')}
-              style={activeTab === 'documents' ? styles.tabActive : styles.tab}
-            >
-              Documents
-            </button>
+            {tabs.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                style={activeTab === t.key ? styles.tabActive : styles.tab}
+              >
+                {t.label}
+              </button>
+            ))}
           </nav>
         </div>
         <div style={styles.headerRight}>
@@ -60,6 +64,7 @@ export default function App() {
 
       <main style={styles.main}>
         {activeTab === 'chat' && <ChatInterface collections={collections} />}
+        {activeTab === 'search' && <DocumentSearch collections={collections} />}
         {activeTab === 'documents' && (
           <DocumentManager
             isAdmin={isAdmin}

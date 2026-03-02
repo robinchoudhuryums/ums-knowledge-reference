@@ -1,4 +1,4 @@
-import { Collection, Document, QueryResponse, User } from '../types';
+import { Collection, Document, QueryResponse, SourceCitation, User } from '../types';
 
 const API_BASE = '/api';
 
@@ -79,7 +79,7 @@ export async function deleteCollection(id: string): Promise<void> {
   await request(`/documents/collections/${id}`, { method: 'DELETE' });
 }
 
-// Query
+// Query (non-streaming fallback)
 export async function queryKnowledgeBase(
   question: string,
   collectionIds?: string[],
@@ -89,4 +89,85 @@ export async function queryKnowledgeBase(
     method: 'POST',
     body: JSON.stringify({ question, collectionIds, conversationHistory }),
   });
+}
+
+// Query (streaming via SSE)
+export async function queryKnowledgeBaseStream(
+  question: string,
+  collectionIds: string[] | undefined,
+  conversationHistory: { role: 'user' | 'assistant'; content: string }[] | undefined,
+  onText: (text: string) => void,
+  onSources: (sources: SourceCitation[]) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}/query/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ question, collectionIds, conversationHistory }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Request failed' }));
+    onError(err.error || `HTTP ${response.status}`);
+    return;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    onError('No response stream available');
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse SSE events from buffer
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.type === 'text') {
+          onText(data.text);
+        } else if (data.type === 'sources') {
+          onSources(data.sources);
+        } else if (data.type === 'done') {
+          onDone();
+        } else if (data.type === 'error') {
+          onError(data.error);
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
+  }
+}
+
+// Document search
+export interface DocumentSearchResult {
+  documentId: string;
+  documentName: string;
+  matches: Array<{ text: string; pageNumber?: number; chunkIndex: number }>;
+}
+
+export async function searchDocuments(
+  query: string,
+  collectionId?: string
+): Promise<{ results: DocumentSearchResult[] }> {
+  const params = new URLSearchParams({ q: query });
+  if (collectionId) params.set('collectionId', collectionId);
+  return request(`/documents/search/text?${params.toString()}`);
 }

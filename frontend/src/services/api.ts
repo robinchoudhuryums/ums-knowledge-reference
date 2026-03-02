@@ -1,4 +1,4 @@
-import { Collection, Document, QueryResponse, SourceCitation, User } from '../types';
+import { Collection, Document, FeedbackRequest, QueryResponse, SourceCitation, User } from '../types';
 
 const API_BASE = '/api';
 
@@ -98,6 +98,7 @@ export async function queryKnowledgeBaseStream(
   conversationHistory: { role: 'user' | 'assistant'; content: string }[] | undefined,
   onText: (text: string) => void,
   onSources: (sources: SourceCitation[]) => void,
+  onConfidence: (confidence: 'high' | 'partial' | 'low') => void,
   onDone: () => void,
   onError: (error: string) => void,
 ): Promise<void> {
@@ -144,6 +145,8 @@ export async function queryKnowledgeBaseStream(
           onText(data.text);
         } else if (data.type === 'sources') {
           onSources(data.sources);
+        } else if (data.type === 'confidence') {
+          onConfidence(data.confidence);
         } else if (data.type === 'done') {
           onDone();
         } else if (data.type === 'error') {
@@ -154,6 +157,14 @@ export async function queryKnowledgeBaseStream(
       }
     }
   }
+}
+
+// Feedback
+export async function submitFeedback(feedback: FeedbackRequest): Promise<{ id: string }> {
+  return request('/feedback', {
+    method: 'POST',
+    body: JSON.stringify(feedback),
+  });
 }
 
 // Document search

@@ -3,6 +3,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { generateEmbedding } from '../services/embeddings';
 import { searchVectorStore } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
+import { checkUsageLimit, recordQuery } from '../services/usage';
 import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';
 import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
@@ -14,11 +15,16 @@ const SYSTEM_PROMPT = `You are the UMS Knowledge Base Assistant — an expert re
 
 Guidelines:
 - Base every claim on the provided source documents. Cite sources inline using [Source N] notation.
-- If the context does not contain enough information, say so clearly. Never fabricate information.
+- If the context does not contain enough information to answer, clearly state: "This information is not covered in the current knowledge base documents." Then suggest the user contact the appropriate department or person for guidance. NEVER make up information or draw from general knowledge outside the provided context.
 - When multiple sources agree, synthesize them. When they conflict, note the discrepancy.
 - For procedural questions, provide step-by-step answers when the source material supports it.
 - Use clear, professional language appropriate for a healthcare/medical supply workplace.
-- Format responses with markdown: use **bold** for key terms, bullet lists for steps/items, and headers for multi-part answers.`;
+- Format responses with markdown: use **bold** for key terms, bullet lists for steps/items, and headers for multi-part answers.
+- At the end of your response, on a new line, output a confidence tag in exactly this format: [CONFIDENCE: HIGH], [CONFIDENCE: PARTIAL], or [CONFIDENCE: LOW] based on how well the source documents cover the question. HIGH means the documents directly address the question. PARTIAL means some relevant information exists but the answer may be incomplete. LOW means little or no relevant information was found in the documents.`;
+
+// Minimum average similarity score to consider results relevant
+const LOW_CONFIDENCE_THRESHOLD = 0.3;
+const PARTIAL_CONFIDENCE_THRESHOLD = 0.5;
 
 function buildMessages(
   question: string,
@@ -65,6 +71,31 @@ function buildSourceCitations(searchResults: SearchResult[]): SourceCitation[] {
   }));
 }
 
+/**
+ * Parse the confidence tag from the LLM response and strip it from the visible answer.
+ * Falls back to score-based confidence if no tag is found.
+ */
+function parseConfidence(
+  rawAnswer: string,
+  avgScore: number
+): { answer: string; confidence: 'high' | 'partial' | 'low' } {
+  const tagMatch = rawAnswer.match(/\[CONFIDENCE:\s*(HIGH|PARTIAL|LOW)\]\s*$/i);
+
+  if (tagMatch) {
+    const confidence = tagMatch[1].toLowerCase() as 'high' | 'partial' | 'low';
+    const answer = rawAnswer.slice(0, tagMatch.index).trimEnd();
+    return { answer, confidence };
+  }
+
+  // Fallback: use retrieval scores
+  let confidence: 'high' | 'partial' | 'low';
+  if (avgScore >= PARTIAL_CONFIDENCE_THRESHOLD) confidence = 'high';
+  else if (avgScore >= LOW_CONFIDENCE_THRESHOLD) confidence = 'partial';
+  else confidence = 'low';
+
+  return { answer: rawAnswer, confidence };
+}
+
 // Standard (non-streaming) query endpoint
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -72,6 +103,13 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     if (!question?.trim()) {
       res.status(400).json({ error: 'Question is required' });
+      return;
+    }
+
+    // Check usage limit
+    const usageCheck = await checkUsageLimit(req.user!.id);
+    if (!usageCheck.allowed) {
+      res.status(429).json({ error: usageCheck.reason, usage: usageCheck.usage });
       return;
     }
 
@@ -85,10 +123,12 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     });
 
     if (searchResults.length === 0) {
+      await recordQuery(req.user!.id);
       const response: QueryResponse = {
         answer:
-          "I couldn't find any relevant documents to answer your question. Please make sure documents have been uploaded to the knowledge base, or try rephrasing your question.",
+          "This information is not covered in the current knowledge base documents. Please contact your supervisor or the relevant department for guidance, or try rephrasing your question.",
         sources: [],
+        confidence: 'low',
       };
       res.json(response);
       return;
@@ -112,17 +152,23 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     const bedrockResponse = await bedrockClient.send(command);
     const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
-    const answer = responseBody.content?.[0]?.text || 'Unable to generate a response.';
+    const rawAnswer = responseBody.content?.[0]?.text || 'Unable to generate a response.';
+
+    const avgScore = searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length;
+    const { answer, confidence } = parseConfidence(rawAnswer, avgScore);
 
     const sources = buildSourceCitations(searchResults);
+
+    await recordQuery(req.user!.id);
 
     await logAuditEvent(req.user!.id, req.user!.username, 'query', {
       question,
       sourcesUsed: sources.length,
       collectionIds,
+      confidence,
     });
 
-    const response: QueryResponse = { answer, sources };
+    const response: QueryResponse = { answer, sources, confidence };
     res.json(response);
   } catch (error) {
     logger.error('Query failed', { error: String(error) });
@@ -137,6 +183,13 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
 
     if (!question?.trim()) {
       res.status(400).json({ error: 'Question is required' });
+      return;
+    }
+
+    // Check usage limit before streaming
+    const usageCheck = await checkUsageLimit(req.user!.id);
+    if (!usageCheck.allowed) {
+      res.status(429).json({ error: usageCheck.reason, usage: usageCheck.usage });
       return;
     }
 
@@ -156,16 +209,22 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       collectionIds,
     });
 
-    // Send sources first so the UI can display them immediately
+    const avgScore = searchResults.length > 0
+      ? searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length
+      : 0;
+
+    // Send sources and initial confidence hint
     const sources = buildSourceCitations(searchResults);
     res.write(`data: ${JSON.stringify({ type: 'sources', sources })}\n\n`);
 
     if (searchResults.length === 0) {
       res.write(
-        `data: ${JSON.stringify({ type: 'text', text: "I couldn't find any relevant documents to answer your question. Please make sure documents have been uploaded to the knowledge base, or try rephrasing your question." })}\n\n`
+        `data: ${JSON.stringify({ type: 'text', text: "This information is not covered in the current knowledge base documents. Please contact your supervisor or the relevant department for guidance, or try rephrasing your question." })}\n\n`
       );
+      res.write(`data: ${JSON.stringify({ type: 'confidence', confidence: 'low' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       res.end();
+      await recordQuery(req.user!.id);
       return;
     }
 
@@ -187,25 +246,32 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
 
     const bedrockResponse = await bedrockClient.send(command);
 
+    let fullAnswer = '';
     if (bedrockResponse.body) {
       for await (const event of bedrockResponse.body) {
         if (event.chunk?.bytes) {
           const parsed = JSON.parse(new TextDecoder().decode(event.chunk.bytes));
           if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+            fullAnswer += parsed.delta.text;
             res.write(`data: ${JSON.stringify({ type: 'text', text: parsed.delta.text })}\n\n`);
           }
         }
       }
     }
 
+    // Parse confidence from the completed answer
+    const { confidence } = parseConfidence(fullAnswer, avgScore);
+    res.write(`data: ${JSON.stringify({ type: 'confidence', confidence })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
     res.end();
 
-    // Audit log (fire and forget)
+    // Record usage and audit (fire and forget)
+    recordQuery(req.user!.id).catch(() => {});
     logAuditEvent(req.user!.id, req.user!.username, 'query', {
       question,
       sourcesUsed: sources.length,
       collectionIds,
+      confidence,
       streamed: true,
     }).catch(() => {});
   } catch (error) {

@@ -36,12 +36,23 @@ export interface SourceCitation {
 export interface QueryResponse {
   answer: string;
   sources: SourceCitation[];
+  confidence: 'high' | 'partial' | 'low';
 }
 
 export interface ConversationTurn {
   role: 'user' | 'assistant';
   content: string;
   sources?: SourceCitation[];
+  confidence?: 'high' | 'partial' | 'low';
+}
+
+export interface FeedbackRequest {
+  question: string;
+  answer: string;
+  patientName?: string;
+  transactionNumber?: string;
+  notes?: string;
+  sources: Array<{ documentName: string; chunkId: string; score: number }>;
 }
 
 export interface User {

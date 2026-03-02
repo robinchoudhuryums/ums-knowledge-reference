@@ -56,7 +56,7 @@ export interface AuditLogEntry {
   timestamp: string;
   userId: string;
   username: string;
-  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete';
+  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback';
   details: Record<string, unknown>;
 }
 
@@ -94,6 +94,33 @@ export interface ConversationTurn {
 export interface QueryResponse {
   answer: string;
   sources: SourceCitation[];
+  confidence: 'high' | 'partial' | 'low';
+}
+
+export interface FeedbackEntry {
+  id: string;
+  timestamp: string;
+  userId: string;
+  username: string;
+  queryId: string;
+  question: string;
+  answer: string;
+  patientName?: string;
+  transactionNumber?: string;
+  notes?: string;
+  sources: SourceCitation[];
+}
+
+export interface UsageRecord {
+  date: string;
+  users: Record<string, { queryCount: number; lastQuery: string }>;
+  totalQueries: number;
+}
+
+export interface UsageLimits {
+  dailyPerUser: number;
+  dailyTotal: number;
+  monthlyTotal: number;
 }
 
 export interface SourceCitation {

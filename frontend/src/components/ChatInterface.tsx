@@ -3,9 +3,15 @@ import ReactMarkdown from 'react-markdown';
 import { ConversationTurn, SourceCitation, Collection } from '../types';
 import { queryKnowledgeBaseStream } from '../services/api';
 import { SourceViewer } from './SourceViewer';
+import { FeedbackForm } from './FeedbackForm';
 
 interface Props {
   collections: Collection[];
+}
+
+// Strip the [CONFIDENCE: ...] tag from streamed text before display
+function stripConfidenceTag(text: string): string {
+  return text.replace(/\[CONFIDENCE:\s*(?:HIGH|PARTIAL|LOW)\]\s*$/i, '').trimEnd();
 }
 
 export function ChatInterface({ collections }: Props) {
@@ -14,8 +20,10 @@ export function ChatInterface({ collections }: Props) {
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [streamingSources, setStreamingSources] = useState<SourceCitation[]>([]);
+  const [streamingConfidence, setStreamingConfidence] = useState<'high' | 'partial' | 'low' | null>(null);
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [expandedSource, setExpandedSource] = useState<SourceCitation | null>(null);
+  const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[] } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -38,6 +46,7 @@ export function ChatInterface({ collections }: Props) {
     setLoading(true);
     setStreamingText('');
     setStreamingSources([]);
+    setStreamingConfidence(null);
 
     const history = conversation.map(t => ({ role: t.role, content: t.content }));
 
@@ -53,14 +62,22 @@ export function ChatInterface({ collections }: Props) {
       (sources) => {
         setStreamingSources(sources);
       },
+      // onConfidence
+      (confidence) => {
+        setStreamingConfidence(confidence);
+      },
       // onDone
       () => {
         setStreamingText(prev => {
+          const cleanText = stripConfidenceTag(prev);
           setStreamingSources(sources => {
-            setConversation(conv => [
-              ...conv,
-              { role: 'assistant', content: prev, sources },
-            ]);
+            setStreamingConfidence(conf => {
+              setConversation(conv => [
+                ...conv,
+                { role: 'assistant', content: cleanText, sources, confidence: conf || undefined },
+              ]);
+              return null;
+            });
             return [];
           });
           return '';
@@ -76,11 +93,20 @@ export function ChatInterface({ collections }: Props) {
         ]);
         setStreamingText('');
         setStreamingSources([]);
+        setStreamingConfidence(null);
         setLoading(false);
         inputRef.current?.focus();
       }
     );
   }, [question, loading, conversation, selectedCollections]);
+
+  // Find the user question that preceded a given assistant turn index
+  const getQuestionForTurn = (turnIndex: number): string => {
+    for (let i = turnIndex - 1; i >= 0; i--) {
+      if (conversation[i].role === 'user') return conversation[i].content;
+    }
+    return '';
+  };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -171,6 +197,31 @@ export function ChatInterface({ collections }: Props) {
               <span style={styles.messageLabel}>
                 {turn.role === 'user' ? 'You' : 'Knowledge Base'}
               </span>
+              {turn.role === 'assistant' && turn.confidence && (
+                <span style={{
+                  ...styles.confidenceBadge,
+                  ...(turn.confidence === 'high' ? styles.confidenceHigh :
+                    turn.confidence === 'partial' ? styles.confidencePartial :
+                    styles.confidenceLow),
+                }}>
+                  {turn.confidence === 'high' ? 'Verified in docs' :
+                   turn.confidence === 'partial' ? 'Partially covered' :
+                   'Not found in docs'}
+                </span>
+              )}
+              {turn.role === 'assistant' && (
+                <button
+                  onClick={() => setFeedbackTarget({
+                    question: getQuestionForTurn(i),
+                    answer: turn.content,
+                    sources: turn.sources || [],
+                  })}
+                  style={styles.flagButton}
+                  title="Flag this response for admin review"
+                >
+                  &#9872; Flag
+                </button>
+              )}
             </div>
             {turn.role === 'user' ? (
               <div style={styles.userText}>{turn.content}</div>
@@ -201,6 +252,11 @@ export function ChatInterface({ collections }: Props) {
                 </div>
               </div>
             )}
+            {turn.role === 'assistant' && turn.confidence === 'low' && (
+              <div style={styles.lowConfidenceWarning}>
+                This answer may not be fully supported by company documents. Please verify with your supervisor or the relevant department before acting on this information.
+              </div>
+            )}
           </div>
         ))}
 
@@ -210,6 +266,18 @@ export function ChatInterface({ collections }: Props) {
             <div style={styles.messageHeader}>
               <span style={styles.messageLabel}>Knowledge Base</span>
               <span style={styles.streamingDot} />
+              {streamingConfidence && (
+                <span style={{
+                  ...styles.confidenceBadge,
+                  ...(streamingConfidence === 'high' ? styles.confidenceHigh :
+                    streamingConfidence === 'partial' ? styles.confidencePartial :
+                    styles.confidenceLow),
+                }}>
+                  {streamingConfidence === 'high' ? 'Verified in docs' :
+                   streamingConfidence === 'partial' ? 'Partially covered' :
+                   'Not found in docs'}
+                </span>
+              )}
             </div>
             {streamingText ? (
               <div className="markdown-content" style={styles.markdownContent}>
@@ -272,6 +340,16 @@ export function ChatInterface({ collections }: Props) {
       {expandedSource && (
         <SourceViewer source={expandedSource} onClose={() => setExpandedSource(null)} />
       )}
+
+      {/* Feedback modal */}
+      {feedbackTarget && (
+        <FeedbackForm
+          question={feedbackTarget.question}
+          answer={feedbackTarget.answer}
+          sources={feedbackTarget.sources}
+          onClose={() => setFeedbackTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -299,6 +377,12 @@ const styles: Record<string, React.CSSProperties> = {
   assistantMessage: { marginBottom: '12px', padding: '16px', backgroundColor: '#f7f8fa', borderRadius: '12px', border: '1px solid #eee' },
   messageHeader: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' },
   messageLabel: { fontWeight: 600, fontSize: '13px', color: '#1a1a2e' },
+  confidenceBadge: { fontSize: '11px', padding: '2px 8px', borderRadius: '4px', fontWeight: 500 },
+  confidenceHigh: { backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' },
+  confidencePartial: { backgroundColor: '#fff3e0', color: '#e65100', border: '1px solid #ffe0b2' },
+  confidenceLow: { backgroundColor: '#fce4ec', color: '#c62828', border: '1px solid #f8bbd0' },
+  flagButton: { marginLeft: 'auto', padding: '2px 10px', background: 'none', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#888', transition: 'all 0.15s' },
+  lowConfidenceWarning: { marginTop: '10px', padding: '10px 12px', background: '#fff8e1', border: '1px solid #fff0b3', borderRadius: '6px', fontSize: '13px', color: '#7a6200', lineHeight: '1.5' },
   streamingDot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#4caf50', animation: 'pulse 1.2s ease-in-out infinite' },
   userText: { fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap' },
   markdownContent: { fontSize: '14px', lineHeight: '1.7' },

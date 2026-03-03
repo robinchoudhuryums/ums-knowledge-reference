@@ -164,7 +164,7 @@ export function ChatInterface({ collections }: Props) {
         </div>
         {conversation.length > 0 && (
           <button onClick={clearConversation} style={styles.clearButton}>
-            New Chat
+            + New Chat
           </button>
         )}
       </div>
@@ -173,7 +173,9 @@ export function ChatInterface({ collections }: Props) {
       <div style={styles.messages}>
         {conversation.length === 0 && !loading && (
           <div style={styles.welcome}>
-            <div style={styles.welcomeIcon}>&#128218;</div>
+            <div style={styles.welcomeIconBg}>
+              <span style={styles.welcomeIcon}>&#128218;</span>
+            </div>
             <h2 style={styles.welcomeTitle}>UMS Knowledge Base</h2>
             <p style={styles.welcomeText}>Ask questions about your company documents, policies, and procedures.</p>
             <p style={styles.welcomeHint}>Answers are grounded in uploaded documents with source citations.</p>
@@ -327,7 +329,7 @@ export function ChatInterface({ collections }: Props) {
             disabled={loading || !question.trim()}
             style={{
               ...styles.sendButton,
-              opacity: loading || !question.trim() ? 0.5 : 1,
+              opacity: loading || !question.trim() ? 0.4 : 1,
             }}
           >
             &#9654;
@@ -355,50 +357,60 @@ export function ChatInterface({ collections }: Props) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { display: 'flex', flexDirection: 'column', height: '100%' },
-  topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderBottom: '1px solid #eee', minHeight: '44px' },
+  container: { display: 'flex', flexDirection: 'column', height: '100%', background: '#ffffff' },
+  topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 20px', borderBottom: '1px solid #f1f5f9', minHeight: '48px', background: '#fafbfc' },
   filters: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
-  filterLabel: { fontSize: '13px', color: '#666', fontWeight: 500 },
-  filterChip: { padding: '4px 12px', border: '1px solid #ddd', borderRadius: '16px', background: 'white', cursor: 'pointer', fontSize: '13px', transition: 'all 0.15s' },
-  filterChipActive: { background: '#1a1a2e', color: 'white', borderColor: '#1a1a2e' },
-  clearButton: { padding: '6px 14px', background: 'none', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', color: '#666', whiteSpace: 'nowrap' },
+  filterLabel: { fontSize: '13px', color: '#64748b', fontWeight: 500 },
+  filterChip: { padding: '5px 14px', border: '1px solid #e2e8f0', borderRadius: '20px', background: 'white', cursor: 'pointer', fontSize: '13px', color: '#475569', transition: 'all 0.15s' },
+  filterChipActive: { background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', borderColor: '#6366f1', boxShadow: '0 2px 6px rgba(99, 102, 241, 0.25)' },
+  clearButton: { padding: '6px 16px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: '#6366f1', whiteSpace: 'nowrap', fontWeight: 500 },
 
-  messages: { flex: 1, overflowY: 'auto', padding: '16px 16px 0' },
+  messages: { flex: 1, overflowY: 'auto', padding: '20px 20px 0' },
 
   welcome: { textAlign: 'center', paddingTop: '48px', maxWidth: '600px', margin: '0 auto' },
-  welcomeIcon: { fontSize: '48px', marginBottom: '8px' },
-  welcomeTitle: { margin: '0 0 8px', fontSize: '24px', fontWeight: 700, color: '#1a1a2e' },
-  welcomeText: { margin: '0 0 4px', fontSize: '15px', color: '#555' },
-  welcomeHint: { margin: '0 0 24px', fontSize: '13px', color: '#999' },
-  suggestionsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', textAlign: 'left' },
-  suggestion: { padding: '12px 14px', border: '1px solid #e0e0e0', borderRadius: '8px', background: 'white', cursor: 'pointer', fontSize: '13px', color: '#444', textAlign: 'left', transition: 'border-color 0.15s' },
+  welcomeIconBg: {
+    width: '72px',
+    height: '72px',
+    borderRadius: '20px',
+    background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: '0 auto 16px',
+  },
+  welcomeIcon: { fontSize: '36px' },
+  welcomeTitle: { margin: '0 0 8px', fontSize: '24px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.3px' },
+  welcomeText: { margin: '0 0 4px', fontSize: '15px', color: '#475569' },
+  welcomeHint: { margin: '0 0 28px', fontSize: '13px', color: '#94a3b8' },
+  suggestionsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'left' },
+  suggestion: { padding: '14px 16px', border: '1px solid #e2e8f0', borderRadius: '12px', background: 'white', cursor: 'pointer', fontSize: '13px', color: '#475569', textAlign: 'left', transition: 'all 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
 
-  userMessage: { marginBottom: '12px', padding: '12px 16px', backgroundColor: '#e8f0fe', borderRadius: '12px', maxWidth: '85%', marginLeft: 'auto' },
-  assistantMessage: { marginBottom: '12px', padding: '16px', backgroundColor: '#f7f8fa', borderRadius: '12px', border: '1px solid #eee' },
-  messageHeader: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' },
-  messageLabel: { fontWeight: 600, fontSize: '13px', color: '#1a1a2e' },
-  confidenceBadge: { fontSize: '11px', padding: '2px 8px', borderRadius: '4px', fontWeight: 500 },
-  confidenceHigh: { backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' },
-  confidencePartial: { backgroundColor: '#fff3e0', color: '#e65100', border: '1px solid #ffe0b2' },
-  confidenceLow: { backgroundColor: '#fce4ec', color: '#c62828', border: '1px solid #f8bbd0' },
-  flagButton: { marginLeft: 'auto', padding: '2px 10px', background: 'none', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#888', transition: 'all 0.15s' },
-  lowConfidenceWarning: { marginTop: '10px', padding: '10px 12px', background: '#fff8e1', border: '1px solid #fff0b3', borderRadius: '6px', fontSize: '13px', color: '#7a6200', lineHeight: '1.5' },
-  streamingDot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#4caf50', animation: 'pulse 1.2s ease-in-out infinite' },
-  userText: { fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap' },
+  userMessage: { marginBottom: '16px', padding: '14px 18px', background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', borderRadius: '16px 16px 4px 16px', maxWidth: '85%', marginLeft: 'auto', border: '1px solid #c7d2fe' },
+  assistantMessage: { marginBottom: '16px', padding: '18px', backgroundColor: '#fafbfc', borderRadius: '16px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' },
+  messageHeader: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' },
+  messageLabel: { fontWeight: 600, fontSize: '13px', color: '#0f172a' },
+  confidenceBadge: { fontSize: '11px', padding: '3px 10px', borderRadius: '6px', fontWeight: 500 },
+  confidenceHigh: { backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' },
+  confidencePartial: { backgroundColor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' },
+  confidenceLow: { backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' },
+  flagButton: { marginLeft: 'auto', padding: '3px 10px', background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#94a3b8', transition: 'all 0.15s' },
+  lowConfidenceWarning: { marginTop: '12px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '10px', fontSize: '13px', color: '#92400e', lineHeight: '1.5' },
+  streamingDot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#6366f1', animation: 'pulse 1.2s ease-in-out infinite' },
+  userText: { fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#1e293b' },
   markdownContent: { fontSize: '14px', lineHeight: '1.7' },
-  thinkingText: { fontSize: '14px', color: '#999', fontStyle: 'italic' },
+  thinkingText: { fontSize: '14px', color: '#94a3b8', fontStyle: 'italic' },
 
-  sourcesSection: { marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e5e5e5' },
-  sourcesLabel: { fontSize: '12px', color: '#888', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px' },
+  sourcesSection: { marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' },
+  sourcesLabel: { fontSize: '11px', color: '#94a3b8', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' },
   sourcesRow: { display: 'flex', flexWrap: 'wrap', gap: '6px' },
-  sourceChip: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px', border: '1px solid #d8d8d8', borderRadius: '6px', background: 'white', cursor: 'pointer', fontSize: '12px', color: '#444', transition: 'all 0.15s' },
-  sourceIcon: { fontSize: '14px' },
-  sourcePageBadge: { fontSize: '11px', color: '#888', background: '#f0f0f0', padding: '1px 6px', borderRadius: '4px' },
-  sourceScore: { fontSize: '11px', color: '#888' },
+  sourceChip: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', background: 'white', cursor: 'pointer', fontSize: '12px', color: '#475569', transition: 'all 0.15s', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' },
+  sourceIcon: { fontSize: '13px' },
+  sourcePageBadge: { fontSize: '10px', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: 500 },
+  sourceScore: { fontSize: '10px', color: '#94a3b8', fontWeight: 500 },
 
-  inputArea: { padding: '12px 16px', borderTop: '1px solid #eee' },
-  inputWrapper: { display: 'flex', alignItems: 'flex-end', gap: '8px', background: '#f7f8fa', border: '1px solid #ddd', borderRadius: '12px', padding: '8px 12px', transition: 'border-color 0.15s' },
-  textarea: { flex: 1, padding: '4px 0', border: 'none', background: 'transparent', fontSize: '14px', lineHeight: '1.5', resize: 'none', outline: 'none', fontFamily: 'inherit', minHeight: '24px', maxHeight: '120px' },
-  sendButton: { padding: '8px 12px', backgroundColor: '#1a1a2e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', lineHeight: '1', flexShrink: 0 },
-  inputHint: { textAlign: 'center', fontSize: '11px', color: '#bbb', marginTop: '4px' },
+  inputArea: { padding: '14px 20px 12px', borderTop: '1px solid #f1f5f9', background: '#fafbfc' },
+  inputWrapper: { display: 'flex', alignItems: 'flex-end', gap: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '10px 14px', transition: 'all 0.15s', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+  textarea: { flex: 1, padding: '4px 0', border: 'none', background: 'transparent', fontSize: '14px', lineHeight: '1.5', resize: 'none', outline: 'none', fontFamily: 'inherit', minHeight: '24px', maxHeight: '120px', color: '#1e293b' },
+  sendButton: { padding: '8px 14px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', lineHeight: '1', flexShrink: 0, boxShadow: '0 2px 6px rgba(99, 102, 241, 0.25)' },
+  inputHint: { textAlign: 'center', fontSize: '11px', color: '#cbd5e1', marginTop: '6px' },
 };

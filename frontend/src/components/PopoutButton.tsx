@@ -28,13 +28,14 @@ export function PopoutButton() {
 
 const styles: Record<string, React.CSSProperties> = {
   button: {
-    padding: '6px 12px',
-    background: 'rgba(255,255,255,0.1)',
-    color: 'white',
-    border: '1px solid rgba(255,255,255,0.3)',
-    borderRadius: '4px',
+    padding: '6px 14px',
+    background: 'rgba(255,255,255,0.08)',
+    color: 'rgba(255,255,255,0.8)',
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
     whiteSpace: 'nowrap',
+    fontWeight: 500,
   },
 };

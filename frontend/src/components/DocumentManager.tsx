@@ -100,6 +100,14 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const getFileIcon = (name: string) => {
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    if (ext === 'pdf') return '\uD83D\uDCC4';
+    if (['doc', 'docx'].includes(ext)) return '\uD83D\uDDD2\uFE0F';
+    if (['xls', 'xlsx', 'csv'].includes(ext)) return '\uD83D\uDCCA';
+    return '\uD83D\uDCC4';
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.sidebar}>
@@ -150,7 +158,10 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
 
       <div style={styles.main}>
         <div style={styles.toolbar}>
-          <h2 style={styles.title}>Documents</h2>
+          <div>
+            <h2 style={styles.title}>Documents</h2>
+            <p style={styles.subtitle}>{documents.length} document{documents.length !== 1 ? 's' : ''} uploaded</p>
+          </div>
           {isAdmin && (
             <div>
               <input
@@ -174,66 +185,78 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
 
         {error && <div style={styles.error}>{error}</div>}
 
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Name</th>
-              <th style={styles.th}>Size</th>
-              <th style={styles.th}>Chunks</th>
-              <th style={styles.th}>Uploaded</th>
-              <th style={styles.th}>By</th>
-              {isAdmin && <th style={styles.th}>Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {documents.map(doc => (
-              <tr key={doc.id}>
-                <td style={styles.td}>{doc.originalName}</td>
-                <td style={styles.td}>{formatSize(doc.sizeBytes)}</td>
-                <td style={styles.td}>{doc.chunkCount}</td>
-                <td style={styles.td}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
-                <td style={styles.td}>{doc.uploadedBy}</td>
-                {isAdmin && (
-                  <td style={styles.td}>
-                    <button onClick={() => handleDelete(doc)} style={styles.deleteButton}>Delete</button>
-                  </td>
-                )}
-              </tr>
-            ))}
-            {documents.length === 0 && (
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
               <tr>
-                <td colSpan={isAdmin ? 6 : 5} style={{ ...styles.td, textAlign: 'center', color: '#999' }}>
-                  No documents uploaded yet
-                </td>
+                <th style={styles.th}>Name</th>
+                <th style={styles.th}>Size</th>
+                <th style={styles.th}>Chunks</th>
+                <th style={styles.th}>Uploaded</th>
+                <th style={styles.th}>By</th>
+                {isAdmin && <th style={styles.th}>Actions</th>}
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {documents.map(doc => (
+                <tr key={doc.id} style={styles.tr}>
+                  <td style={styles.td}>
+                    <span style={styles.fileIcon}>{getFileIcon(doc.originalName)}</span>
+                    {doc.originalName}
+                  </td>
+                  <td style={{ ...styles.td, color: '#64748b' }}>{formatSize(doc.sizeBytes)}</td>
+                  <td style={styles.td}>
+                    <span style={styles.chunkBadge}>{doc.chunkCount}</span>
+                  </td>
+                  <td style={{ ...styles.td, color: '#64748b' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
+                  <td style={{ ...styles.td, color: '#64748b' }}>{doc.uploadedBy}</td>
+                  {isAdmin && (
+                    <td style={styles.td}>
+                      <button onClick={() => handleDelete(doc)} style={styles.deleteButton}>Delete</button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {documents.length === 0 && (
+                <tr>
+                  <td colSpan={isAdmin ? 6 : 5} style={{ ...styles.td, textAlign: 'center', color: '#94a3b8', padding: '40px 12px' }}>
+                    No documents uploaded yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { display: 'flex', height: '100%' },
-  sidebar: { width: '240px', borderRight: '1px solid #eee', padding: '16px', overflowY: 'auto' },
-  sidebarTitle: { margin: '0 0 12px', fontSize: '16px' },
+  container: { display: 'flex', height: '100%', background: '#ffffff' },
+  sidebar: { width: '260px', borderRight: '1px solid #f1f5f9', padding: '20px', overflowY: 'auto', background: '#fafbfc' },
+  sidebarTitle: { margin: '0 0 14px', fontSize: '13px', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   colRow: { display: 'flex', alignItems: 'center', gap: '4px' },
-  colButton: { flex: 1, textAlign: 'left' as const, padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '4px', fontSize: '14px' },
-  colButtonActive: { flex: 1, textAlign: 'left' as const, padding: '8px 12px', border: 'none', background: '#e8f4f8', cursor: 'pointer', borderRadius: '4px', fontSize: '14px', fontWeight: 600 },
-  deleteColButton: { background: 'none', border: 'none', color: '#999', cursor: 'pointer', fontSize: '14px' },
-  addColButton: { padding: '8px 12px', border: '1px dashed #ccc', background: 'none', cursor: 'pointer', borderRadius: '4px', fontSize: '13px', color: '#666', marginTop: '8px', width: '100%' },
+  colButton: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', color: '#475569', transition: 'all 0.15s' },
+  colButtonActive: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#4338ca' },
+  deleteColButton: { background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: '14px', borderRadius: '4px', padding: '4px 8px' },
+  addColButton: { padding: '9px 14px', border: '1px dashed #d1d5db', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '13px', color: '#6366f1', marginTop: '8px', width: '100%', fontWeight: 500 },
   newColForm: { marginTop: '8px', display: 'flex', flexDirection: 'column' as const, gap: '6px' },
-  smallInput: { padding: '6px 8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' },
-  smallButton: { padding: '6px 12px', background: '#1a1a2e', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
-  smallButtonGhost: { padding: '6px 12px', background: 'none', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
-  main: { flex: 1, padding: '16px', overflowY: 'auto' },
-  toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  title: { margin: 0, fontSize: '20px' },
-  uploadButton: { padding: '10px 20px', backgroundColor: '#1a1a2e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
-  error: { background: '#fef2f2', color: '#e74c3c', padding: '10px', borderRadius: '6px', marginBottom: '12px', fontSize: '14px' },
+  smallInput: { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', background: '#ffffff' },
+  smallButton: { padding: '7px 14px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 },
+  smallButtonGhost: { padding: '7px 14px', background: 'none', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: '#64748b' },
+  main: { flex: 1, padding: '24px', overflowY: 'auto' },
+  toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.3px' },
+  subtitle: { margin: '2px 0 0', fontSize: '13px', color: '#94a3b8' },
+  uploadButton: { padding: '10px 22px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500, boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)' },
+  error: { background: '#fef2f2', color: '#dc2626', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', border: '1px solid #fecaca' },
+  tableWrapper: { borderRadius: '12px', border: '1px solid #f1f5f9', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   table: { width: '100%', borderCollapse: 'collapse' as const },
-  th: { textAlign: 'left' as const, padding: '10px 12px', borderBottom: '2px solid #eee', fontSize: '13px', color: '#666' },
-  td: { padding: '10px 12px', borderBottom: '1px solid #eee', fontSize: '14px' },
-  deleteButton: { padding: '4px 10px', background: 'none', border: '1px solid #e74c3c', color: '#e74c3c', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' },
+  th: { textAlign: 'left' as const, padding: '12px 16px', background: '#f8fafc', fontSize: '12px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid #f1f5f9' },
+  td: { padding: '12px 16px', borderBottom: '1px solid #f8fafc', fontSize: '14px', color: '#1e293b' },
+  tr: { transition: 'background 0.1s' },
+  fileIcon: { marginRight: '8px', fontSize: '15px' },
+  chunkBadge: { background: '#f1f5f9', color: '#6366f1', padding: '2px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 600 },
+  deleteButton: { padding: '5px 12px', background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 500 },
 };

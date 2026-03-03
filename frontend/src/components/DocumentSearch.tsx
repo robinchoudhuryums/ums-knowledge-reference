@@ -101,7 +101,7 @@ export function DocumentSearch({ collections }: Props) {
               <span style={styles.docIcon}>&#128196;</span>
               <span style={styles.docName}>{result.documentName}</span>
               <span style={styles.matchCount}>{result.matches.length} match{result.matches.length !== 1 ? 'es' : ''}</span>
-              <span style={styles.expandArrow}>{expandedDoc === result.documentId ? '&#9660;' : '&#9654;'}</span>
+              <span style={styles.expandArrow}>{expandedDoc === result.documentId ? '\u25BC' : '\u25B6'}</span>
             </button>
 
             {expandedDoc === result.documentId && (
@@ -127,30 +127,30 @@ export function DocumentSearch({ collections }: Props) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '24px', height: '100%', overflowY: 'auto' },
-  header: { marginBottom: '20px' },
-  title: { margin: '0 0 4px', fontSize: '20px', fontWeight: 600 },
-  subtitle: { margin: 0, fontSize: '14px', color: '#666' },
+  container: { padding: '28px', height: '100%', overflowY: 'auto', background: '#ffffff' },
+  header: { marginBottom: '24px' },
+  title: { margin: '0 0 4px', fontSize: '20px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.3px' },
+  subtitle: { margin: 0, fontSize: '14px', color: '#64748b' },
 
-  searchForm: { marginBottom: '20px' },
-  searchRow: { display: 'flex', gap: '8px' },
-  searchInput: { flex: 1, padding: '10px 14px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px', outline: 'none' },
-  collectionSelect: { padding: '10px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '13px', background: 'white', outline: 'none', minWidth: '160px' },
-  searchButton: { padding: '10px 20px', backgroundColor: '#1a1a2e', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap' },
+  searchForm: { marginBottom: '24px' },
+  searchRow: { display: 'flex', gap: '10px' },
+  searchInput: { flex: 1, padding: '11px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', outline: 'none', background: '#f8fafc' },
+  collectionSelect: { padding: '11px 14px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', minWidth: '160px', color: '#475569' },
+  searchButton: { padding: '11px 24px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap', fontWeight: 500, boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)' },
 
   results: {},
-  noResults: { textAlign: 'center', color: '#999', padding: '40px', fontSize: '14px' },
+  noResults: { textAlign: 'center', color: '#94a3b8', padding: '48px', fontSize: '14px' },
 
-  resultCard: { border: '1px solid #eee', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
-  resultHeader: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '12px 16px', border: 'none', background: 'white', cursor: 'pointer', fontSize: '14px', textAlign: 'left' },
+  resultCard: { border: '1px solid #f1f5f9', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  resultHeader: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px 18px', border: 'none', background: 'white', cursor: 'pointer', fontSize: '14px', textAlign: 'left' },
   docIcon: { fontSize: '18px', flexShrink: 0 },
-  docName: { flex: 1, fontWeight: 500 },
-  matchCount: { fontSize: '12px', color: '#888', background: '#f0f0f0', padding: '2px 8px', borderRadius: '4px' },
-  expandArrow: { fontSize: '12px', color: '#888' },
+  docName: { flex: 1, fontWeight: 500, color: '#0f172a' },
+  matchCount: { fontSize: '12px', color: '#6366f1', background: '#eef2ff', padding: '3px 10px', borderRadius: '6px', fontWeight: 500 },
+  expandArrow: { fontSize: '11px', color: '#94a3b8' },
 
-  matchesList: { borderTop: '1px solid #eee' },
-  matchItem: { padding: '12px 16px', borderBottom: '1px solid #f5f5f5' },
-  matchMeta: { display: 'flex', gap: '6px', marginBottom: '6px' },
-  matchBadge: { fontSize: '11px', color: '#666', border: '1px solid #ddd', borderRadius: '4px', padding: '1px 6px' },
-  matchText: { fontSize: '13px', lineHeight: '1.6', color: '#444', whiteSpace: 'pre-wrap' },
+  matchesList: { borderTop: '1px solid #f1f5f9' },
+  matchItem: { padding: '14px 18px', borderBottom: '1px solid #fafbfc' },
+  matchMeta: { display: 'flex', gap: '6px', marginBottom: '8px' },
+  matchBadge: { fontSize: '11px', color: '#6366f1', border: '1px solid #e0e7ff', borderRadius: '6px', padding: '2px 8px', background: '#f5f3ff', fontWeight: 500 },
+  matchText: { fontSize: '13px', lineHeight: '1.7', color: '#475569', whiteSpace: 'pre-wrap' },
 };

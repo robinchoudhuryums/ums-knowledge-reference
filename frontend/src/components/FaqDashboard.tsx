@@ -29,15 +29,15 @@ export function FaqDashboard() {
   };
 
   const confidenceColor = (c: string) => {
-    if (c === 'high') return '#2e7d32';
-    if (c === 'partial') return '#e65100';
-    return '#c62828';
+    if (c === 'high') return '#166534';
+    if (c === 'partial') return '#c2410c';
+    return '#b91c1c';
   };
 
   const confidenceBg = (c: string) => {
-    if (c === 'high') return '#e8f5e9';
-    if (c === 'partial') return '#fff3e0';
-    return '#fce4ec';
+    if (c === 'high') return '#dcfce7';
+    if (c === 'partial') return '#fff7ed';
+    return '#fef2f2';
   };
 
   if (loading) {
@@ -82,15 +82,15 @@ export function FaqDashboard() {
           <div style={styles.cardLabel}>Active Agents</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#2e7d32' }}>{data.confidenceBreakdown.high}</div>
+          <div style={{ ...styles.cardValue, color: '#166534' }}>{data.confidenceBreakdown.high}</div>
           <div style={styles.cardLabel}>High Confidence</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#e65100' }}>{data.confidenceBreakdown.partial}</div>
+          <div style={{ ...styles.cardValue, color: '#c2410c' }}>{data.confidenceBreakdown.partial}</div>
           <div style={styles.cardLabel}>Partial</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#c62828' }}>{data.confidenceBreakdown.low}</div>
+          <div style={{ ...styles.cardValue, color: '#b91c1c' }}>{data.confidenceBreakdown.low}</div>
           <div style={styles.cardLabel}>Low Confidence</div>
         </div>
       </div>
@@ -124,34 +124,36 @@ export function FaqDashboard() {
           <p style={styles.sectionHint}>
             Questions asked multiple times indicate topics that could benefit from clearer documentation or a quick-reference guide.
           </p>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Question</th>
-                <th style={{ ...styles.th, width: '60px', textAlign: 'center' }}>Count</th>
-                <th style={{ ...styles.th, width: '90px', textAlign: 'center' }}>Confidence</th>
-                <th style={{ ...styles.th, width: '120px' }}>Agents</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topQuestions.map((q, i) => (
-                <tr key={i} style={i % 2 === 0 ? styles.trEven : undefined}>
-                  <td style={styles.td}>{q.question}</td>
-                  <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600 }}>{q.frequency}</td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <span style={{
-                      ...styles.badge,
-                      color: confidenceColor(q.avgConfidence),
-                      backgroundColor: confidenceBg(q.avgConfidence),
-                    }}>
-                      {q.avgConfidence}
-                    </span>
-                  </td>
-                  <td style={styles.td}>{q.agents.join(', ')}</td>
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Question</th>
+                  <th style={{ ...styles.th, width: '60px', textAlign: 'center' }}>Count</th>
+                  <th style={{ ...styles.th, width: '90px', textAlign: 'center' }}>Confidence</th>
+                  <th style={{ ...styles.th, width: '120px' }}>Agents</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.topQuestions.map((q, i) => (
+                  <tr key={i}>
+                    <td style={styles.td}>{q.question}</td>
+                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600, color: '#6366f1' }}>{q.frequency}</td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <span style={{
+                        ...styles.badge,
+                        color: confidenceColor(q.avgConfidence),
+                        backgroundColor: confidenceBg(q.avgConfidence),
+                      }}>
+                        {q.avgConfidence}
+                      </span>
+                    </td>
+                    <td style={{ ...styles.td, color: '#64748b' }}>{q.agents.join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -162,32 +164,34 @@ export function FaqDashboard() {
           <p style={styles.sectionHint}>
             These questions consistently receive low or partial confidence. Adding documents that address these topics will improve answer quality.
           </p>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Question</th>
-                <th style={{ ...styles.th, width: '60px', textAlign: 'center' }}>Count</th>
-                <th style={{ ...styles.th, width: '90px', textAlign: 'center' }}>Confidence</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.lowConfidenceQuestions.map((q, i) => (
-                <tr key={i} style={i % 2 === 0 ? styles.trEven : undefined}>
-                  <td style={styles.td}>{q.question}</td>
-                  <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600 }}>{q.frequency}</td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <span style={{
-                      ...styles.badge,
-                      color: confidenceColor(q.avgConfidence),
-                      backgroundColor: confidenceBg(q.avgConfidence),
-                    }}>
-                      {q.avgConfidence}
-                    </span>
-                  </td>
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Question</th>
+                  <th style={{ ...styles.th, width: '60px', textAlign: 'center' }}>Count</th>
+                  <th style={{ ...styles.th, width: '90px', textAlign: 'center' }}>Confidence</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.lowConfidenceQuestions.map((q, i) => (
+                  <tr key={i}>
+                    <td style={styles.td}>{q.question}</td>
+                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600, color: '#6366f1' }}>{q.frequency}</td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <span style={{
+                        ...styles.badge,
+                        color: confidenceColor(q.avgConfidence),
+                        backgroundColor: confidenceBg(q.avgConfidence),
+                      }}>
+                        {q.avgConfidence}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -195,32 +199,34 @@ export function FaqDashboard() {
       {data.agentActivity.length > 0 && (
         <div style={styles.section}>
           <h4 style={styles.sectionTitle}>Agent Activity</h4>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Agent</th>
-                <th style={{ ...styles.th, width: '100px', textAlign: 'center' }}>Queries</th>
-                <th style={{ ...styles.th, width: '120px', textAlign: 'center' }}>Avg. Confidence</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.agentActivity.map((a, i) => (
-                <tr key={i} style={i % 2 === 0 ? styles.trEven : undefined}>
-                  <td style={styles.td}>{a.username}</td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>{a.queryCount}</td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <span style={{
-                      ...styles.badge,
-                      color: confidenceColor(a.avgConfidence),
-                      backgroundColor: confidenceBg(a.avgConfidence),
-                    }}>
-                      {a.avgConfidence}
-                    </span>
-                  </td>
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Agent</th>
+                  <th style={{ ...styles.th, width: '100px', textAlign: 'center' }}>Queries</th>
+                  <th style={{ ...styles.th, width: '120px', textAlign: 'center' }}>Avg. Confidence</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.agentActivity.map((a, i) => (
+                  <tr key={i}>
+                    <td style={styles.td}>{a.username}</td>
+                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600 }}>{a.queryCount}</td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <span style={{
+                        ...styles.badge,
+                        color: confidenceColor(a.avgConfidence),
+                        backgroundColor: confidenceBg(a.avgConfidence),
+                      }}>
+                        {a.avgConfidence}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -232,71 +238,76 @@ export function FaqDashboard() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '24px', maxWidth: '900px', overflowY: 'auto', height: '100%' },
+  container: { padding: '28px', maxWidth: '920px', overflowY: 'auto', height: '100%' },
   headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  title: { margin: 0, fontSize: '20px', fontWeight: 600, color: '#1a1a2e' },
-  subtitle: { margin: '4px 0 20px', fontSize: '13px', color: '#888' },
+  title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.3px' },
+  subtitle: { margin: '4px 0 24px', fontSize: '13px', color: '#94a3b8' },
   periodSelector: { display: 'flex', gap: '4px' },
   periodButton: {
-    padding: '6px 12px',
-    background: '#f0f0f0',
-    border: '1px solid #ddd',
-    borderRadius: '4px',
+    padding: '6px 14px',
+    background: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
-    color: '#555',
+    color: '#64748b',
+    fontWeight: 500,
   },
   periodActive: {
-    padding: '6px 12px',
-    background: '#1a1a2e',
+    padding: '6px 14px',
+    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
     color: 'white',
-    border: '1px solid #1a1a2e',
-    borderRadius: '4px',
+    border: '1px solid #6366f1',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 600,
+    boxShadow: '0 2px 6px rgba(99, 102, 241, 0.25)',
   },
-  loading: { color: '#888', fontSize: '14px' },
-  error: { color: '#c62828', fontSize: '14px', padding: '12px', background: '#fce4ec', borderRadius: '6px' },
-  cardRow: { display: 'flex', gap: '12px', flexWrap: 'wrap' as const, marginBottom: '24px' },
+  loading: { color: '#94a3b8', fontSize: '14px' },
+  error: { color: '#dc2626', fontSize: '14px', padding: '14px', background: '#fef2f2', borderRadius: '10px', border: '1px solid #fecaca' },
+  cardRow: { display: 'flex', gap: '12px', flexWrap: 'wrap' as const, marginBottom: '28px' },
   card: {
     flex: '1 1 120px',
-    padding: '16px',
-    background: '#f8f9fa',
-    borderRadius: '8px',
-    border: '1px solid #eee',
+    padding: '18px',
+    background: '#ffffff',
+    borderRadius: '12px',
+    border: '1px solid #f1f5f9',
     textAlign: 'center' as const,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
   },
-  cardValue: { fontSize: '28px', fontWeight: 700, color: '#1a1a2e' },
-  cardLabel: { fontSize: '12px', color: '#888', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
-  section: { marginBottom: '28px' },
-  sectionTitle: { margin: '0 0 4px', fontSize: '16px', fontWeight: 600, color: '#333' },
-  sectionHint: { margin: '0 0 12px', fontSize: '13px', color: '#888', lineHeight: '1.4' },
+  cardValue: { fontSize: '28px', fontWeight: 700, color: '#0f172a' },
+  cardLabel: { fontSize: '11px', color: '#94a3b8', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.5px', fontWeight: 500 },
+  section: { marginBottom: '32px' },
+  sectionTitle: { margin: '0 0 4px', fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.2px' },
+  sectionHint: { margin: '0 0 14px', fontSize: '13px', color: '#94a3b8', lineHeight: '1.4' },
+  tableWrapper: { borderRadius: '12px', border: '1px solid #f1f5f9', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '13px' },
   th: {
     textAlign: 'left' as const,
-    padding: '10px 12px',
-    borderBottom: '2px solid #ddd',
-    color: '#555',
-    fontSize: '12px',
+    padding: '12px 16px',
+    background: '#f8fafc',
+    color: '#64748b',
+    fontSize: '11px',
+    fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.5px',
+    borderBottom: '1px solid #f1f5f9',
   },
-  td: { padding: '10px 12px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'top' as const },
-  trEven: { background: '#fafafa' },
+  td: { padding: '12px 16px', borderBottom: '1px solid #fafbfc', verticalAlign: 'top' as const, color: '#1e293b' },
   badge: {
     display: 'inline-block',
-    padding: '2px 8px',
-    borderRadius: '10px',
+    padding: '3px 10px',
+    borderRadius: '6px',
     fontSize: '11px',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
   },
   barChart: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  barRow: { display: 'flex', alignItems: 'center', gap: '8px' },
-  barDate: { width: '45px', fontSize: '12px', color: '#666', textAlign: 'right' as const },
-  barTrack: { flex: 1, height: '18px', background: '#f0f0f0', borderRadius: '4px', overflow: 'hidden' },
-  barFill: { height: '100%', background: '#1a1a2e', borderRadius: '4px', transition: 'width 0.3s' },
-  barCount: { width: '30px', fontSize: '12px', color: '#555' },
-  empty: { color: '#888', fontSize: '14px', textAlign: 'center' as const, padding: '40px 0' },
+  barRow: { display: 'flex', alignItems: 'center', gap: '10px' },
+  barDate: { width: '45px', fontSize: '12px', color: '#64748b', textAlign: 'right' as const, fontWeight: 500 },
+  barTrack: { flex: 1, height: '20px', background: '#f1f5f9', borderRadius: '6px', overflow: 'hidden' },
+  barFill: { height: '100%', background: 'linear-gradient(90deg, #6366f1, #818cf8)', borderRadius: '6px', transition: 'width 0.3s' },
+  barCount: { width: '30px', fontSize: '12px', color: '#64748b', fontWeight: 600 },
+  empty: { color: '#94a3b8', fontSize: '14px', textAlign: 'center' as const, padding: '48px 0' },
 };

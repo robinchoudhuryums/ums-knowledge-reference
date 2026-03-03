@@ -5,6 +5,7 @@ export function OcrTool() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<OcrResponse | null>(null);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -14,6 +15,7 @@ export function OcrTool() {
     setLoading(true);
     setError('');
     setResult(null);
+    setCopied(false);
 
     try {
       const ocrResult = await ocrDocument(file);
@@ -29,15 +31,24 @@ export function OcrTool() {
   const handleCopy = () => {
     if (result?.text) {
       navigator.clipboard.writeText(result.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
   return (
     <div style={styles.container}>
-      <h3 style={styles.title}>OCR — Scan Document</h3>
-      <p style={styles.description}>
-        Upload a scanned PDF or image to extract text using AWS Textract. Supports PDF, PNG, JPEG, and TIFF (max 10 MB).
-      </p>
+      <div style={styles.headerSection}>
+        <div style={styles.iconBg}>
+          <span style={styles.icon}>&#128247;</span>
+        </div>
+        <div>
+          <h3 style={styles.title}>OCR — Scan Document</h3>
+          <p style={styles.description}>
+            Upload a scanned PDF or image to extract text using AWS Textract. Supports multi-page PDF, PNG, JPEG, and TIFF.
+          </p>
+        </div>
+      </div>
 
       <label style={styles.uploadLabel}>
         <input
@@ -48,20 +59,30 @@ export function OcrTool() {
           style={{ display: 'none' }}
           disabled={loading}
         />
-        <span style={styles.uploadButton}>
-          {loading ? 'Scanning...' : 'Select File to Scan'}
+        <span style={loading ? styles.uploadButtonLoading : styles.uploadButton}>
+          {loading ? 'Scanning document...' : 'Select File to Scan'}
         </span>
       </label>
+
+      {loading && (
+        <div style={styles.loadingBar}>
+          <div style={styles.loadingBarFill} />
+        </div>
+      )}
 
       {error && <div style={styles.error}>{error}</div>}
 
       {result && (
         <div style={styles.resultContainer}>
           <div style={styles.resultHeader}>
-            <span style={styles.resultMeta}>
-              {result.filename} — {result.pageCount} page(s) — {Math.round(result.confidence)}% confidence
-            </span>
-            <button onClick={handleCopy} style={styles.copyButton}>Copy Text</button>
+            <div style={styles.resultMetaRow}>
+              <span style={styles.resultFilename}>{result.filename}</span>
+              <span style={styles.metaBadge}>{result.pageCount} page{result.pageCount !== 1 ? 's' : ''}</span>
+              <span style={styles.metaBadge}>{Math.round(result.confidence)}% confidence</span>
+            </div>
+            <button onClick={handleCopy} style={styles.copyButton}>
+              {copied ? 'Copied!' : 'Copy Text'}
+            </button>
           </div>
           <pre style={styles.resultText}>{result.text}</pre>
         </div>
@@ -71,47 +92,92 @@ export function OcrTool() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '24px', maxWidth: '800px' },
-  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 600, color: '#1a1a2e' },
-  description: { margin: '0 0 16px', fontSize: '14px', color: '#666', lineHeight: '1.5' },
+  container: { padding: '28px', maxWidth: '840px', background: '#ffffff', height: '100%', overflowY: 'auto' },
+  headerSection: { display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'flex-start' },
+  iconBg: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '14px',
+    background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  icon: { fontSize: '24px' },
+  title: { margin: '0 0 4px', fontSize: '18px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.2px' },
+  description: { margin: 0, fontSize: '14px', color: '#64748b', lineHeight: '1.5' },
   uploadLabel: { display: 'inline-block', cursor: 'pointer' },
   uploadButton: {
     display: 'inline-block',
-    padding: '10px 20px',
-    backgroundColor: '#1a1a2e',
+    padding: '11px 24px',
+    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
     color: 'white',
-    borderRadius: '6px',
+    borderRadius: '10px',
     fontSize: '14px',
     fontWeight: 500,
+    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)',
+    cursor: 'pointer',
   },
-  error: { marginTop: '12px', padding: '10px 14px', background: '#fce4ec', color: '#c62828', borderRadius: '6px', fontSize: '13px' },
-  resultContainer: { marginTop: '20px', border: '1px solid #ddd', borderRadius: '8px', overflow: 'hidden' },
+  uploadButtonLoading: {
+    display: 'inline-block',
+    padding: '11px 24px',
+    background: '#94a3b8',
+    color: 'white',
+    borderRadius: '10px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'wait',
+  },
+  loadingBar: {
+    marginTop: '16px',
+    height: '4px',
+    borderRadius: '2px',
+    background: '#f1f5f9',
+    overflow: 'hidden',
+  },
+  loadingBarFill: {
+    height: '100%',
+    width: '40%',
+    borderRadius: '2px',
+    background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #6366f1)',
+    backgroundSize: '200% 100%',
+    animation: 'shimmer 1.5s ease-in-out infinite',
+  },
+  error: { marginTop: '16px', padding: '12px 16px', background: '#fef2f2', color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca' },
+  resultContainer: { marginTop: '24px', border: '1px solid #f1f5f9', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
   resultHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '10px 14px',
-    background: '#f5f6f8',
-    borderBottom: '1px solid #ddd',
+    padding: '14px 18px',
+    background: '#f8fafc',
+    borderBottom: '1px solid #f1f5f9',
   },
-  resultMeta: { fontSize: '13px', color: '#555' },
+  resultMetaRow: { display: 'flex', alignItems: 'center', gap: '8px' },
+  resultFilename: { fontSize: '13px', fontWeight: 600, color: '#0f172a' },
+  metaBadge: { fontSize: '11px', color: '#6366f1', background: '#eef2ff', padding: '3px 8px', borderRadius: '6px', fontWeight: 500 },
   copyButton: {
-    padding: '4px 12px',
+    padding: '6px 14px',
     background: 'white',
-    border: '1px solid #ccc',
-    borderRadius: '4px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '12px',
+    fontWeight: 500,
+    color: '#475569',
   },
   resultText: {
-    padding: '14px',
+    padding: '18px',
     margin: 0,
     fontSize: '13px',
-    lineHeight: '1.6',
+    lineHeight: '1.7',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
     maxHeight: '400px',
     overflowY: 'auto',
     fontFamily: 'inherit',
+    color: '#334155',
+    background: '#ffffff',
   },
 };

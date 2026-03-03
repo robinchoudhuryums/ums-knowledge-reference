@@ -69,7 +69,7 @@ export function FeedbackForm({ question, answer, sources, onClose }: Props) {
         <div style={styles.context}>
           <div style={styles.contextLabel}>Question:</div>
           <div style={styles.contextText}>{question}</div>
-          <div style={{ ...styles.contextLabel, marginTop: '8px' }}>Answer preview:</div>
+          <div style={{ ...styles.contextLabel, marginTop: '10px' }}>Answer preview:</div>
           <div style={styles.contextText}>
             {answer.length > 200 ? answer.slice(0, 200) + '...' : answer}
           </div>
@@ -126,38 +126,38 @@ export function FeedbackForm({ question, answer, sources, onClose }: Props) {
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)', display: 'flex',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)', display: 'flex',
     justifyContent: 'center', alignItems: 'center', zIndex: 1000,
-    backdropFilter: 'blur(2px)',
+    backdropFilter: 'blur(4px)',
   },
   modal: {
-    backgroundColor: 'white', borderRadius: '12px', padding: '24px',
+    backgroundColor: 'white', borderRadius: '16px', padding: '28px',
     maxWidth: '520px', width: '92%', maxHeight: '85vh', overflowY: 'auto',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+    boxShadow: '0 25px 60px rgba(0,0,0,0.2)',
   },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  title: { margin: 0, fontSize: '18px', fontWeight: 600, color: '#1a1a2e' },
-  closeButton: { background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#999' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' },
+  title: { margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.2px' },
+  closeButton: { background: '#f8fafc', border: '1px solid #f1f5f9', fontSize: '16px', cursor: 'pointer', color: '#94a3b8', padding: '6px 10px', borderRadius: '8px' },
 
-  context: { background: '#f8f9fa', borderRadius: '8px', padding: '12px', marginBottom: '16px', fontSize: '13px' },
-  contextLabel: { fontWeight: 600, color: '#666', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' },
-  contextText: { color: '#444', lineHeight: '1.5' },
+  context: { background: '#f8fafc', borderRadius: '12px', padding: '14px', marginBottom: '20px', fontSize: '13px', border: '1px solid #f1f5f9' },
+  contextLabel: { fontWeight: 600, color: '#64748b', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' },
+  contextText: { color: '#475569', lineHeight: '1.5' },
 
-  form: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  field: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  label: { fontSize: '13px', fontWeight: 500, color: '#555' },
-  input: { padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px' },
-  textarea: { padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', fontFamily: 'inherit', resize: 'vertical' },
+  form: { display: 'flex', flexDirection: 'column', gap: '14px' },
+  field: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  label: { fontSize: '13px', fontWeight: 500, color: '#475569' },
+  input: { padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', background: '#f8fafc' },
+  textarea: { padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', fontFamily: 'inherit', resize: 'vertical', background: '#f8fafc' },
 
-  error: { color: '#e74c3c', fontSize: '13px', background: '#fef2f2', padding: '8px 12px', borderRadius: '6px' },
+  error: { color: '#dc2626', fontSize: '13px', background: '#fef2f2', padding: '10px 14px', borderRadius: '8px', border: '1px solid #fecaca' },
 
   actions: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' },
-  cancelButton: { padding: '8px 16px', background: 'none', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
-  submitButton: { padding: '8px 20px', background: '#1a1a2e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  cancelButton: { padding: '9px 18px', background: 'none', border: '1px solid #e2e8f0', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', color: '#64748b' },
+  submitButton: { padding: '9px 22px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500, boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)' },
 
-  successMessage: { textAlign: 'center', padding: '16px 0' },
-  successIcon: { fontSize: '36px', color: '#2e7d32', marginBottom: '8px' },
-  successTitle: { margin: '0 0 8px', fontSize: '18px' },
-  successText: { margin: '0 0 16px', color: '#666', fontSize: '14px' },
-  doneButton: { padding: '8px 24px', background: '#1a1a2e', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
+  successMessage: { textAlign: 'center', padding: '20px 0' },
+  successIcon: { fontSize: '40px', color: '#166534', marginBottom: '12px', width: '56px', height: '56px', lineHeight: '56px', borderRadius: '50%', background: '#dcfce7', display: 'inline-block' },
+  successTitle: { margin: '0 0 8px', fontSize: '18px', color: '#0f172a', fontWeight: 700 },
+  successText: { margin: '0 0 20px', color: '#64748b', fontSize: '14px' },
+  doneButton: { padding: '9px 28px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500 },
 };

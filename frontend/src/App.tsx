@@ -15,6 +15,14 @@ type Tab = 'chat' | 'search' | 'documents' | 'ocr' | 'admin';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
+const tabIcons: Record<Tab, string> = {
+  chat: '\u2728',
+  search: '\uD83D\uDD0D',
+  ocr: '\uD83D\uDCF7',
+  documents: '\uD83D\uDCC1',
+  admin: '\u2699\uFE0F',
+};
+
 export default function App() {
   const { auth, login, logout, isAuthenticated, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
@@ -68,7 +76,10 @@ export default function App() {
     <div style={styles.app}>
       <header style={styles.header}>
         <div style={styles.headerLeft}>
-          <h1 style={styles.logo}>UMS Knowledge Base</h1>
+          <div style={styles.logoGroup}>
+            <div style={styles.logoMark}>KB</div>
+            <h1 style={styles.logo}>UMS Knowledge Base</h1>
+          </div>
           <nav style={styles.nav}>
             {tabs
               .filter(t => !t.adminOnly || isAdmin)
@@ -78,6 +89,7 @@ export default function App() {
                   onClick={() => setActiveTab(t.key)}
                   style={activeTab === t.key ? styles.tabActive : styles.tab}
                 >
+                  <span style={styles.tabIcon}>{tabIcons[t.key]}</span>
                   {t.label}
                 </button>
               ))}
@@ -85,7 +97,11 @@ export default function App() {
         </div>
         <div style={styles.headerRight}>
           <PopoutButton />
-          <span style={styles.user}>{auth.user?.username} ({auth.user?.role})</span>
+          <div style={styles.userBadge}>
+            <div style={styles.avatar}>{auth.user?.username?.charAt(0).toUpperCase()}</div>
+            <span style={styles.user}>{auth.user?.username}</span>
+            <span style={styles.roleBadge}>{auth.user?.role}</span>
+          </div>
           <button onClick={logout} style={styles.logoutButton}>Sign Out</button>
         </div>
       </header>
@@ -114,61 +130,116 @@ export default function App() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  app: { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#fff' },
+  app: { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#f8f9fb' },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '0 20px',
-    height: '56px',
-    borderBottom: '1px solid #eee',
-    backgroundColor: '#1a1a2e',
+    padding: '0 24px',
+    height: '60px',
+    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
     color: 'white',
+    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
+    position: 'relative' as const,
+    zIndex: 10,
   },
-  headerLeft: { display: 'flex', alignItems: 'center', gap: '24px' },
+  headerLeft: { display: 'flex', alignItems: 'center', gap: '28px' },
   headerRight: { display: 'flex', alignItems: 'center', gap: '12px' },
-  logo: { margin: 0, fontSize: '18px', fontWeight: 600 },
-  nav: { display: 'flex', gap: '4px' },
+  logoGroup: { display: 'flex', alignItems: 'center', gap: '10px' },
+  logoMark: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '8px',
+    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    fontWeight: 700,
+    letterSpacing: '0.5px',
+    flexShrink: 0,
+  },
+  logo: { margin: 0, fontSize: '16px', fontWeight: 600, letterSpacing: '-0.2px' },
+  nav: { display: 'flex', gap: '2px' },
   tab: {
-    padding: '8px 16px',
+    padding: '7px 14px',
     background: 'transparent',
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.6)',
     border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '14px',
-  },
-  tabActive: {
-    padding: '8px 16px',
-    background: 'rgba(255,255,255,0.15)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 600,
-  },
-  user: { fontSize: '13px', color: 'rgba(255,255,255,0.8)' },
-  logoutButton: {
-    padding: '6px 12px',
-    background: 'rgba(255,255,255,0.1)',
-    color: 'white',
-    border: '1px solid rgba(255,255,255,0.3)',
-    borderRadius: '4px',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
+    fontWeight: 500,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    transition: 'all 0.15s ease',
+  },
+  tabActive: {
+    padding: '7px 14px',
+    background: 'rgba(99, 102, 241, 0.25)',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    boxShadow: 'inset 0 0 0 1px rgba(99, 102, 241, 0.3)',
+  },
+  tabIcon: { fontSize: '14px' },
+  userBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: 'rgba(255,255,255,0.08)',
+    borderRadius: '8px',
+    padding: '4px 12px 4px 4px',
+  },
+  avatar: {
+    width: '28px',
+    height: '28px',
+    borderRadius: '6px',
+    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    fontWeight: 600,
+  },
+  user: { fontSize: '13px', color: 'rgba(255,255,255,0.9)' },
+  roleBadge: {
+    fontSize: '10px',
+    padding: '2px 6px',
+    background: 'rgba(99, 102, 241, 0.3)',
+    borderRadius: '4px',
+    color: 'rgba(255,255,255,0.8)',
+    textTransform: 'uppercase' as const,
+    fontWeight: 600,
+    letterSpacing: '0.5px',
+  },
+  logoutButton: {
+    padding: '6px 14px',
+    background: 'rgba(255,255,255,0.08)',
+    color: 'rgba(255,255,255,0.8)',
+    border: '1px solid rgba(255,255,255,0.15)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontWeight: 500,
   },
   main: { flex: 1, overflow: 'hidden' },
   adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px' },
-  adminDivider: { border: 'none', borderTop: '1px solid #eee', margin: '12px 24px' },
+  adminDivider: { border: 'none', borderTop: '1px solid #e2e8f0', margin: '12px 24px' },
   popoutHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '0 16px',
     height: '44px',
-    borderBottom: '1px solid #eee',
-    backgroundColor: '#1a1a2e',
+    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
     color: 'white',
   },
   popoutLogo: { margin: 0, fontSize: '15px', fontWeight: 600 },

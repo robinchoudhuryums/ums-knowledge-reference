@@ -54,21 +54,22 @@ export function QueryLogViewer() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '24px', maxWidth: '600px' },
-  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 600, color: '#1a1a2e' },
-  description: { margin: '0 0 16px', fontSize: '14px', color: '#666', lineHeight: '1.5' },
+  container: { padding: '28px', maxWidth: '620px' },
+  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.2px' },
+  description: { margin: '0 0 20px', fontSize: '14px', color: '#64748b', lineHeight: '1.5' },
   row: { display: 'flex', alignItems: 'center', gap: '12px' },
-  label: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#333' },
-  dateInput: { padding: '8px 12px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '14px' },
+  label: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#475569', fontWeight: 500 },
+  dateInput: { padding: '9px 14px', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '14px', background: '#f8fafc' },
   downloadButton: {
-    padding: '8px 18px',
-    backgroundColor: '#1a1a2e',
+    padding: '9px 22px',
+    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
     color: 'white',
     border: 'none',
-    borderRadius: '6px',
+    borderRadius: '10px',
     cursor: 'pointer',
     fontSize: '14px',
     fontWeight: 500,
+    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)',
   },
-  error: { marginTop: '12px', padding: '10px 14px', background: '#fce4ec', color: '#c62828', borderRadius: '6px', fontSize: '13px' },
+  error: { marginTop: '16px', padding: '12px 16px', background: '#fef2f2', color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca' },
 };

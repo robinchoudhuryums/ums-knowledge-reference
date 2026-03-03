@@ -260,7 +260,7 @@ router.get('/search/text', authenticate, async (req: AuthRequest, res: Response)
 
 const ocrUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // Textract sync API limit: 10MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB — async Textract via S3 handles larger PDFs
   fileFilter: (_req, file, cb) => {
     const allowedMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff'];
     const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif'];

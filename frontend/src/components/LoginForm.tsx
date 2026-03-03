@@ -26,25 +26,32 @@ export function LoginForm({ onLogin }: Props) {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
+        <div style={styles.logoMark}>KB</div>
         <h1 style={styles.title}>UMS Knowledge Base</h1>
         <p style={styles.subtitle}>Sign in to access the knowledge base</p>
         <form onSubmit={handleSubmit} style={styles.form}>
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            style={styles.input}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={styles.input}
-            required
-          />
+          <div style={styles.inputGroup}>
+            <label style={styles.label}>Username</label>
+            <input
+              type="text"
+              placeholder="Enter your username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              style={styles.input}
+              required
+            />
+          </div>
+          <div style={styles.inputGroup}>
+            <label style={styles.label}>Password</label>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              style={styles.input}
+              required
+            />
+          </div>
           {error && <div style={styles.error}>{error}</div>}
           <button type="submit" disabled={loading} style={styles.button}>
             {loading ? 'Signing in...' : 'Sign In'}
@@ -61,51 +68,88 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100vh',
-    backgroundColor: '#f0f2f5',
+    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)',
   },
   card: {
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    padding: '40px',
-    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: '16px',
+    padding: '48px 40px',
+    boxShadow: '0 25px 60px rgba(0, 0, 0, 0.3)',
     width: '100%',
-    maxWidth: '400px',
+    maxWidth: '420px',
+  },
+  logoMark: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '12px',
+    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    fontWeight: 700,
+    margin: '0 auto 16px',
+    letterSpacing: '0.5px',
   },
   title: {
-    margin: '0 0 8px',
-    fontSize: '24px',
-    color: '#1a1a2e',
+    margin: '0 0 6px',
+    fontSize: '22px',
+    fontWeight: 700,
+    color: '#0f172a',
     textAlign: 'center' as const,
+    letterSpacing: '-0.3px',
   },
   subtitle: {
-    margin: '0 0 24px',
-    color: '#666',
+    margin: '0 0 28px',
+    color: '#64748b',
     textAlign: 'center' as const,
+    fontSize: '14px',
   },
   form: {
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '12px',
+    gap: '16px',
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '6px',
+  },
+  label: {
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#475569',
   },
   input: {
-    padding: '12px',
-    border: '1px solid #ddd',
-    borderRadius: '6px',
+    padding: '11px 14px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '10px',
     fontSize: '14px',
+    backgroundColor: '#f8fafc',
+    transition: 'all 0.15s ease',
   },
   button: {
     padding: '12px',
-    backgroundColor: '#1a1a2e',
+    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
     color: 'white',
     border: 'none',
-    borderRadius: '6px',
+    borderRadius: '10px',
     fontSize: '14px',
+    fontWeight: 600,
     cursor: 'pointer',
-    marginTop: '8px',
+    marginTop: '4px',
+    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+    letterSpacing: '0.2px',
   },
   error: {
-    color: '#e74c3c',
-    fontSize: '14px',
+    color: '#dc2626',
+    fontSize: '13px',
     textAlign: 'center' as const,
+    padding: '8px 12px',
+    background: '#fef2f2',
+    borderRadius: '8px',
+    border: '1px solid #fecaca',
   },
 };

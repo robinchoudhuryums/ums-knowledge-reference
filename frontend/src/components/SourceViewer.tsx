@@ -17,7 +17,8 @@ export function SourceViewer({ source, onClose }: Props) {
   }, [handleKeyDown]);
 
   const relevancePct = Math.round(source.score * 100);
-  const relevanceColor = relevancePct >= 70 ? '#2e7d32' : relevancePct >= 40 ? '#f57c00' : '#999';
+  const relevanceColor = relevancePct >= 70 ? '#166534' : relevancePct >= 40 ? '#c2410c' : '#94a3b8';
+  const relevanceBg = relevancePct >= 70 ? '#dcfce7' : relevancePct >= 40 ? '#fff7ed' : '#f8fafc';
 
   return (
     <div style={styles.overlay} onClick={onClose}>
@@ -32,7 +33,7 @@ export function SourceViewer({ source, onClose }: Props) {
               {source.sectionHeader && (
                 <span style={styles.metaBadge}>{source.sectionHeader}</span>
               )}
-              <span style={{ ...styles.metaBadge, color: relevanceColor, borderColor: relevanceColor }}>
+              <span style={{ ...styles.metaBadge, color: relevanceColor, background: relevanceBg, borderColor: relevanceColor + '40' }}>
                 {relevancePct}% match
               </span>
             </div>
@@ -57,22 +58,22 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
-    backdropFilter: 'blur(2px)',
+    backdropFilter: 'blur(4px)',
   },
   modal: {
     backgroundColor: 'white',
-    borderRadius: '12px',
-    padding: '24px',
+    borderRadius: '16px',
+    padding: '28px',
     maxWidth: '720px',
     width: '92%',
     maxHeight: '80vh',
     overflowY: 'auto',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+    boxShadow: '0 25px 60px rgba(0,0,0,0.2)',
   },
   header: {
     display: 'flex',
@@ -80,32 +81,32 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'flex-start',
     gap: '16px',
   },
-  title: { margin: '0 0 6px', fontSize: '18px', fontWeight: 600, color: '#1a1a2e' },
+  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.2px' },
   metaRow: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
-  metaBadge: { fontSize: '12px', color: '#666', border: '1px solid #ddd', borderRadius: '4px', padding: '2px 8px', whiteSpace: 'nowrap' },
+  metaBadge: { fontSize: '12px', color: '#6366f1', border: '1px solid #e0e7ff', borderRadius: '6px', padding: '3px 10px', whiteSpace: 'nowrap', background: '#eef2ff', fontWeight: 500 },
   closeButton: {
-    background: 'none',
-    border: 'none',
-    fontSize: '18px',
+    background: '#f8fafc',
+    border: '1px solid #f1f5f9',
+    fontSize: '16px',
     cursor: 'pointer',
-    color: '#999',
-    padding: '4px 8px',
-    borderRadius: '4px',
+    color: '#94a3b8',
+    padding: '6px 10px',
+    borderRadius: '8px',
     lineHeight: 1,
     flexShrink: 0,
   },
-  divider: { height: '1px', background: '#eee', margin: '16px 0' },
-  label: { fontSize: '12px', fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' },
+  divider: { height: '1px', background: '#f1f5f9', margin: '18px 0' },
+  label: { fontSize: '11px', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' },
   textContent: {
-    padding: '16px',
-    backgroundColor: '#fafbfc',
-    borderRadius: '8px',
-    border: '1px solid #eee',
+    padding: '18px',
+    backgroundColor: '#f8fafc',
+    borderRadius: '12px',
+    border: '1px solid #f1f5f9',
     fontSize: '14px',
     lineHeight: '1.7',
     whiteSpace: 'pre-wrap',
-    color: '#333',
+    color: '#334155',
   },
-  footer: { marginTop: '12px', textAlign: 'right' },
-  footerText: { fontSize: '11px', color: '#bbb' },
+  footer: { marginTop: '14px', textAlign: 'right' },
+  footerText: { fontSize: '11px', color: '#cbd5e1' },
 };

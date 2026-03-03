@@ -1,9 +1,35 @@
 import { Router, Response } from 'express';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
 import { getQueryLog, queryLogToCsv, flushQueryLog } from '../services/queryLog';
+import { buildFaqDashboard } from '../services/faqAnalytics';
 import { logger } from '../utils/logger';
 
 const router = Router();
+
+// FAQ analytics dashboard (admin only)
+router.get('/faq/dashboard', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const startDate = req.query.start as string | undefined;
+    const endDate = req.query.end as string | undefined;
+
+    // Validate date formats if provided
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (startDate && !datePattern.test(startDate)) {
+      res.status(400).json({ error: 'start must be in YYYY-MM-DD format' });
+      return;
+    }
+    if (endDate && !datePattern.test(endDate)) {
+      res.status(400).json({ error: 'end must be in YYYY-MM-DD format' });
+      return;
+    }
+
+    const dashboard = await buildFaqDashboard(startDate, endDate);
+    res.json(dashboard);
+  } catch (error) {
+    logger.error('Failed to build FAQ dashboard', { error: String(error) });
+    res.status(500).json({ error: 'Failed to build FAQ dashboard' });
+  }
+});
 
 // Get query log entries for a given date (admin only)
 router.get('/:date', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {

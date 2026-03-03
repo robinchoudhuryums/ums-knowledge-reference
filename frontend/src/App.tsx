@@ -7,6 +7,7 @@ import { DocumentSearch } from './components/DocumentSearch';
 import { PopoutButton } from './components/PopoutButton';
 import { OcrTool } from './components/OcrTool';
 import { QueryLogViewer } from './components/QueryLogViewer';
+import { FaqDashboard } from './components/FaqDashboard';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
@@ -100,7 +101,13 @@ export default function App() {
             onCollectionsChange={loadCollections}
           />
         )}
-        {activeTab === 'admin' && isAdmin && <QueryLogViewer />}
+        {activeTab === 'admin' && isAdmin && (
+          <div style={styles.adminPanel}>
+            <FaqDashboard />
+            <hr style={styles.adminDivider} />
+            <QueryLogViewer />
+          </div>
+        )}
       </main>
     </div>
   );
@@ -152,6 +159,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
   },
   main: { flex: 1, overflow: 'hidden' },
+  adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px' },
+  adminDivider: { border: 'none', borderTop: '1px solid #eee', margin: '12px 24px' },
   popoutHeader: {
     display: 'flex',
     justifyContent: 'space-between',

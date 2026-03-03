@@ -1,6 +1,8 @@
 import { Collection, Document, FeedbackRequest, QueryResponse, SourceCitation, User } from '../types';
 
-const API_BASE = '/api';
+// In dev, Vite proxies /api to localhost:3001. In production (Render), VITE_API_URL
+// points to the backend service's external URL.
+const API_BASE = (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api');
 
 function getToken(): string | null {
   return localStorage.getItem('token');
@@ -199,6 +201,38 @@ export async function ocrDocument(file: File): Promise<OcrResponse> {
     method: 'POST',
     body: formData,
   });
+}
+
+// FAQ dashboard (admin)
+export interface FaqDashboardData {
+  period: { start: string; end: string };
+  totalQueries: number;
+  uniqueAgents: number;
+  confidenceBreakdown: { high: number; partial: number; low: number };
+  topQuestions: Array<{
+    question: string;
+    frequency: number;
+    lastAsked: string;
+    avgConfidence: string;
+    agents: string[];
+  }>;
+  lowConfidenceQuestions: Array<{
+    question: string;
+    frequency: number;
+    lastAsked: string;
+    avgConfidence: string;
+    agents: string[];
+  }>;
+  agentActivity: Array<{ username: string; queryCount: number; avgConfidence: string }>;
+  queriesByDay: Array<{ date: string; count: number }>;
+}
+
+export async function getFaqDashboard(start?: string, end?: string): Promise<FaqDashboardData> {
+  const params = new URLSearchParams();
+  if (start) params.set('start', start);
+  if (end) params.set('end', end);
+  const qs = params.toString();
+  return request(`/query-log/faq/dashboard${qs ? `?${qs}` : ''}`);
 }
 
 // Query log (admin) — downloads CSV as a blob and triggers browser download

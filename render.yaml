@@ -1,15 +1,15 @@
-# Render Blueprint — deploy both backend and frontend
+# Render Blueprint — single Docker service serving both API and frontend
 # https://render.com/docs/blueprint-spec
+#
+# Deploy via: Render Dashboard → New → Blueprint → connect your GitHub repo
+# Or create a single Web Service pointed at this repo (Render auto-detects the Dockerfile).
 
 services:
-  # Backend API
   - type: web
-    name: ums-knowledge-base-api
-    runtime: node
-    region: ohio  # us-east-1 equivalent — closest to AWS us-east-1 for Bedrock/S3
+    name: ums-knowledge-base
+    runtime: docker
+    region: ohio  # closest to AWS us-east-1 for Bedrock/S3
     plan: starter  # $7/mo — sufficient for 8 agents
-    buildCommand: cd backend && npm install && npm run build
-    startCommand: cd backend && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
@@ -29,33 +29,4 @@ services:
       - key: JWT_SECRET
         generateValue: true  # Render auto-generates a secure random string
       - key: CORS_ORIGIN
-        value: https://ums-knowledge-base.onrender.com  # update after first deploy
-
-  # Frontend (static site)
-  - type: web
-    name: ums-knowledge-base
-    runtime: static
-    region: ohio
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: X-Frame-Options
-        value: SAMEORIGIN
-      - path: /*
-        name: Referrer-Policy
-        value: strict-origin-when-cross-origin
-    routes:
-      # SPA fallback — all non-file routes serve index.html
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          name: ums-knowledge-base-api
-          type: web
-          envVarKey: RENDER_EXTERNAL_URL
+        value: "*"  # same-origin in production; safe since auth is token-based

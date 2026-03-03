@@ -1,7 +1,8 @@
 import { Collection, Document, FeedbackRequest, QueryResponse, SourceCitation, User } from '../types';
 
-// In dev, Vite proxies /api to localhost:3001. In production (Render), VITE_API_URL
-// points to the backend service's external URL.
+// In dev, Vite proxies /api to localhost:3001. In production, the Express server
+// serves both the API and the built frontend from the same origin.
+// VITE_API_URL can override this for split deployments if needed.
 const API_BASE = (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api');
 
 function getToken(): string | null {

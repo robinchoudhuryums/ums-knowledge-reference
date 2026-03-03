@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import { logger } from './utils/logger';
@@ -45,6 +46,18 @@ app.use('/api/usage', usageRoutes);
 
 // Query log routes (admin CSV export)
 app.use('/api/query-log', queryLogRoutes);
+
+// In production, serve the frontend static files from the same server.
+// The built frontend is expected at ../frontend/dist relative to the backend root.
+if (process.env.NODE_ENV === 'production') {
+  const frontendPath = path.resolve(__dirname, '../../frontend/dist');
+  app.use(express.static(frontendPath));
+
+  // SPA fallback: any non-API route serves index.html
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
+}
 
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

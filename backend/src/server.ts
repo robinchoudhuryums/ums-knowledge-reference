@@ -10,6 +10,7 @@ import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
 import usageRoutes from './routes/usage';
+import queryLogRoutes from './routes/queryLog';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -41,6 +42,9 @@ app.use('/api/feedback', feedbackRoutes);
 
 // Usage routes
 app.use('/api/usage', usageRoutes);
+
+// Query log routes (admin CSV export)
+app.use('/api/query-log', queryLogRoutes);
 
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -11,6 +11,7 @@ import {
 } from '../services/s3Storage';
 import { removeDocumentChunks, searchChunksByKeyword } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
+import { extractTextWithOcr } from '../services/ocr';
 import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
@@ -254,5 +255,55 @@ router.get('/search/text', authenticate, async (req: AuthRequest, res: Response)
     res.status(500).json({ error: 'Search failed' });
   }
 });
+
+// --- OCR (extract text from scanned documents) ---
+
+const ocrUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // Textract sync API limit: 10MB
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff'];
+    const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif'];
+    const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
+
+    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`OCR only supports PDF, PNG, JPEG, and TIFF files (got ${file.mimetype})`));
+    }
+  },
+});
+
+router.post(
+  '/ocr',
+  authenticate,
+  ocrUpload.single('file'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'No file provided' });
+        return;
+      }
+
+      const result = await extractTextWithOcr(req.file.buffer, req.file.originalname);
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'ocr', {
+        filename: req.file.originalname,
+        pageCount: result.pageCount,
+        confidence: Math.round(result.confidence),
+      });
+
+      res.json({
+        text: result.text,
+        pageCount: result.pageCount,
+        confidence: result.confidence,
+        filename: req.file.originalname,
+      });
+    } catch (error) {
+      logger.error('OCR extraction failed', { error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'OCR extraction failed' });
+    }
+  }
+);
 
 export default router;

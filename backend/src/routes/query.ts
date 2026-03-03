@@ -4,6 +4,7 @@ import { generateEmbedding } from '../services/embeddings';
 import { searchVectorStore } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
 import { checkUsageLimit, recordQuery } from '../services/usage';
+import { logQuery } from '../services/queryLog';
 import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';
 import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
@@ -168,6 +169,9 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       confidence,
     });
 
+    // Log query for analytics / CSV export
+    await logQuery(req.user!.id, req.user!.username, question, answer, confidence, sources, collectionIds);
+
     const response: QueryResponse = { answer, sources, confidence };
     res.json(response);
   } catch (error) {
@@ -274,6 +278,9 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       confidence,
       streamed: true,
     }).catch(() => {});
+    // Log query for analytics / CSV export
+    const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore);
+    logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(() => {});
   } catch (error) {
     logger.error('Streaming query failed', { error: String(error) });
     if (res.headersSent) {

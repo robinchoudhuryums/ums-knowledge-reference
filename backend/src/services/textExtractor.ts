@@ -3,6 +3,7 @@ import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import { parse as csvParse } from 'csv-parse/sync';
 import { logger } from '../utils/logger';
+import { extractTextWithOcr } from './ocr';
 
 export interface ExtractedText {
   text: string;
@@ -42,8 +43,30 @@ export async function extractText(buffer: Buffer, mimeType: string, filename: st
   }
 }
 
+// Minimum characters from pdf-parse before we consider it a real text PDF.
+// Below this threshold the PDF is likely scanned/image-based and we try OCR.
+const OCR_FALLBACK_THRESHOLD = 50;
+
 async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
   const result = await pdfParse(buffer);
+
+  // If pdf-parse yields very little text, the PDF is probably scanned — try OCR
+  const trimmedText = result.text.replace(/\s+/g, ' ').trim();
+  if (trimmedText.length < OCR_FALLBACK_THRESHOLD) {
+    try {
+      logger.info('PDF has minimal text, attempting OCR fallback', {
+        extractedChars: trimmedText.length,
+      });
+      const ocrResult = await extractTextWithOcr(buffer, 'scanned.pdf');
+      if (ocrResult.text.trim().length > trimmedText.length) {
+        return { text: ocrResult.text };
+      }
+    } catch (ocrError) {
+      logger.warn('OCR fallback failed, using original pdf-parse output', {
+        error: String(ocrError),
+      });
+    }
+  }
 
   // pdf-parse separates pages with \n\n, we can approximate page breaks
   const pages = result.text.split(/\f/); // form feed character

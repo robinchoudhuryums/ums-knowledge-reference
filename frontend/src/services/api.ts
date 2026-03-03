@@ -182,3 +182,44 @@ export async function searchDocuments(
   if (collectionId) params.set('collectionId', collectionId);
   return request(`/documents/search/text?${params.toString()}`);
 }
+
+// OCR
+export interface OcrResponse {
+  text: string;
+  pageCount: number;
+  confidence: number;
+  filename: string;
+}
+
+export async function ocrDocument(file: File): Promise<OcrResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return request('/documents/ocr', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+// Query log (admin) — downloads CSV as a blob and triggers browser download
+export async function downloadQueryLogCsv(date: string): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}/query-log/${date}/csv`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Download failed' }));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `query-log-${date}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

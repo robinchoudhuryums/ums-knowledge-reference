@@ -56,7 +56,7 @@ export interface AuditLogEntry {
   timestamp: string;
   userId: string;
   username: string;
-  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback';
+  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr';
   details: Record<string, unknown>;
 }
 
@@ -121,6 +121,18 @@ export interface UsageLimits {
   dailyPerUser: number;
   dailyTotal: number;
   monthlyTotal: number;
+}
+
+export interface QueryLogEntry {
+  timestamp: string;
+  userId: string;
+  username: string;
+  question: string;
+  answer: string;
+  confidence: 'high' | 'partial' | 'low';
+  sourceDocuments: string;
+  sourceCount: number;
+  collectionIds?: string[];
 }
 
 export interface SourceCitation {

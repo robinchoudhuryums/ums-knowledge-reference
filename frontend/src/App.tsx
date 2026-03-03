@@ -4,10 +4,15 @@ import { LoginForm } from './components/LoginForm';
 import { ChatInterface } from './components/ChatInterface';
 import { DocumentManager } from './components/DocumentManager';
 import { DocumentSearch } from './components/DocumentSearch';
+import { PopoutButton } from './components/PopoutButton';
+import { OcrTool } from './components/OcrTool';
+import { QueryLogViewer } from './components/QueryLogViewer';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
-type Tab = 'chat' | 'search' | 'documents';
+type Tab = 'chat' | 'search' | 'documents' | 'ocr' | 'admin';
+
+const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
 export default function App() {
   const { auth, login, logout, isAuthenticated, isAdmin } = useAuth();
@@ -33,10 +38,29 @@ export default function App() {
     return <LoginForm onLogin={login} />;
   }
 
-  const tabs: { key: Tab; label: string }[] = [
+  // Pop-out mode: compact chat-only window
+  if (isPopout) {
+    return (
+      <div style={styles.app}>
+        <header style={styles.popoutHeader}>
+          <h1 style={styles.popoutLogo}>UMS Chat</h1>
+          <div style={styles.headerRight}>
+            <span style={styles.user}>{auth.user?.username}</span>
+          </div>
+        </header>
+        <main style={styles.main}>
+          <ChatInterface collections={collections} />
+        </main>
+      </div>
+    );
+  }
+
+  const tabs: { key: Tab; label: string; adminOnly?: boolean }[] = [
     { key: 'chat', label: 'Ask Questions' },
     { key: 'search', label: 'Search' },
+    { key: 'ocr', label: 'OCR Scan' },
     { key: 'documents', label: 'Documents' },
+    { key: 'admin', label: 'Admin', adminOnly: true },
   ];
 
   return (
@@ -45,18 +69,21 @@ export default function App() {
         <div style={styles.headerLeft}>
           <h1 style={styles.logo}>UMS Knowledge Base</h1>
           <nav style={styles.nav}>
-            {tabs.map(t => (
-              <button
-                key={t.key}
-                onClick={() => setActiveTab(t.key)}
-                style={activeTab === t.key ? styles.tabActive : styles.tab}
-              >
-                {t.label}
-              </button>
-            ))}
+            {tabs
+              .filter(t => !t.adminOnly || isAdmin)
+              .map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key)}
+                  style={activeTab === t.key ? styles.tabActive : styles.tab}
+                >
+                  {t.label}
+                </button>
+              ))}
           </nav>
         </div>
         <div style={styles.headerRight}>
+          <PopoutButton />
           <span style={styles.user}>{auth.user?.username} ({auth.user?.role})</span>
           <button onClick={logout} style={styles.logoutButton}>Sign Out</button>
         </div>
@@ -65,6 +92,7 @@ export default function App() {
       <main style={styles.main}>
         {activeTab === 'chat' && <ChatInterface collections={collections} />}
         {activeTab === 'search' && <DocumentSearch collections={collections} />}
+        {activeTab === 'ocr' && <OcrTool />}
         {activeTab === 'documents' && (
           <DocumentManager
             isAdmin={isAdmin}
@@ -72,6 +100,7 @@ export default function App() {
             onCollectionsChange={loadCollections}
           />
         )}
+        {activeTab === 'admin' && isAdmin && <QueryLogViewer />}
       </main>
     </div>
   );
@@ -123,4 +152,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
   },
   main: { flex: 1, overflow: 'hidden' },
+  popoutHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '0 16px',
+    height: '44px',
+    borderBottom: '1px solid #eee',
+    backgroundColor: '#1a1a2e',
+    color: 'white',
+  },
+  popoutLogo: { margin: 0, fontSize: '15px', fontWeight: 600 },
 };

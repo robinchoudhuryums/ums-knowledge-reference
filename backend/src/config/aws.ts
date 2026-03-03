@@ -29,4 +29,7 @@ export const S3_PREFIXES = {
 } as const;
 
 export const BEDROCK_EMBEDDING_MODEL = process.env.BEDROCK_EMBEDDING_MODEL || 'amazon.titan-embed-text-v2:0';
-export const BEDROCK_GENERATION_MODEL = process.env.BEDROCK_GENERATION_MODEL || 'anthropic.claude-3-sonnet-20240229-v1:0';
+// Default to Haiku for cost efficiency (~10x cheaper than Sonnet).
+// For a RAG tool, retrieval quality drives answer quality more than model size.
+// Override with BEDROCK_GENERATION_MODEL=anthropic.claude-3-sonnet-20240229-v1:0 if needed.
+export const BEDROCK_GENERATION_MODEL = process.env.BEDROCK_GENERATION_MODEL || 'anthropic.claude-3-haiku-20240307-v1:0';

@@ -5,11 +5,11 @@ import { logger } from '../utils/logger';
 const USAGE_PREFIX = 'usage/';
 const LIMITS_KEY = 'usage-limits.json';
 
-// Default limits — admin can adjust via API
+// Default limits — admin can adjust via PUT /api/usage/limits
 const DEFAULT_LIMITS: UsageLimits = {
-  dailyPerUser: 100,
-  dailyTotal: 500,
-  monthlyTotal: 10000,
+  dailyPerUser: 30,
+  dailyTotal: 300,
+  monthlyTotal: 5000,
 };
 
 // In-memory cache for fast checks (persisted to S3 periodically)

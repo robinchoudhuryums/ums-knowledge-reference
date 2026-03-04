@@ -30,6 +30,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
+    // If the server rejects our token, clear stale auth and reload to show login
+    if (response.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.reload();
+      throw new Error('Session expired. Please log in again.');
+    }
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
     throw new Error(error.error || `HTTP ${response.status}`);
   }
@@ -116,6 +123,12 @@ export async function queryKnowledgeBaseStream(
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.reload();
+      return;
+    }
     const err = await response.json().catch(() => ({ error: 'Request failed' }));
     onError(err.error || `HTTP ${response.status}`);
     return;

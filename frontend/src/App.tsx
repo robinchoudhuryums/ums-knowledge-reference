@@ -54,7 +54,7 @@ export default function App() {
         <header style={styles.popoutHeader}>
           <h1 style={styles.popoutLogo}>UMS Chat</h1>
           <div style={styles.headerRight}>
-            <span style={styles.user}>{auth.user?.username}</span>
+            <span style={styles.popoutUser}>{auth.user?.username}</span>
           </div>
         </header>
         <main style={styles.main}>
@@ -77,7 +77,7 @@ export default function App() {
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.logoGroup}>
-            <div style={styles.logoMark}>KB</div>
+            <div style={styles.logoMark}>+</div>
             <h1 style={styles.logo}>UMS Knowledge Base</h1>
           </div>
           <nav style={styles.nav}>
@@ -130,16 +130,17 @@ export default function App() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  app: { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#f8f9fb' },
+  app: { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#EDF4FC' },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '0 24px',
-    height: '60px',
-    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-    color: 'white',
-    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
+    height: '62px',
+    background: '#ffffff',
+    color: '#1A2B3C',
+    boxShadow: '0 1px 4px rgba(0, 0, 0, 0.06)',
+    borderBottom: '1px solid #D6E4F0',
     position: 'relative' as const,
     zIndex: 10,
   },
@@ -147,24 +148,24 @@ const styles: Record<string, React.CSSProperties> = {
   headerRight: { display: 'flex', alignItems: 'center', gap: '12px' },
   logoGroup: { display: 'flex', alignItems: 'center', gap: '10px' },
   logoMark: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '8px',
-    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    width: '34px',
+    height: '34px',
+    borderRadius: '10px',
+    background: 'linear-gradient(135deg, #1B6FC9, #42A5F5)',
+    color: 'white',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '12px',
+    fontSize: '18px',
     fontWeight: 700,
-    letterSpacing: '0.5px',
     flexShrink: 0,
   },
-  logo: { margin: 0, fontSize: '16px', fontWeight: 600, letterSpacing: '-0.2px' },
+  logo: { margin: 0, fontSize: '17px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
   nav: { display: 'flex', gap: '2px' },
   tab: {
     padding: '7px 14px',
     background: 'transparent',
-    color: 'rgba(255,255,255,0.6)',
+    color: '#6B8299',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
@@ -177,8 +178,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     padding: '7px 14px',
-    background: 'rgba(99, 102, 241, 0.25)',
-    color: 'white',
+    background: '#E3F2FD',
+    color: '#1565C0',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
@@ -187,59 +188,61 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    boxShadow: 'inset 0 0 0 1px rgba(99, 102, 241, 0.3)',
   },
   tabIcon: { fontSize: '14px' },
   userBadge: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    background: 'rgba(255,255,255,0.08)',
+    background: '#F0F7FF',
     borderRadius: '8px',
     padding: '4px 12px 4px 4px',
+    border: '1px solid #D6E4F0',
   },
   avatar: {
     width: '28px',
     height: '28px',
     borderRadius: '6px',
-    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    background: 'linear-gradient(135deg, #1B6FC9, #42A5F5)',
+    color: 'white',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontSize: '12px',
     fontWeight: 600,
   },
-  user: { fontSize: '13px', color: 'rgba(255,255,255,0.9)' },
+  user: { fontSize: '13px', color: '#1A2B3C' },
+  popoutUser: { fontSize: '13px', color: 'rgba(255,255,255,0.9)' },
   roleBadge: {
     fontSize: '10px',
     padding: '2px 6px',
-    background: 'rgba(99, 102, 241, 0.3)',
+    background: '#E3F2FD',
     borderRadius: '4px',
-    color: 'rgba(255,255,255,0.8)',
+    color: '#1565C0',
     textTransform: 'uppercase' as const,
     fontWeight: 600,
     letterSpacing: '0.5px',
   },
   logoutButton: {
     padding: '6px 14px',
-    background: 'rgba(255,255,255,0.08)',
-    color: 'rgba(255,255,255,0.8)',
-    border: '1px solid rgba(255,255,255,0.15)',
+    background: 'transparent',
+    color: '#6B8299',
+    border: '1px solid #D6E4F0',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 500,
   },
   main: { flex: 1, overflow: 'hidden' },
-  adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px' },
-  adminDivider: { border: 'none', borderTop: '1px solid #e2e8f0', margin: '12px 24px' },
+  adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px', background: '#ffffff' },
+  adminDivider: { border: 'none', borderTop: '1px solid #D6E4F0', margin: '12px 24px' },
   popoutHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '0 16px',
     height: '44px',
-    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+    background: 'linear-gradient(135deg, #1565C0, #1B6FC9)',
     color: 'white',
   },
   popoutLogo: { margin: 0, fontSize: '15px', fontWeight: 600 },

@@ -138,7 +138,7 @@ export function FaqDashboard() {
                 {data.topQuestions.map((q, i) => (
                   <tr key={i}>
                     <td style={styles.td}>{q.question}</td>
-                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600, color: '#6366f1' }}>{q.frequency}</td>
+                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600, color: '#1B6FC9' }}>{q.frequency}</td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       <span style={{
                         ...styles.badge,
@@ -148,7 +148,7 @@ export function FaqDashboard() {
                         {q.avgConfidence}
                       </span>
                     </td>
-                    <td style={{ ...styles.td, color: '#64748b' }}>{q.agents.join(', ')}</td>
+                    <td style={{ ...styles.td, color: '#6B8299' }}>{q.agents.join(', ')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -177,7 +177,7 @@ export function FaqDashboard() {
                 {data.lowConfidenceQuestions.map((q, i) => (
                   <tr key={i}>
                     <td style={styles.td}>{q.question}</td>
-                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600, color: '#6366f1' }}>{q.frequency}</td>
+                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600, color: '#1B6FC9' }}>{q.frequency}</td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       <span style={{
                         ...styles.badge,
@@ -240,31 +240,31 @@ export function FaqDashboard() {
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: '28px', maxWidth: '920px', overflowY: 'auto', height: '100%' },
   headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.3px' },
-  subtitle: { margin: '4px 0 24px', fontSize: '13px', color: '#94a3b8' },
+  title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
+  subtitle: { margin: '4px 0 24px', fontSize: '13px', color: '#8DA4B8' },
   periodSelector: { display: 'flex', gap: '4px' },
   periodButton: {
     padding: '6px 14px',
-    background: '#f8fafc',
-    border: '1px solid #e2e8f0',
+    background: '#F7FAFD',
+    border: '1px solid #D6E4F0',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
-    color: '#64748b',
+    color: '#6B8299',
     fontWeight: 500,
   },
   periodActive: {
     padding: '6px 14px',
-    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+    background: 'linear-gradient(135deg, #1B6FC9, #1565C0)',
     color: 'white',
-    border: '1px solid #6366f1',
+    border: '1px solid #1B6FC9',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 600,
-    boxShadow: '0 2px 6px rgba(99, 102, 241, 0.25)',
+    boxShadow: '0 2px 6px rgba(27, 111, 201, 0.25)',
   },
-  loading: { color: '#94a3b8', fontSize: '14px' },
+  loading: { color: '#8DA4B8', fontSize: '14px' },
   error: { color: '#dc2626', fontSize: '14px', padding: '14px', background: '#fef2f2', borderRadius: '10px', border: '1px solid #fecaca' },
   cardRow: { display: 'flex', gap: '12px', flexWrap: 'wrap' as const, marginBottom: '28px' },
   card: {
@@ -272,29 +272,29 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '18px',
     background: '#ffffff',
     borderRadius: '12px',
-    border: '1px solid #f1f5f9',
+    border: '1px solid #E8EFF5',
     textAlign: 'center' as const,
     boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
   },
-  cardValue: { fontSize: '28px', fontWeight: 700, color: '#0f172a' },
-  cardLabel: { fontSize: '11px', color: '#94a3b8', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.5px', fontWeight: 500 },
+  cardValue: { fontSize: '28px', fontWeight: 700, color: '#0D2137' },
+  cardLabel: { fontSize: '11px', color: '#8DA4B8', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.5px', fontWeight: 500 },
   section: { marginBottom: '32px' },
-  sectionTitle: { margin: '0 0 4px', fontSize: '16px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.2px' },
-  sectionHint: { margin: '0 0 14px', fontSize: '13px', color: '#94a3b8', lineHeight: '1.4' },
-  tableWrapper: { borderRadius: '12px', border: '1px solid #f1f5f9', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  sectionTitle: { margin: '0 0 4px', fontSize: '16px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.2px' },
+  sectionHint: { margin: '0 0 14px', fontSize: '13px', color: '#8DA4B8', lineHeight: '1.4' },
+  tableWrapper: { borderRadius: '12px', border: '1px solid #E8EFF5', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '13px' },
   th: {
     textAlign: 'left' as const,
     padding: '12px 16px',
-    background: '#f8fafc',
-    color: '#64748b',
+    background: '#F7FAFD',
+    color: '#6B8299',
     fontSize: '11px',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.5px',
-    borderBottom: '1px solid #f1f5f9',
+    borderBottom: '1px solid #E8EFF5',
   },
-  td: { padding: '12px 16px', borderBottom: '1px solid #fafbfc', verticalAlign: 'top' as const, color: '#1e293b' },
+  td: { padding: '12px 16px', borderBottom: '1px solid #F7FAFD', verticalAlign: 'top' as const, color: '#1A2B3C' },
   badge: {
     display: 'inline-block',
     padding: '3px 10px',
@@ -305,9 +305,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   barChart: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   barRow: { display: 'flex', alignItems: 'center', gap: '10px' },
-  barDate: { width: '45px', fontSize: '12px', color: '#64748b', textAlign: 'right' as const, fontWeight: 500 },
-  barTrack: { flex: 1, height: '20px', background: '#f1f5f9', borderRadius: '6px', overflow: 'hidden' },
-  barFill: { height: '100%', background: 'linear-gradient(90deg, #6366f1, #818cf8)', borderRadius: '6px', transition: 'width 0.3s' },
-  barCount: { width: '30px', fontSize: '12px', color: '#64748b', fontWeight: 600 },
-  empty: { color: '#94a3b8', fontSize: '14px', textAlign: 'center' as const, padding: '48px 0' },
+  barDate: { width: '45px', fontSize: '12px', color: '#6B8299', textAlign: 'right' as const, fontWeight: 500 },
+  barTrack: { flex: 1, height: '20px', background: '#E8EFF5', borderRadius: '6px', overflow: 'hidden' },
+  barFill: { height: '100%', background: 'linear-gradient(90deg, #1B6FC9, #64B5F6)', borderRadius: '6px', transition: 'width 0.3s' },
+  barCount: { width: '30px', fontSize: '12px', color: '#6B8299', fontWeight: 600 },
+  empty: { color: '#8DA4B8', fontSize: '14px', textAlign: 'center' as const, padding: '48px 0' },
 };

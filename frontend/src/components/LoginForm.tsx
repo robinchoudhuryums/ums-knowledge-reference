@@ -26,7 +26,7 @@ export function LoginForm({ onLogin }: Props) {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <div style={styles.logoMark}>KB</div>
+        <div style={styles.logoMark}>+</div>
         <h1 style={styles.title}>UMS Knowledge Base</h1>
         <p style={styles.subtitle}>Sign in to access the knowledge base</p>
         <form onSubmit={handleSubmit} style={styles.form}>
@@ -68,42 +68,40 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)',
+    background: 'linear-gradient(160deg, #E3F2FD 0%, #BBDEFB 40%, #90CAF9 100%)',
   },
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    backdropFilter: 'blur(20px)',
+    backgroundColor: '#ffffff',
     borderRadius: '16px',
     padding: '48px 40px',
-    boxShadow: '0 25px 60px rgba(0, 0, 0, 0.3)',
+    boxShadow: '0 8px 32px rgba(21, 101, 192, 0.12)',
     width: '100%',
     maxWidth: '420px',
   },
   logoMark: {
-    width: '48px',
-    height: '48px',
-    borderRadius: '12px',
-    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    width: '52px',
+    height: '52px',
+    borderRadius: '14px',
+    background: 'linear-gradient(135deg, #1B6FC9, #42A5F5)',
     color: 'white',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '16px',
+    fontSize: '24px',
     fontWeight: 700,
     margin: '0 auto 16px',
-    letterSpacing: '0.5px',
   },
   title: {
     margin: '0 0 6px',
     fontSize: '22px',
     fontWeight: 700,
-    color: '#0f172a',
+    color: '#0D2137',
     textAlign: 'center' as const,
     letterSpacing: '-0.3px',
   },
   subtitle: {
     margin: '0 0 28px',
-    color: '#64748b',
+    color: '#6B8299',
     textAlign: 'center' as const,
     fontSize: '14px',
   },
@@ -120,19 +118,19 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     fontSize: '13px',
     fontWeight: 500,
-    color: '#475569',
+    color: '#4A6274',
   },
   input: {
     padding: '11px 14px',
-    border: '1px solid #e2e8f0',
+    border: '1px solid #D6E4F0',
     borderRadius: '10px',
     fontSize: '14px',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#F7FAFD',
     transition: 'all 0.15s ease',
   },
   button: {
     padding: '12px',
-    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+    background: 'linear-gradient(135deg, #1B6FC9, #1565C0)',
     color: 'white',
     border: 'none',
     borderRadius: '10px',
@@ -140,7 +138,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: 'pointer',
     marginTop: '4px',
-    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+    boxShadow: '0 2px 8px rgba(27, 111, 201, 0.3)',
     letterSpacing: '0.2px',
   },
   error: {

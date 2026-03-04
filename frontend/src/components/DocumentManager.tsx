@@ -204,12 +204,12 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                     <span style={styles.fileIcon}>{getFileIcon(doc.originalName)}</span>
                     {doc.originalName}
                   </td>
-                  <td style={{ ...styles.td, color: '#64748b' }}>{formatSize(doc.sizeBytes)}</td>
+                  <td style={{ ...styles.td, color: '#6B8299' }}>{formatSize(doc.sizeBytes)}</td>
                   <td style={styles.td}>
                     <span style={styles.chunkBadge}>{doc.chunkCount}</span>
                   </td>
-                  <td style={{ ...styles.td, color: '#64748b' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
-                  <td style={{ ...styles.td, color: '#64748b' }}>{doc.uploadedBy}</td>
+                  <td style={{ ...styles.td, color: '#6B8299' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
+                  <td style={{ ...styles.td, color: '#6B8299' }}>{doc.uploadedBy}</td>
                   {isAdmin && (
                     <td style={styles.td}>
                       <button onClick={() => handleDelete(doc)} style={styles.deleteButton}>Delete</button>
@@ -219,7 +219,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
               ))}
               {documents.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 6 : 5} style={{ ...styles.td, textAlign: 'center', color: '#94a3b8', padding: '40px 12px' }}>
+                  <td colSpan={isAdmin ? 6 : 5} style={{ ...styles.td, textAlign: 'center', color: '#8DA4B8', padding: '40px 12px' }}>
                     No documents uploaded yet
                   </td>
                 </tr>
@@ -234,29 +234,29 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
 
 const styles: Record<string, React.CSSProperties> = {
   container: { display: 'flex', height: '100%', background: '#ffffff' },
-  sidebar: { width: '260px', borderRight: '1px solid #f1f5f9', padding: '20px', overflowY: 'auto', background: '#fafbfc' },
-  sidebarTitle: { margin: '0 0 14px', fontSize: '13px', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  sidebar: { width: '260px', borderRight: '1px solid #E8EFF5', padding: '20px', overflowY: 'auto', background: '#F0F7FF' },
+  sidebarTitle: { margin: '0 0 14px', fontSize: '13px', fontWeight: 600, color: '#8DA4B8', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   colRow: { display: 'flex', alignItems: 'center', gap: '4px' },
-  colButton: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', color: '#475569', transition: 'all 0.15s' },
-  colButtonActive: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#4338ca' },
-  deleteColButton: { background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: '14px', borderRadius: '4px', padding: '4px 8px' },
-  addColButton: { padding: '9px 14px', border: '1px dashed #d1d5db', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '13px', color: '#6366f1', marginTop: '8px', width: '100%', fontWeight: 500 },
+  colButton: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', color: '#4A6274', transition: 'all 0.15s' },
+  colButtonActive: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'linear-gradient(135deg, #E3F2FD, #BBDEFB)', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#0D47A1' },
+  deleteColButton: { background: 'none', border: 'none', color: '#B0C4D8', cursor: 'pointer', fontSize: '14px', borderRadius: '4px', padding: '4px 8px' },
+  addColButton: { padding: '9px 14px', border: '1px dashed #d1d5db', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '13px', color: '#1B6FC9', marginTop: '8px', width: '100%', fontWeight: 500 },
   newColForm: { marginTop: '8px', display: 'flex', flexDirection: 'column' as const, gap: '6px' },
-  smallInput: { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', background: '#ffffff' },
-  smallButton: { padding: '7px 14px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 },
-  smallButtonGhost: { padding: '7px 14px', background: 'none', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: '#64748b' },
+  smallInput: { padding: '8px 10px', border: '1px solid #D6E4F0', borderRadius: '8px', fontSize: '13px', background: '#ffffff' },
+  smallButton: { padding: '7px 14px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 },
+  smallButtonGhost: { padding: '7px 14px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: '#6B8299' },
   main: { flex: 1, padding: '24px', overflowY: 'auto' },
   toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.3px' },
-  subtitle: { margin: '2px 0 0', fontSize: '13px', color: '#94a3b8' },
-  uploadButton: { padding: '10px 22px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500, boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)' },
+  title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
+  subtitle: { margin: '2px 0 0', fontSize: '13px', color: '#8DA4B8' },
+  uploadButton: { padding: '10px 22px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
   error: { background: '#fef2f2', color: '#dc2626', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', border: '1px solid #fecaca' },
-  tableWrapper: { borderRadius: '12px', border: '1px solid #f1f5f9', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  tableWrapper: { borderRadius: '12px', border: '1px solid #E8EFF5', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   table: { width: '100%', borderCollapse: 'collapse' as const },
-  th: { textAlign: 'left' as const, padding: '12px 16px', background: '#f8fafc', fontSize: '12px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid #f1f5f9' },
-  td: { padding: '12px 16px', borderBottom: '1px solid #f8fafc', fontSize: '14px', color: '#1e293b' },
+  th: { textAlign: 'left' as const, padding: '12px 16px', background: '#F7FAFD', fontSize: '12px', color: '#6B8299', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid #E8EFF5' },
+  td: { padding: '12px 16px', borderBottom: '1px solid #F7FAFD', fontSize: '14px', color: '#1A2B3C' },
   tr: { transition: 'background 0.1s' },
   fileIcon: { marginRight: '8px', fontSize: '15px' },
-  chunkBadge: { background: '#f1f5f9', color: '#6366f1', padding: '2px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 600 },
+  chunkBadge: { background: '#E8EFF5', color: '#1B6FC9', padding: '2px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 600 },
   deleteButton: { padding: '5px 12px', background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 500 },
 };

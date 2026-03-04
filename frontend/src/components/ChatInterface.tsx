@@ -170,7 +170,7 @@ export function ChatInterface({ collections }: Props) {
       </div>
 
       {/* Messages */}
-      <div style={styles.messages}>
+      <div style={styles.messages} className="hex-pattern">
         {conversation.length === 0 && !loading && (
           <div style={styles.welcome}>
             <div style={styles.welcomeIconBg}>

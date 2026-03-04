@@ -24,7 +24,7 @@ export function LoginForm({ onLogin }: Props) {
   };
 
   return (
-    <div style={styles.container}>
+    <div style={styles.container} className="hex-pattern-strong">
       <div style={styles.card}>
         <div style={styles.logoMark}>+</div>
         <h1 style={styles.title}>UMS Knowledge Base</h1>

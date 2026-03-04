@@ -50,7 +50,7 @@ export default function App() {
   // Pop-out mode: compact chat-only window
   if (isPopout) {
     return (
-      <div style={styles.app}>
+      <div style={styles.app} className="hex-pattern">
         <header style={styles.popoutHeader}>
           <h1 style={styles.popoutLogo}>UMS Chat</h1>
           <div style={styles.headerRight}>
@@ -73,7 +73,7 @@ export default function App() {
   ];
 
   return (
-    <div style={styles.app}>
+    <div style={styles.app} className="hex-pattern">
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.logoGroup}>

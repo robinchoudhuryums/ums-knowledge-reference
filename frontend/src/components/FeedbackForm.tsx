@@ -75,6 +75,10 @@ export function FeedbackForm({ question, answer, sources, onClose }: Props) {
           </div>
         </div>
 
+        <div style={styles.phiWarning}>
+          <strong>PHI Notice:</strong> Patient names and transaction numbers entered here are stored in encrypted audit logs. Only include PHI when necessary for review.
+        </div>
+
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.field}>
             <label style={styles.label}>Patient Name (optional)</label>
@@ -155,6 +159,7 @@ const styles: Record<string, React.CSSProperties> = {
   cancelButton: { padding: '9px 18px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', color: '#6B8299' },
   submitButton: { padding: '9px 22px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
 
+  phiWarning: { padding: '12px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', fontSize: '12px', color: '#92400e', lineHeight: '1.5', marginBottom: '16px' },
   successMessage: { textAlign: 'center', padding: '20px 0' },
   successIcon: { fontSize: '40px', color: '#166534', marginBottom: '12px', width: '56px', height: '56px', lineHeight: '56px', borderRadius: '50%', background: '#dcfce7', display: 'inline-block' },
   successTitle: { margin: '0 0 8px', fontSize: '18px', color: '#0D2137', fontWeight: 700 },

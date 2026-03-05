@@ -8,6 +8,29 @@ import { logger } from '../utils/logger';
 const JWT_SECRET = process.env.JWT_SECRET || 'ums-kb-dev-secret-change-in-production';
 const USERS_KEY = 'users.json';
 
+// Warn at startup if using the default JWT secret
+if (!process.env.JWT_SECRET) {
+  console.warn('[SECURITY WARNING] JWT_SECRET not set — using insecure default. Set JWT_SECRET in production!');
+}
+
+const MIN_PASSWORD_LENGTH = 8;
+
+function validatePassword(password: string): string | null {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'Password must contain at least one uppercase letter';
+  }
+  if (!/[a-z]/.test(password)) {
+    return 'Password must contain at least one lowercase letter';
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Password must contain at least one number';
+  }
+  return null;
+}
+
 export interface AuthRequest extends Request {
   user?: { id: string; username: string; role: 'admin' | 'user' };
 }
@@ -79,13 +102,19 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
     return;
   }
 
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    res.status(400).json({ error: passwordError });
+    return;
+  }
+
   const users = await getUsers();
   if (users.find(u => u.username === username)) {
     res.status(409).json({ error: 'Username already exists' });
     return;
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await bcrypt.hash(password, 12);
   const newUser: User = {
     id: `user-${Date.now()}`,
     username,

@@ -4,6 +4,8 @@ dotenv.config();
 import path from 'path';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
 import { initializeAuth, loginHandler, createUserHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
 import { initializeVectorStore } from './services/vectorStore';
@@ -17,12 +19,21 @@ import queryLogRoutes from './routes/queryLog';
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
-// Middleware
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+  crossOriginEmbedderPolicy: false,
+}));
+
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true,
 }));
+
 app.use(express.json({ limit: '1mb' }));
+
+// Disable X-Powered-By (helmet does this too, belt + suspenders)
+app.disable('x-powered-by');
 
 // Request logging — logs every incoming request with method, path, status, and duration
 app.use((req, res, next) => {
@@ -34,13 +45,32 @@ app.use((req, res, next) => {
   next();
 });
 
+// Rate limiting — login: strict (brute force protection), API: general
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 10,                     // 10 attempts per window
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,  // 1 minute
+  max: 60,               // 60 requests per minute
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/', apiLimiter);
+
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'ums-knowledge-base' });
 });
 
 // Auth routes
-app.post('/api/auth/login', loginHandler);
+app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/users', authenticate, requireAdmin, createUserHandler as any);
 
 // Document routes

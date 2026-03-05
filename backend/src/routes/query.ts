@@ -180,12 +180,21 @@ function parseConfidence(
   return { answer: rawAnswer, confidence };
 }
 
+/**
+ * Sanitize user input: trim whitespace, enforce max length, strip control characters.
+ */
+function sanitizeInput(text: string, maxLength: number = 2000): string {
+  // Remove control characters except newlines and tabs
+  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim().slice(0, maxLength);
+}
+
 // Standard (non-streaming) query endpoint
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { question, collectionIds, conversationHistory, topK }: QueryRequest = req.body;
+    const { question: rawQuestion, collectionIds, conversationHistory, topK }: QueryRequest = req.body;
+    const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
 
-    if (!question?.trim()) {
+    if (!question) {
       res.status(400).json({ error: 'Question is required' });
       return;
     }
@@ -269,9 +278,10 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 // Streaming query endpoint — sends answer tokens as Server-Sent Events
 router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { question, collectionIds, conversationHistory, topK }: QueryRequest = req.body;
+    const { question: rawQuestion, collectionIds, conversationHistory, topK }: QueryRequest = req.body;
+    const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
 
-    if (!question?.trim()) {
+    if (!question) {
       res.status(400).json({ error: 'Question is required' });
       return;
     }

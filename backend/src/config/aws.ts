@@ -29,7 +29,7 @@ export const S3_PREFIXES = {
 } as const;
 
 export const BEDROCK_EMBEDDING_MODEL = process.env.BEDROCK_EMBEDDING_MODEL || 'amazon.titan-embed-text-v2:0';
-// Default to Haiku 4.5 for best cost/quality balance.
+// Default to Haiku 4.5 via cross-region inference profile (required for newer models).
 // For a RAG tool, retrieval quality drives answer quality more than model size.
 // Override with BEDROCK_GENERATION_MODEL env var if needed.
-export const BEDROCK_GENERATION_MODEL = process.env.BEDROCK_GENERATION_MODEL || 'anthropic.claude-haiku-4-5-20251001-v1:0';
+export const BEDROCK_GENERATION_MODEL = process.env.BEDROCK_GENERATION_MODEL || 'us.anthropic.claude-haiku-4-5-20251001-v1:0';

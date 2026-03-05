@@ -25,7 +25,7 @@ services:
       - key: S3_BUCKET
         value: ums-knowledge-reference
       - key: BEDROCK_GENERATION_MODEL
-        value: anthropic.claude-haiku-4-5-20251001-v1:0
+        value: us.anthropic.claude-haiku-4-5-20251001-v1:0
       - key: JWT_SECRET
         generateValue: true  # Render auto-generates a secure random string
       - key: CORS_ORIGIN

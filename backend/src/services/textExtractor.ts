@@ -48,40 +48,56 @@ export async function extractText(buffer: Buffer, mimeType: string, filename: st
 const OCR_FALLBACK_THRESHOLD = 50;
 
 async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
-  const result = await pdfParse(buffer);
+  // Run both pdf-parse (text layer) and Textract OCR (captures text in images) in parallel.
+  // This ensures we don't miss text embedded in images, diagrams, or charts.
+  const [pdfResult, ocrResult] = await Promise.allSettled([
+    pdfParse(buffer),
+    extractTextWithOcr(buffer, 'document.pdf'),
+  ]);
 
-  // If pdf-parse yields very little text, the PDF is probably scanned — try OCR
-  const trimmedText = result.text.replace(/\s+/g, ' ').trim();
-  if (trimmedText.length < OCR_FALLBACK_THRESHOLD) {
-    try {
-      logger.info('PDF has minimal text, attempting OCR fallback', {
-        extractedChars: trimmedText.length,
-      });
-      const ocrResult = await extractTextWithOcr(buffer, 'scanned.pdf');
-      if (ocrResult.text.trim().length > trimmedText.length) {
-        return { text: ocrResult.text };
-      }
-    } catch (ocrError) {
-      logger.warn('OCR fallback failed, using original pdf-parse output', {
-        error: String(ocrError),
-      });
+  const pdfText = pdfResult.status === 'fulfilled' ? pdfResult.value.text : '';
+  const ocrText = ocrResult.status === 'fulfilled' ? ocrResult.value.text : '';
+
+  const trimmedPdf = pdfText.replace(/\s+/g, ' ').trim();
+  const trimmedOcr = ocrText.replace(/\s+/g, ' ').trim();
+
+  // If pdf-parse got almost nothing, use OCR
+  if (trimmedPdf.length < OCR_FALLBACK_THRESHOLD && trimmedOcr.length > trimmedPdf.length) {
+    logger.info('PDF has minimal text layer, using OCR result', {
+      pdfParseChars: trimmedPdf.length,
+      ocrChars: trimmedOcr.length,
+    });
+    return { text: ocrText };
+  }
+
+  // If OCR captured significantly more text (>20% more), it likely found text in images
+  if (trimmedOcr.length > trimmedPdf.length * 1.2) {
+    logger.info('OCR captured more text than pdf-parse (likely text in images), using OCR result', {
+      pdfParseChars: trimmedPdf.length,
+      ocrChars: trimmedOcr.length,
+    });
+    return { text: ocrText };
+  }
+
+  // pdf-parse has good text with page breaks — prefer it for better formatting
+  if (pdfResult.status === 'fulfilled') {
+    const pages = pdfResult.value.text.split(/\f/);
+    const pageBreaks: number[] = [];
+    let offset = 0;
+    for (let i = 0; i < pages.length - 1; i++) {
+      offset += pages[i].length;
+      pageBreaks.push(offset);
+      offset += 1;
     }
+    return { text: pdfResult.value.text, pageBreaks };
   }
 
-  // pdf-parse separates pages with \n\n, we can approximate page breaks
-  const pages = result.text.split(/\f/); // form feed character
-  const pageBreaks: number[] = [];
-  let offset = 0;
-  for (let i = 0; i < pages.length - 1; i++) {
-    offset += pages[i].length;
-    pageBreaks.push(offset);
-    offset += 1; // for the form feed char
+  // Both failed — nothing we can do
+  if (!trimmedOcr && !trimmedPdf) {
+    throw new Error('Failed to extract text from PDF via both pdf-parse and OCR');
   }
 
-  return {
-    text: result.text,
-    pageBreaks,
-  };
+  return { text: ocrText || pdfText };
 }
 
 async function extractDocx(buffer: Buffer): Promise<ExtractedText> {

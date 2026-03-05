@@ -7,6 +7,7 @@ import cors from 'cors';
 import { logger } from './utils/logger';
 import { initializeAuth, loginHandler, createUserHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
 import { initializeVectorStore } from './services/vectorStore';
+import { startReindexScheduler } from './services/reindexer';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
@@ -84,6 +85,9 @@ async function start() {
 
     // Load vector store index into memory
     await initializeVectorStore();
+
+    // Start background re-indexing scheduler
+    startReindexScheduler();
 
     app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

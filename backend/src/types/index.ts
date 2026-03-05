@@ -18,6 +18,8 @@ export interface Document {
   chunkCount: number;
   version: number;
   previousVersionId?: string;
+  tags?: string[];
+  contentHash?: string;
 }
 
 export interface DocumentChunk {

@@ -219,6 +219,7 @@ export async function searchVectorStore(
   options: {
     topK?: number;
     collectionIds?: string[];
+    tags?: string[];
     semanticWeight?: number;
     keywordWeight?: number;
   } = {}
@@ -229,16 +230,23 @@ export async function searchVectorStore(
   const semanticWeight = options.semanticWeight ?? 0.7;
   const keywordWeight = options.keywordWeight ?? 0.3;
 
-  // Get document index to filter by collection and resolve document info
+  // Get document index to filter by collection/tags and resolve document info
   const documents = await getDocumentsIndex();
   const docMap = new Map(documents.map(d => [d.id, d]));
 
-  // Filter chunks by collection if specified
+  // Filter chunks by collection and/or tags if specified
   let candidates = cachedIndex!.chunks;
-  if (options.collectionIds && options.collectionIds.length > 0) {
+  const hasCollectionFilter = options.collectionIds && options.collectionIds.length > 0;
+  const hasTagFilter = options.tags && options.tags.length > 0;
+
+  if (hasCollectionFilter || hasTagFilter) {
     const allowedDocIds = new Set(
       documents
-        .filter(d => options.collectionIds!.includes(d.collectionId))
+        .filter(d => {
+          if (hasCollectionFilter && !options.collectionIds!.includes(d.collectionId)) return false;
+          if (hasTagFilter && (!d.tags || !options.tags!.some(t => d.tags!.includes(t)))) return false;
+          return true;
+        })
         .map(d => d.id)
     );
     candidates = candidates.filter(c => allowedDocIds.has(c.documentId));

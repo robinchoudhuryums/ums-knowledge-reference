@@ -73,6 +73,18 @@ export async function deleteDocument(id: string): Promise<void> {
   await request(`/documents/${id}`, { method: 'DELETE' });
 }
 
+// Tags
+export async function updateDocumentTags(id: string, tags: string[]): Promise<{ document: Document }> {
+  return request(`/documents/${id}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify({ tags }),
+  });
+}
+
+export async function listAllTags(): Promise<{ tags: string[] }> {
+  return request('/documents/tags/list');
+}
+
 // Collections
 export async function listCollections(): Promise<{ collections: Collection[] }> {
   return request('/documents/collections/list');
@@ -247,6 +259,24 @@ export async function getFaqDashboard(start?: string, end?: string): Promise<Faq
   if (end) params.set('end', end);
   const qs = params.toString();
   return request(`/query-log/faq/dashboard${qs ? `?${qs}` : ''}`);
+}
+
+// Quality metrics (admin)
+export interface QualityMetrics {
+  period: { start: string; end: string; days: number };
+  totalQueries: number;
+  totalFlagged: number;
+  confidenceCounts: { high: number; partial: number; low: number };
+  qualityScore: number;
+  unansweredQuestions: Array<{ question: string; date: string }>;
+  dailyStats: Array<{ date: string; queries: number; flagged: number; highPct: number }>;
+}
+
+export async function getQualityMetrics(days?: number): Promise<QualityMetrics> {
+  const params = new URLSearchParams();
+  if (days) params.set('days', String(days));
+  const qs = params.toString();
+  return request(`/query-log/quality/metrics${qs ? `?${qs}` : ''}`);
 }
 
 // Query log (admin) — downloads CSV as a blob and triggers browser download

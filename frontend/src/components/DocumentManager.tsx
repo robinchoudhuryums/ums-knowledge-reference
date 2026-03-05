@@ -6,6 +6,8 @@ import {
   deleteDocument,
   createCollection,
   deleteCollection,
+  updateDocumentTags,
+  listAllTags,
 } from '../services/api';
 
 interface Props {
@@ -23,6 +25,9 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
   const [newColName, setNewColName] = useState('');
   const [newColDesc, setNewColDesc] = useState('');
   const [showNewCol, setShowNewCol] = useState(false);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [editingTagsDocId, setEditingTagsDocId] = useState<string | null>(null);
+  const [tagInput, setTagInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadDocuments = async () => {
@@ -34,8 +39,16 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     }
   };
 
+  const loadTags = async () => {
+    try {
+      const result = await listAllTags();
+      setAllTags(result.tags);
+    } catch { /* ignore */ }
+  };
+
   useEffect(() => {
     loadDocuments();
+    loadTags();
   }, [selectedCollection]);
 
   const [uploadQueue, setUploadQueue] = useState<Array<{ name: string; status: 'pending' | 'uploading' | 'done' | 'error'; error?: string }>>([]);
@@ -113,6 +126,31 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
       onCollectionsChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete collection');
+    }
+  };
+
+  const handleAddTag = async (docId: string, existingTags: string[]) => {
+    const tag = tagInput.trim().toLowerCase();
+    if (!tag) return;
+    const newTags = [...new Set([...existingTags, tag])];
+    try {
+      await updateDocumentTags(docId, newTags);
+      setTagInput('');
+      loadDocuments();
+      loadTags();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tags');
+    }
+  };
+
+  const handleRemoveTag = async (docId: string, existingTags: string[], tagToRemove: string) => {
+    const newTags = existingTags.filter(t => t !== tagToRemove);
+    try {
+      await updateDocumentTags(docId, newTags);
+      loadDocuments();
+      loadTags();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tags');
     }
   };
 
@@ -238,6 +276,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}>Size</th>
                 <th style={styles.th}>Chunks</th>
+                <th style={styles.th}>Tags</th>
                 <th style={styles.th}>Uploaded</th>
                 <th style={styles.th}>By</th>
                 {isAdmin && <th style={styles.th}>Actions</th>}
@@ -267,6 +306,47 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                   <td style={styles.td}>
                     <span style={styles.chunkBadge}>{doc.chunkCount}</span>
                   </td>
+                  <td style={styles.td}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
+                      {(doc.tags || []).map(tag => (
+                        <span key={tag} style={styles.tagChip}>
+                          {tag}
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleRemoveTag(doc.id, doc.tags || [], tag)}
+                              style={styles.tagRemove}
+                            >x</button>
+                          )}
+                        </span>
+                      ))}
+                      {isAdmin && editingTagsDocId === doc.id ? (
+                        <div style={{ display: 'flex', gap: '2px' }}>
+                          <input
+                            value={tagInput}
+                            onChange={e => setTagInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { e.preventDefault(); handleAddTag(doc.id, doc.tags || []); }
+                              if (e.key === 'Escape') setEditingTagsDocId(null);
+                            }}
+                            placeholder="tag"
+                            style={{ ...styles.smallInput, padding: '2px 6px', fontSize: '11px', width: '70px' }}
+                            list="tag-suggestions"
+                            autoFocus
+                          />
+                          <datalist id="tag-suggestions">
+                            {allTags.filter(t => !(doc.tags || []).includes(t)).map(t => (
+                              <option key={t} value={t} />
+                            ))}
+                          </datalist>
+                        </div>
+                      ) : isAdmin ? (
+                        <button
+                          onClick={() => { setEditingTagsDocId(doc.id); setTagInput(''); }}
+                          style={styles.addTagButton}
+                        >+</button>
+                      ) : null}
+                    </div>
+                  </td>
                   <td style={{ ...styles.td, color: '#6B8299' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
                   <td style={{ ...styles.td, color: '#6B8299' }}>{doc.uploadedBy}</td>
                   {isAdmin && (
@@ -278,7 +358,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
               ))}
               {documents.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 7 : 6} style={{ ...styles.td, textAlign: 'center', color: '#8DA4B8', padding: '40px 12px' }}>
+                  <td colSpan={isAdmin ? 8 : 7} style={{ ...styles.td, textAlign: 'center', color: '#8DA4B8', padding: '40px 12px' }}>
                     No documents uploaded yet
                   </td>
                 </tr>
@@ -324,4 +404,7 @@ const styles: Record<string, React.CSSProperties> = {
   uploadStatusDot: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
   uploadFileName: { flex: 1, color: '#1A2B3C', fontWeight: 500 },
   uploadStatus: { color: '#6B8299', fontSize: '12px' },
+  tagChip: { display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 8px', background: '#E3F2FD', color: '#1565C0', borderRadius: '4px', fontSize: '11px', fontWeight: 500 },
+  tagRemove: { background: 'none', border: 'none', color: '#90CAF9', cursor: 'pointer', fontSize: '10px', padding: '0 2px', lineHeight: 1 },
+  addTagButton: { background: 'none', border: '1px dashed #D6E4F0', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', color: '#1B6FC9', padding: '2px 6px', lineHeight: 1 },
 };

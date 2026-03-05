@@ -12,6 +12,7 @@ import {
 import { removeDocumentChunks, searchChunksByKeyword } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
 import { extractTextWithOcr } from '../services/ocr';
+import { checkForChanges } from '../services/reindexer';
 import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
@@ -237,6 +238,55 @@ router.delete('/collections/:id', authenticate, requireAdmin, async (req: AuthRe
   }
 });
 
+// --- Document Tags ---
+
+// Update tags for a document
+router.put('/:id/tags', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { tags } = req.body;
+    if (!Array.isArray(tags) || tags.some((t: unknown) => typeof t !== 'string')) {
+      res.status(400).json({ error: 'Tags must be an array of strings' });
+      return;
+    }
+
+    const docs = await getDocumentsIndex();
+    const doc = docs.find(d => d.id === req.params.id);
+    if (!doc) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    // Normalize tags: lowercase, trim, deduplicate
+    doc.tags = [...new Set(tags.map((t: string) => t.toLowerCase().trim()).filter(Boolean))];
+    await saveDocumentsIndex(docs);
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
+      documentId: doc.id,
+      action: 'tags_updated',
+      tags: doc.tags,
+    });
+
+    res.json({ document: doc });
+  } catch (error) {
+    logger.error('Failed to update tags', { error: String(error) });
+    res.status(500).json({ error: 'Failed to update tags' });
+  }
+});
+
+// List all unique tags across all documents
+router.get('/tags/list', authenticate, async (_req: AuthRequest, res: Response) => {
+  try {
+    const docs = await getDocumentsIndex();
+    const tagSet = new Set<string>();
+    for (const doc of docs) {
+      if (doc.tags) doc.tags.forEach(t => tagSet.add(t));
+    }
+    res.json({ tags: Array.from(tagSet).sort() });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to list tags' });
+  }
+});
+
 // --- Document Search (keyword search across chunk text) ---
 
 router.get('/search/text', authenticate, async (req: AuthRequest, res: Response) => {
@@ -254,6 +304,29 @@ router.get('/search/text', authenticate, async (req: AuthRequest, res: Response)
   } catch (error) {
     logger.error('Document search failed', { error: String(error) });
     res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+// --- Re-indexing (admin trigger) ---
+
+router.post('/reindex', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    logger.info('Manual re-index triggered', { userId: req.user!.id });
+    const result = await checkForChanges();
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
+      action: 'reindex',
+      checked: result.checked,
+      reindexed: result.reindexed,
+    });
+
+    res.json({
+      message: `Checked ${result.checked} documents, re-indexed ${result.reindexed.length}`,
+      ...result,
+    });
+  } catch (error) {
+    logger.error('Re-index failed', { error: String(error) });
+    res.status(500).json({ error: 'Re-index check failed' });
   }
 });
 

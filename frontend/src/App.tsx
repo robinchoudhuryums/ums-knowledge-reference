@@ -8,6 +8,7 @@ import { PopoutButton } from './components/PopoutButton';
 import { OcrTool } from './components/OcrTool';
 import { QueryLogViewer } from './components/QueryLogViewer';
 import { FaqDashboard } from './components/FaqDashboard';
+import { QualityDashboard } from './components/QualityDashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Collection } from './types';
 import { listCollections } from './services/api';
@@ -126,6 +127,9 @@ export default function App() {
                 <p style={styles.adminSubtitle}>Analytics, query logs, and knowledge base insights</p>
               </div>
               <div style={styles.adminGrid}>
+                <div style={styles.adminSection}>
+                  <QualityDashboard />
+                </div>
                 <div style={styles.adminSection}>
                   <FaqDashboard />
                 </div>

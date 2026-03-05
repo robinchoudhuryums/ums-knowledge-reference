@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 import { Document } from '../types';
 import { S3_PREFIXES } from '../config/aws';
 import {
@@ -61,6 +62,7 @@ export async function ingestDocument(
     chunkCount: 0,
     version: existingDoc ? existingDoc.version + 1 : 1,
     previousVersionId: existingDoc?.id,
+    contentHash: createHash('sha256').update(fileBuffer).digest('hex'),
   };
 
   try {

@@ -12,6 +12,7 @@ export interface Document {
   errorMessage?: string;
   chunkCount: number;
   version: number;
+  tags?: string[];
 }
 
 export interface Collection {

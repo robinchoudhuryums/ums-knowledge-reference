@@ -12,6 +12,60 @@ import { logger } from '../utils/logger';
 
 const router = Router();
 
+const REFORMULATION_PROMPT = `Given the conversation so far and the user's latest message, rewrite the latest message as a standalone search query that captures the full intent. Include key terms from prior context that are needed to search accurately. Return ONLY the reformulated query, nothing else.`;
+
+/**
+ * Reformulate a follow-up question into a standalone search query using conversation context.
+ * This improves retrieval for follow-ups like "what about for pediatric patients?"
+ * by expanding to "wheelchair procedures for pediatric patients".
+ */
+async function reformulateQuery(
+  question: string,
+  conversationHistory: ConversationTurn[]
+): Promise<string> {
+  // Only reformulate if there's meaningful conversation history
+  if (!conversationHistory || conversationHistory.length < 2) return question;
+
+  // Build a compact conversation summary for context
+  const recentTurns = conversationHistory.slice(-4);
+  const turnText = recentTurns
+    .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content.slice(0, 200)}`)
+    .join('\n');
+
+  try {
+    const command = new InvokeModelCommand({
+      modelId: BEDROCK_GENERATION_MODEL,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify({
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: 150,
+        messages: [
+          {
+            role: 'user',
+            content: `Conversation:\n${turnText}\n\nLatest user message: ${question}\n\nRewrite as a standalone search query:`,
+          },
+        ],
+        system: REFORMULATION_PROMPT,
+        temperature: 0,
+      }),
+    });
+
+    const response = await bedrockClient.send(command);
+    const body = JSON.parse(new TextDecoder().decode(response.body));
+    const reformulated = body.content?.[0]?.text?.trim();
+
+    if (reformulated && reformulated.length > 3 && reformulated.length < 500) {
+      logger.info('Query reformulated', { original: question, reformulated });
+      return reformulated;
+    }
+  } catch (error) {
+    logger.warn('Query reformulation failed, using original', { error: String(error) });
+  }
+
+  return question;
+}
+
 const SYSTEM_PROMPT = `You are the UMS Knowledge Base Assistant — an expert reference tool for Universal Medical Supply, a medical supply company. Your role is to answer questions accurately using ONLY the provided document context.
 
 Guidelines:
@@ -145,9 +199,12 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     logger.info('Query received', { question, userId: req.user!.id });
 
-    const queryEmbedding = await generateEmbedding(question);
+    // Reformulate follow-up questions for better retrieval
+    const searchQuery = await reformulateQuery(question, conversationHistory || []);
 
-    const searchResults = await searchVectorStore(queryEmbedding, question, {
+    const queryEmbedding = await generateEmbedding(searchQuery);
+
+    const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
       topK: topK || 6,
       collectionIds,
     });
@@ -235,9 +292,12 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    const queryEmbedding = await generateEmbedding(question);
+    // Reformulate follow-up questions for better retrieval
+    const searchQuery = await reformulateQuery(question, conversationHistory || []);
 
-    const searchResults = await searchVectorStore(queryEmbedding, question, {
+    const queryEmbedding = await generateEmbedding(searchQuery);
+
+    const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
       topK: topK || 6,
       collectionIds,
     });

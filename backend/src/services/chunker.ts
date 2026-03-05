@@ -95,8 +95,73 @@ function detectSectionHeader(text: string, position: number): string | undefined
 }
 
 /**
+ * Detect table boundaries in text. Returns array of { start, end } character offsets
+ * for contiguous table regions (pipe-delimited, tab-delimited, or consistent column structure).
+ * Tables are kept intact as single chunks to preserve row/column relationships.
+ */
+function detectTables(text: string): Array<{ start: number; end: number }> {
+  const tables: Array<{ start: number; end: number }> = [];
+  const lines = text.split('\n');
+  let offset = 0;
+  let tableStart = -1;
+  let tableLineCount = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Detect pipe-delimited table rows (markdown-style): "| col1 | col2 |" or "col1 | col2"
+    const isPipeRow = (trimmed.split('|').length >= 3) ||
+      (trimmed.includes('|') && /\w/.test(trimmed) && !/^[|:\-\s]+$/.test(trimmed) === false);
+    // Detect separator rows: "|---|---|" or "--- | ---"
+    const isSeparator = /^[|:\-\s]+$/.test(trimmed) && trimmed.includes('-');
+    // Detect tab-delimited rows with multiple columns
+    const isTabRow = (line.split('\t').length >= 3);
+
+    const isTableLine = (isPipeRow || isSeparator || isTabRow) && trimmed.length > 0;
+
+    if (isTableLine) {
+      if (tableStart === -1) {
+        tableStart = offset;
+      }
+      tableLineCount++;
+    } else {
+      // End of table region — require at least 3 lines to count as a table
+      if (tableStart !== -1 && tableLineCount >= 3) {
+        tables.push({ start: tableStart, end: offset });
+      }
+      tableStart = -1;
+      tableLineCount = 0;
+    }
+
+    offset += line.length + 1; // +1 for the newline
+  }
+
+  // Handle table at end of text
+  if (tableStart !== -1 && tableLineCount >= 3) {
+    tables.push({ start: tableStart, end: text.length });
+  }
+
+  return tables;
+}
+
+/**
+ * Check if a position falls inside a table region.
+ * Returns the table's end position if inside, or -1 if not.
+ */
+function getTableEnd(position: number, tables: Array<{ start: number; end: number }>): number {
+  for (const table of tables) {
+    if (position >= table.start && position < table.end) {
+      return table.end;
+    }
+  }
+  return -1;
+}
+
+/**
  * Chunk a document's extracted text into overlapping segments suitable for embedding.
  * Detects section headers and attaches them to chunks for better search relevance.
+ * Tables are kept as intact chunks to preserve structure.
  */
 export function chunkDocument(
   documentId: string,
@@ -110,6 +175,9 @@ export function chunkDocument(
   const overlapChars = overlapTokens * CHARS_PER_TOKEN;
   const stepChars = chunkSizeChars - overlapChars;
 
+  // Allow table chunks to be up to 2x normal size to avoid splitting
+  const maxTableChars = chunkSizeChars * 2;
+
   const text = extracted.text;
 
   if (!text.trim()) {
@@ -117,16 +185,38 @@ export function chunkDocument(
     return [];
   }
 
+  // Pre-detect table regions
+  const tables = detectTables(text);
+  if (tables.length > 0) {
+    logger.info('Tables detected in document', { documentId, tableCount: tables.length });
+  }
+
   const chunks: DocumentChunk[] = [];
   let position = 0;
   let chunkIndex = 0;
 
   while (position < text.length) {
-    let endPos = Math.min(position + chunkSizeChars, text.length);
+    // Check if we're at the start of a table — if so, include the full table
+    const tableEnd = getTableEnd(position, tables);
 
-    // If not at the end, find a natural break point
-    if (endPos < text.length) {
-      endPos = findNaturalBreak(text, endPos);
+    let endPos: number;
+    if (tableEnd !== -1 && (tableEnd - position) <= maxTableChars) {
+      // Keep the entire table as one chunk
+      endPos = tableEnd;
+    } else {
+      endPos = Math.min(position + chunkSizeChars, text.length);
+
+      // If not at the end, find a natural break point
+      if (endPos < text.length) {
+        // Avoid breaking inside a table
+        const breakTableEnd = getTableEnd(endPos, tables);
+        if (breakTableEnd !== -1 && (breakTableEnd - position) <= maxTableChars) {
+          // Extend to include the full table
+          endPos = breakTableEnd;
+        } else {
+          endPos = findNaturalBreak(text, endPos);
+        }
+      }
     }
 
     const chunkText = text.slice(position, endPos).trim();
@@ -150,7 +240,13 @@ export function chunkDocument(
     const nextRawPos = position + stepChars;
     if (nextRawPos >= text.length) break;
 
-    position = findNaturalBreak(text, nextRawPos);
+    // Skip overlap into tables — start from the end of the table if next position is mid-table
+    const nextTableEnd = getTableEnd(nextRawPos, tables);
+    if (nextTableEnd !== -1) {
+      position = nextTableEnd;
+    } else {
+      position = findNaturalBreak(text, nextRawPos);
+    }
 
     // Safety: ensure forward progress
     if (position <= chunks[chunks.length - 1]?.startOffset) {

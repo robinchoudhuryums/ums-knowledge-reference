@@ -8,6 +8,7 @@ import {
   saveDocumentsIndex,
 } from './s3Storage';
 import { extractText } from './textExtractor';
+import { extractImageDescriptions } from './visionExtractor';
 import { chunkDocument } from './chunker';
 import { generateEmbeddingsBatch } from './embeddings';
 import { addChunksToStore, removeDocumentChunks } from './vectorStore';
@@ -74,6 +75,15 @@ export async function ingestDocument(
 
     if (!extracted.text.trim()) {
       throw new Error('No text could be extracted from the document');
+    }
+
+    // Step 2b: For PDFs, use vision to describe images/diagrams and append to text
+    if (mimeType === 'application/pdf') {
+      logger.info('Ingestion: Extracting image descriptions via vision', { documentId });
+      const imageDescriptions = await extractImageDescriptions(fileBuffer, originalName);
+      if (imageDescriptions) {
+        extracted.text += imageDescriptions;
+      }
     }
 
     // Step 3: Chunk text

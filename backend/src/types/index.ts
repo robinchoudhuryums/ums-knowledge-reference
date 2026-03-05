@@ -1,3 +1,8 @@
+export interface ExtractedText {
+  text: string;
+  pageBreaks?: number[];
+}
+
 export interface Document {
   id: string;
   filename: string;

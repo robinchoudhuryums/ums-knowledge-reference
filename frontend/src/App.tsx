@@ -8,6 +8,7 @@ import { PopoutButton } from './components/PopoutButton';
 import { OcrTool } from './components/OcrTool';
 import { QueryLogViewer } from './components/QueryLogViewer';
 import { FaqDashboard } from './components/FaqDashboard';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
@@ -107,23 +108,34 @@ export default function App() {
       </header>
 
       <main style={styles.main}>
-        {activeTab === 'chat' && <ChatInterface collections={collections} />}
-        {activeTab === 'search' && <DocumentSearch collections={collections} />}
-        {activeTab === 'ocr' && <OcrTool />}
-        {activeTab === 'documents' && (
-          <DocumentManager
-            isAdmin={isAdmin}
-            collections={collections}
-            onCollectionsChange={loadCollections}
-          />
-        )}
-        {activeTab === 'admin' && isAdmin && (
-          <div style={styles.adminPanel}>
-            <FaqDashboard />
-            <hr style={styles.adminDivider} />
-            <QueryLogViewer />
-          </div>
-        )}
+        <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
+          {activeTab === 'chat' && <ChatInterface collections={collections} />}
+          {activeTab === 'search' && <DocumentSearch collections={collections} />}
+          {activeTab === 'ocr' && <OcrTool />}
+          {activeTab === 'documents' && (
+            <DocumentManager
+              isAdmin={isAdmin}
+              collections={collections}
+              onCollectionsChange={loadCollections}
+            />
+          )}
+          {activeTab === 'admin' && isAdmin && (
+            <div style={styles.adminPanel}>
+              <div style={styles.adminHeader}>
+                <h2 style={styles.adminTitle}>Admin Dashboard</h2>
+                <p style={styles.adminSubtitle}>Analytics, query logs, and knowledge base insights</p>
+              </div>
+              <div style={styles.adminGrid}>
+                <div style={styles.adminSection}>
+                  <FaqDashboard />
+                </div>
+                <div style={styles.adminSection}>
+                  <QueryLogViewer />
+                </div>
+              </div>
+            </div>
+          )}
+        </ErrorBoundary>
       </main>
     </div>
   );
@@ -235,7 +247,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   main: { flex: 1, overflow: 'hidden' },
   adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px', background: '#ffffff' },
-  adminDivider: { border: 'none', borderTop: '1px solid #D6E4F0', margin: '12px 24px' },
+  adminHeader: { padding: '28px 28px 0' },
+  adminTitle: { margin: '0 0 4px', fontSize: '24px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
+  adminSubtitle: { margin: '0 0 24px', fontSize: '14px', color: '#8DA4B8' },
+  adminGrid: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
+  adminSection: { background: '#ffffff' },
   popoutHeader: {
     display: 'flex',
     justifyContent: 'space-between',

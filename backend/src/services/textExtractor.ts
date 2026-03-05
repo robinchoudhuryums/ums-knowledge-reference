@@ -4,11 +4,10 @@ import * as XLSX from 'xlsx';
 import { parse as csvParse } from 'csv-parse/sync';
 import { logger } from '../utils/logger';
 import { extractTextWithOcr } from './ocr';
+import { ExtractedText } from '../types';
 
-export interface ExtractedText {
-  text: string;
-  pageBreaks?: number[]; // character offsets where page breaks occur
-}
+// Re-export for backward compatibility
+export type { ExtractedText };
 
 export async function extractText(buffer: Buffer, mimeType: string, filename: string): Promise<ExtractedText> {
   logger.info('Extracting text', { mimeType, filename });

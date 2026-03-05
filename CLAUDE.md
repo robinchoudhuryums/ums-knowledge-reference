@@ -46,6 +46,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 # Backend
 cd backend && npm install && npm run dev    # Dev server with tsx watch
 cd backend && npx tsc --noEmit              # Type-check only
+cd backend && npm test                      # Run unit tests (vitest)
 
 # Frontend
 cd frontend && npm install && npm run dev   # Vite dev server
@@ -70,6 +71,16 @@ docker build -t ums-knowledge .
 - **Chunk size/overlap** (`chunker.ts`): Affects retrieval granularity
 
 ## Recent Changes (reverse chronological)
+- **IDF-enhanced BM25 hybrid search**: Added proper IDF weighting to BM25 scoring with corpus-wide term frequency stats, normalized keyword scores for balanced hybrid combination
+- **Re-ranking pipeline**: Added post-retrieval re-ranking that boosts section header matches, document-level relevance signals, and penalizes noise chunks
+- **Section header detection**: Chunker now auto-detects ALL CAPS, markdown, colon-terminated, and numbered section headers and attaches them as metadata
+- **Conversation memory with summarization**: Older conversation turns are summarized into a compact context string, recent 4 turns kept verbatim for follow-up accuracy
+- **Document status tracking**: Frontend now shows document status (ready/processing/error) with colored badges; upload queue with per-file progress indicators
+- **Admin dashboard improvements**: Unified admin view with header, analytics grid layout
+- **Error boundaries**: React ErrorBoundary wraps all tab content for graceful degradation
+- **Retry logic**: Bedrock API calls (embeddings) now retry up to 3x with exponential backoff
+- **Unit tests**: Added 20 tests covering cosine similarity, BM25 scoring, IDF, tokenization, section header detection, and chunking logic (vitest)
+- **TypeScript fixes**: Added `types: ["node"]` to tsconfig; moved ExtractedText interface to shared types
 - Added conciseness guideline to system prompt for balanced response length
 - Added vision-based image description for PDFs (Bedrock Converse API + Haiku 4.5)
 - PDF ingestion runs Textract OCR alongside pdf-parse to capture text in images

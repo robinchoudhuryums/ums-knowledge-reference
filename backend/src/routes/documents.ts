@@ -88,9 +88,10 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const docs = await getDocumentsIndex();
     const collectionId = req.query.collectionId as string | undefined;
 
+    // Show all non-replaced documents (ready, processing, error) so users see status
     const filtered = collectionId
-      ? docs.filter(d => d.collectionId === collectionId && d.status === 'ready')
-      : docs.filter(d => d.status === 'ready');
+      ? docs.filter(d => d.collectionId === collectionId && !d.errorMessage?.startsWith('Replaced by'))
+      : docs.filter(d => !d.errorMessage?.startsWith('Replaced by'));
 
     res.json({ documents: filtered });
   } catch (error) {

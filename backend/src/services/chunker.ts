@@ -1,5 +1,4 @@
-import { DocumentChunk } from '../types';
-import { ExtractedText } from './textExtractor';
+import { DocumentChunk, ExtractedText } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
@@ -69,7 +68,35 @@ function findNaturalBreak(text: string, targetPos: number, windowChars: number =
 }
 
 /**
+ * Detect section headers in the text near a position.
+ * Looks for lines that appear to be headers (short, capitalized, may end with colon).
+ */
+function detectSectionHeader(text: string, position: number): string | undefined {
+  const lookBack = text.slice(Math.max(0, position - 500), position);
+  const lines = lookBack.split('\n');
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const isMarkdownHeader = /^#{1,4}\s+\S/.test(line);
+    const isAllCaps = line.length > 3 && line.length < 80 && line === line.toUpperCase() && /[A-Z]/.test(line);
+    const isColonHeader = line.length < 80 && line.endsWith(':') && !line.includes('.');
+    const isNumberedSection = /^\d+(\.\d+)*\s+[A-Z]/.test(line) && line.length < 100;
+
+    if (isMarkdownHeader || isAllCaps || isColonHeader || isNumberedSection) {
+      return line.replace(/^#+\s*/, '').replace(/:$/, '').trim();
+    }
+
+    if (line.length > 80) break;
+  }
+
+  return undefined;
+}
+
+/**
  * Chunk a document's extracted text into overlapping segments suitable for embedding.
+ * Detects section headers and attaches them to chunks for better search relevance.
  */
 export function chunkDocument(
   documentId: string,
@@ -114,6 +141,7 @@ export function chunkDocument(
         startOffset: position,
         endOffset: endPos,
         pageNumber: getPageNumber(position, extracted.pageBreaks),
+        sectionHeader: detectSectionHeader(text, position),
       });
       chunkIndex++;
     }

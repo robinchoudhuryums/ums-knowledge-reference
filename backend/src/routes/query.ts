@@ -28,6 +28,26 @@ Guidelines:
 const LOW_CONFIDENCE_THRESHOLD = 0.3;
 const PARTIAL_CONFIDENCE_THRESHOLD = 0.5;
 
+/**
+ * Summarize older conversation turns into a compact context string.
+ * Keeps recent turns verbatim, compresses older ones.
+ */
+function summarizeOlderTurns(
+  history: ConversationTurn[],
+  recentCount: number = 4
+): string | null {
+  if (history.length <= recentCount) return null;
+
+  const older = history.slice(0, history.length - recentCount);
+  const topics = older
+    .filter(t => t.role === 'user')
+    .map(t => t.content.length > 100 ? t.content.slice(0, 100) + '...' : t.content);
+
+  if (topics.length === 0) return null;
+
+  return `Earlier in this conversation, the user asked about: ${topics.join('; ')}`;
+}
+
 function buildMessages(
   question: string,
   context: string,
@@ -35,9 +55,17 @@ function buildMessages(
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-  // Include last 5 conversation turns for follow-up context
   if (conversationHistory && conversationHistory.length > 0) {
-    for (const turn of conversationHistory.slice(-5)) {
+    const recentCount = 4;
+    const summary = summarizeOlderTurns(conversationHistory, recentCount);
+
+    if (summary) {
+      messages.push({ role: 'user', content: summary });
+      messages.push({ role: 'assistant', content: 'Understood, I have that context.' });
+    }
+
+    const recentTurns = conversationHistory.slice(-recentCount);
+    for (const turn of recentTurns) {
       messages.push({ role: turn.role, content: turn.content });
     }
   }

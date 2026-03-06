@@ -9,17 +9,19 @@ import { OcrTool } from './components/OcrTool';
 import { QueryLogViewer } from './components/QueryLogViewer';
 import { FaqDashboard } from './components/FaqDashboard';
 import { QualityDashboard } from './components/QualityDashboard';
+import { DocumentExtractor } from './components/DocumentExtractor';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
-type Tab = 'chat' | 'search' | 'documents' | 'ocr' | 'admin';
+type Tab = 'chat' | 'search' | 'extract' | 'documents' | 'ocr' | 'admin';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
 const tabIcons: Record<Tab, string> = {
   chat: '\u2728',
   search: '\uD83D\uDD0D',
+  extract: '\uD83D\uDCDD',
   ocr: '\uD83D\uDCF7',
   documents: '\uD83D\uDCC1',
   admin: '\u2699\uFE0F',
@@ -69,6 +71,7 @@ export default function App() {
   const tabs: { key: Tab; label: string; adminOnly?: boolean }[] = [
     { key: 'chat', label: 'Ask Questions' },
     { key: 'search', label: 'Search' },
+    { key: 'extract', label: 'Extract' },
     { key: 'ocr', label: 'OCR Scan' },
     { key: 'documents', label: 'Documents' },
     { key: 'admin', label: 'Admin', adminOnly: true },
@@ -112,6 +115,7 @@ export default function App() {
         <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
           {activeTab === 'chat' && <ChatInterface collections={collections} />}
           {activeTab === 'search' && <DocumentSearch collections={collections} />}
+          {activeTab === 'extract' && <DocumentExtractor />}
           {activeTab === 'ocr' && <OcrTool />}
           {activeTab === 'documents' && (
             <DocumentManager

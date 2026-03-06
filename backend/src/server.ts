@@ -15,6 +15,7 @@ import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
 import usageRoutes from './routes/usage';
 import queryLogRoutes from './routes/queryLog';
+import extractionRoutes from './routes/extraction';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -87,6 +88,9 @@ app.use('/api/usage', usageRoutes);
 
 // Query log routes (admin CSV export)
 app.use('/api/query-log', queryLogRoutes);
+
+// Document extraction routes (structured form-filling)
+app.use('/api/extraction', extractionRoutes);
 
 // In production, serve the frontend static files from the same server.
 // The built frontend is expected at ../frontend/dist relative to the backend root.

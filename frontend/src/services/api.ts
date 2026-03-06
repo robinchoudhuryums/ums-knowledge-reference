@@ -279,6 +279,64 @@ export async function getQualityMetrics(days?: number): Promise<QualityMetrics> 
   return request(`/query-log/quality/metrics${qs ? `?${qs}` : ''}`);
 }
 
+// Extraction templates
+export interface ExtractionTemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  fieldCount: number;
+}
+
+export interface ExtractionTemplateField {
+  key: string;
+  label: string;
+  type: 'text' | 'date' | 'number' | 'boolean' | 'textarea' | 'select';
+  required: boolean;
+  options?: string[];
+  description?: string;
+  group?: string;
+}
+
+export interface ExtractionTemplateDetail {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  fields: ExtractionTemplateField[];
+}
+
+export interface ExtractionResult {
+  templateId: string;
+  templateName: string;
+  data: Record<string, string | number | boolean | null>;
+  confidence: 'high' | 'medium' | 'low';
+  extractionNotes: string;
+  modelUsed: string;
+}
+
+export async function listExtractionTemplates(): Promise<{ templates: ExtractionTemplateInfo[] }> {
+  return request('/extraction/templates');
+}
+
+export async function getExtractionTemplate(id: string): Promise<{ template: ExtractionTemplateDetail }> {
+  return request(`/extraction/templates/${id}`);
+}
+
+export async function extractDocument(file: File, templateId: string): Promise<{ result: ExtractionResult }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('templateId', templateId);
+  return request('/extraction/extract', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function getExtractionModel(): Promise<{ model: string }> {
+  return request('/extraction/model');
+}
+
 // Query log (admin) — downloads CSV as a blob and triggers browser download
 export async function downloadQueryLogCsv(date: string): Promise<void> {
   const token = getToken();

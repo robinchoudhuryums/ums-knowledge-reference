@@ -10,6 +10,7 @@ import { logger } from './utils/logger';
 import { initializeAuth, loginHandler, createUserHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
 import { initializeVectorStore } from './services/vectorStore';
 import { startReindexScheduler } from './services/reindexer';
+import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
@@ -122,6 +123,9 @@ async function start() {
 
     // Start background re-indexing scheduler
     startReindexScheduler();
+
+    // Start CMS fee schedule auto-fetcher (if URL configured)
+    startFeeScheduleFetcher();
 
     app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

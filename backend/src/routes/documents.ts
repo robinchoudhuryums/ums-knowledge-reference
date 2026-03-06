@@ -13,6 +13,7 @@ import { removeDocumentChunks, searchChunksByKeyword } from '../services/vectorS
 import { logAuditEvent } from '../services/audit';
 import { extractTextWithOcr } from '../services/ocr';
 import { checkForChanges } from '../services/reindexer';
+import { fetchAndIngestFeeSchedule } from '../services/feeScheduleFetcher';
 import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
@@ -379,5 +380,21 @@ router.post(
     }
   }
 );
+
+// --- Fee Schedule ---
+
+/**
+ * POST /api/documents/fee-schedule/fetch — Manually trigger CMS fee schedule fetch (admin only)
+ */
+router.post('/fee-schedule/fetch', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const forceRefresh = req.body?.forceRefresh === true;
+    const result = await fetchAndIngestFeeSchedule(forceRefresh);
+    res.json(result);
+  } catch (error) {
+    logger.error('Fee schedule fetch failed', { error: String(error) });
+    res.status(500).json({ error: 'Fee schedule fetch failed' });
+  }
+});
 
 export default router;

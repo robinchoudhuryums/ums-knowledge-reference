@@ -141,7 +141,7 @@ export async function extractDocumentData(
   logger.info('Starting document extraction', { filename, templateId, mimeType });
 
   // Step 1: Extract text from file
-  const { text } = await extractText(fileBuffer, filename, mimeType);
+  const { text } = await extractText(fileBuffer, mimeType, filename);
 
   if (!text || text.trim().length < 20) {
     throw new Error('Could not extract sufficient text from the document. Try a higher-quality scan or a text-based PDF.');

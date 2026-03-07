@@ -5,6 +5,7 @@ import { searchVectorStore } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
 import { checkUsageLimit, recordQuery } from '../services/usage';
 import { logQuery } from '../services/queryLog';
+import { generateTraceId, logRagTrace } from '../services/ragTrace';
 import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';
 import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
@@ -206,26 +207,46 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    logger.info('Query received', { question, userId: req.user!.id });
+    const traceId = generateTraceId();
+    const pipelineStart = Date.now();
+
+    logger.info('Query received', { question, userId: req.user!.id, traceId });
 
     // Reformulate follow-up questions for better retrieval
     const searchQuery = await reformulateQuery(question, conversationHistory || []);
 
+    const embeddingStart = Date.now();
     const queryEmbedding = await generateEmbedding(searchQuery);
+    const embeddingTimeMs = Date.now() - embeddingStart;
 
+    const retrievalStart = Date.now();
     const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
       topK: topK || 6,
       collectionIds,
     });
+    const retrievalTimeMs = Date.now() - retrievalStart;
 
     if (searchResults.length === 0) {
       await recordQuery(req.user!.id);
+      const responseTimeMs = Date.now() - pipelineStart;
       const response: QueryResponse = {
         answer:
           "This information is not covered in the current knowledge base documents. Please contact your supervisor or the relevant department for guidance, or try rephrasing your question.",
         sources: [],
         confidence: 'low',
+        traceId,
       };
+      // Log trace for zero-result queries too
+      logRagTrace({
+        traceId, timestamp: new Date().toISOString(),
+        userId: req.user!.id, username: req.user!.username,
+        queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+        retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
+        chunksPassedToModel: 0, modelId: BEDROCK_GENERATION_MODEL,
+        responseText: response.answer, confidence: 'low',
+        responseTimeMs, embeddingTimeMs, retrievalTimeMs,
+        collectionIds, streamed: false,
+      }).catch(() => {});
       res.json(response);
       return;
     }
@@ -233,6 +254,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const context = buildContext(searchResults);
     const messages = buildMessages(question, context, conversationHistory);
 
+    const generationStart = Date.now();
     const command = new InvokeModelCommand({
       modelId: BEDROCK_GENERATION_MODEL,
       contentType: 'application/json',
@@ -247,6 +269,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     });
 
     const bedrockResponse = await bedrockClient.send(command);
+    const generationTimeMs = Date.now() - generationStart;
     const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
     const rawAnswer = responseBody.content?.[0]?.text || 'Unable to generate a response.';
 
@@ -254,6 +277,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const { answer, confidence } = parseConfidence(rawAnswer, avgScore);
 
     const sources = buildSourceCitations(searchResults);
+    const responseTimeMs = Date.now() - pipelineStart;
 
     await recordQuery(req.user!.id);
 
@@ -262,12 +286,28 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       sourcesUsed: sources.length,
       collectionIds,
       confidence,
+      traceId,
     });
 
     // Log query for analytics / CSV export
     await logQuery(req.user!.id, req.user!.username, question, answer, confidence, sources, collectionIds);
 
-    const response: QueryResponse = { answer, sources, confidence };
+    // Log RAG trace asynchronously (fire-and-forget)
+    logRagTrace({
+      traceId, timestamp: new Date().toISOString(),
+      userId: req.user!.id, username: req.user!.username,
+      queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+      retrievedChunkIds: searchResults.map(r => r.chunk.id),
+      retrievalScores: searchResults.map(r => r.score),
+      avgRetrievalScore: avgScore,
+      chunksPassedToModel: searchResults.length,
+      modelId: BEDROCK_GENERATION_MODEL,
+      responseText: answer, confidence,
+      responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
+      collectionIds, streamed: false,
+    }).catch(() => {});
+
+    const response: QueryResponse = { answer, sources, confidence, traceId };
     res.json(response);
   } catch (error) {
     logger.error('Query failed', { error: String(error) });
@@ -293,7 +333,10 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       return;
     }
 
-    logger.info('Streaming query received', { question, userId: req.user!.id });
+    const traceId = generateTraceId();
+    const pipelineStart = Date.now();
+
+    logger.info('Streaming query received', { question, userId: req.user!.id, traceId });
 
     // SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -305,12 +348,16 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     // Reformulate follow-up questions for better retrieval
     const searchQuery = await reformulateQuery(question, conversationHistory || []);
 
+    const embeddingStart = Date.now();
     const queryEmbedding = await generateEmbedding(searchQuery);
+    const embeddingTimeMs = Date.now() - embeddingStart;
 
+    const retrievalStart = Date.now();
     const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
       topK: topK || 6,
       collectionIds,
     });
+    const retrievalTimeMs = Date.now() - retrievalStart;
 
     const avgScore = searchResults.length > 0
       ? searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length
@@ -321,19 +368,30 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     res.write(`data: ${JSON.stringify({ type: 'sources', sources })}\n\n`);
 
     if (searchResults.length === 0) {
-      res.write(
-        `data: ${JSON.stringify({ type: 'text', text: "This information is not covered in the current knowledge base documents. Please contact your supervisor or the relevant department for guidance, or try rephrasing your question." })}\n\n`
-      );
+      const noResultAnswer = "This information is not covered in the current knowledge base documents. Please contact your supervisor or the relevant department for guidance, or try rephrasing your question.";
+      res.write(`data: ${JSON.stringify({ type: 'text', text: noResultAnswer })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'confidence', confidence: 'low' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       res.end();
       await recordQuery(req.user!.id);
+      logRagTrace({
+        traceId, timestamp: new Date().toISOString(),
+        userId: req.user!.id, username: req.user!.username,
+        queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+        retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
+        chunksPassedToModel: 0, modelId: BEDROCK_GENERATION_MODEL,
+        responseText: noResultAnswer, confidence: 'low',
+        responseTimeMs: Date.now() - pipelineStart, embeddingTimeMs, retrievalTimeMs,
+        collectionIds, streamed: true,
+      }).catch(() => {});
       return;
     }
 
     const context = buildContext(searchResults);
     const messages = buildMessages(question, context, conversationHistory);
 
+    const generationStart = Date.now();
     const command = new InvokeModelWithResponseStreamCommand({
       modelId: BEDROCK_GENERATION_MODEL,
       contentType: 'application/json',
@@ -361,12 +419,17 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
         }
       }
     }
+    const generationTimeMs = Date.now() - generationStart;
 
     // Parse confidence from the completed answer
     const { confidence } = parseConfidence(fullAnswer, avgScore);
     res.write(`data: ${JSON.stringify({ type: 'confidence', confidence })}\n\n`);
+    // Send traceId so frontend can link feedback to this trace
+    res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
     res.end();
+
+    const responseTimeMs = Date.now() - pipelineStart;
 
     // Record usage and audit (fire and forget)
     recordQuery(req.user!.id).catch(() => {});
@@ -376,10 +439,25 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       collectionIds,
       confidence,
       streamed: true,
+      traceId,
     }).catch(() => {});
     // Log query for analytics / CSV export
     const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore);
     logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(() => {});
+    // Log RAG trace (fire and forget)
+    logRagTrace({
+      traceId, timestamp: new Date().toISOString(),
+      userId: req.user!.id, username: req.user!.username,
+      queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+      retrievedChunkIds: searchResults.map(r => r.chunk.id),
+      retrievalScores: searchResults.map(r => r.score),
+      avgRetrievalScore: avgScore,
+      chunksPassedToModel: searchResults.length,
+      modelId: BEDROCK_GENERATION_MODEL,
+      responseText: cleanAnswer, confidence,
+      responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
+      collectionIds, streamed: true,
+    }).catch(() => {});
   } catch (error) {
     logger.error('Streaming query failed', { error: String(error) });
     if (res.headersSent) {

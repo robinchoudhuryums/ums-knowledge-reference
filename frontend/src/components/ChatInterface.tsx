@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, FormEvent, KeyboardEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ConversationTurn, SourceCitation, Collection } from '../types';
-import { queryKnowledgeBaseStream } from '../services/api';
+import { queryKnowledgeBaseStream, submitTraceFeedback } from '../services/api';
 import { SourceViewer } from './SourceViewer';
 import { FeedbackForm } from './FeedbackForm';
 
@@ -21,9 +21,11 @@ export function ChatInterface({ collections }: Props) {
   const [streamingText, setStreamingText] = useState('');
   const [streamingSources, setStreamingSources] = useState<SourceCitation[]>([]);
   const [streamingConfidence, setStreamingConfidence] = useState<'high' | 'partial' | 'low' | null>(null);
+  const [, setStreamingTraceId] = useState<string | null>(null);
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [expandedSource, setExpandedSource] = useState<SourceCitation | null>(null);
-  const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[] } | null>(null);
+  const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[]; traceId?: string } | null>(null);
+  const [thumbsVoted, setThumbsVoted] = useState<Record<string, 'up' | 'down'>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -47,6 +49,7 @@ export function ChatInterface({ collections }: Props) {
     setStreamingText('');
     setStreamingSources([]);
     setStreamingConfidence(null);
+    setStreamingTraceId(null);
 
     const history = conversation.map(t => ({ role: t.role, content: t.content }));
 
@@ -72,10 +75,13 @@ export function ChatInterface({ collections }: Props) {
           const cleanText = stripConfidenceTag(prev);
           setStreamingSources(sources => {
             setStreamingConfidence(conf => {
-              setConversation(conv => [
-                ...conv,
-                { role: 'assistant', content: cleanText, sources, confidence: conf || undefined },
-              ]);
+              setStreamingTraceId(tid => {
+                setConversation(conv => [
+                  ...conv,
+                  { role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined },
+                ]);
+                return null;
+              });
               return null;
             });
             return [];
@@ -94,9 +100,14 @@ export function ChatInterface({ collections }: Props) {
         setStreamingText('');
         setStreamingSources([]);
         setStreamingConfidence(null);
+        setStreamingTraceId(null);
         setLoading(false);
         inputRef.current?.focus();
-      }
+      },
+      // onTraceId
+      (traceId) => {
+        setStreamingTraceId(traceId);
+      },
     );
   }, [question, loading, conversation, selectedCollections]);
 
@@ -211,12 +222,41 @@ export function ChatInterface({ collections }: Props) {
                    'Not found in docs'}
                 </span>
               )}
+              {turn.role === 'assistant' && turn.traceId && (
+                <div style={styles.thumbsRow}>
+                  <button
+                    onClick={() => {
+                      if (!thumbsVoted[turn.traceId!]) {
+                        submitTraceFeedback(turn.traceId!, 'thumbs_up').catch(() => {});
+                        setThumbsVoted(prev => ({ ...prev, [turn.traceId!]: 'up' }));
+                      }
+                    }}
+                    style={thumbsVoted[turn.traceId] === 'up' ? styles.thumbsActive : styles.thumbsButton}
+                    title="Good answer"
+                  >
+                    &#x1F44D;
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!thumbsVoted[turn.traceId!]) {
+                        submitTraceFeedback(turn.traceId!, 'thumbs_down').catch(() => {});
+                        setThumbsVoted(prev => ({ ...prev, [turn.traceId!]: 'down' }));
+                      }
+                    }}
+                    style={thumbsVoted[turn.traceId] === 'down' ? styles.thumbsActive : styles.thumbsButton}
+                    title="Bad answer"
+                  >
+                    &#x1F44E;
+                  </button>
+                </div>
+              )}
               {turn.role === 'assistant' && (
                 <button
                   onClick={() => setFeedbackTarget({
                     question: getQuestionForTurn(i),
                     answer: turn.content,
                     sources: turn.sources || [],
+                    traceId: turn.traceId,
                   })}
                   style={styles.flagButton}
                   title="Flag this response for admin review"
@@ -349,6 +389,7 @@ export function ChatInterface({ collections }: Props) {
           question={feedbackTarget.question}
           answer={feedbackTarget.answer}
           sources={feedbackTarget.sources}
+          traceId={feedbackTarget.traceId}
           onClose={() => setFeedbackTarget(null)}
         />
       )}
@@ -394,7 +435,10 @@ const styles: Record<string, React.CSSProperties> = {
   confidenceHigh: { backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' },
   confidencePartial: { backgroundColor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' },
   confidenceLow: { backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' },
-  flagButton: { marginLeft: 'auto', padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#8DA4B8', transition: 'all 0.15s' },
+  thumbsRow: { display: 'flex', gap: '2px', marginLeft: 'auto' },
+  thumbsButton: { padding: '3px 6px', background: 'none', border: '1px solid #E8EFF5', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', opacity: 0.5, transition: 'all 0.15s' },
+  thumbsActive: { padding: '3px 6px', background: '#E3F2FD', border: '1px solid #1B6FC9', borderRadius: '6px', cursor: 'default', fontSize: '14px', opacity: 1 },
+  flagButton: { padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#8DA4B8', transition: 'all 0.15s' },
   lowConfidenceWarning: { marginTop: '12px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '10px', fontSize: '13px', color: '#92400e', lineHeight: '1.5' },
   streamingDot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#1B6FC9', animation: 'pulse 1.2s ease-in-out infinite' },
   userText: { fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#1A2B3C' },

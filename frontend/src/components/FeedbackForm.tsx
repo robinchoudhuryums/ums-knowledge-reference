@@ -7,9 +7,10 @@ interface Props {
   answer: string;
   sources: SourceCitation[];
   onClose: () => void;
+  traceId?: string;
 }
 
-export function FeedbackForm({ question, answer, sources, onClose }: Props) {
+export function FeedbackForm({ question, answer, sources, onClose, traceId }: Props) {
   const [patientName, setPatientName] = useState('');
   const [transactionNumber, setTransactionNumber] = useState('');
   const [notes, setNotes] = useState('');
@@ -34,6 +35,8 @@ export function FeedbackForm({ question, answer, sources, onClose }: Props) {
           chunkId: s.chunkId,
           score: s.score,
         })),
+        traceId,
+        feedbackType: 'thumbs_down',
       });
       setSubmitted(true);
     } catch (err) {

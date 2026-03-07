@@ -123,6 +123,7 @@ export async function queryKnowledgeBaseStream(
   onConfidence: (confidence: 'high' | 'partial' | 'low') => void,
   onDone: () => void,
   onError: (error: string) => void,
+  onTraceId?: (traceId: string) => void,
 ): Promise<void> {
   const token = getToken();
   const response = await fetch(`${API_BASE}/query/stream`, {
@@ -175,6 +176,8 @@ export async function queryKnowledgeBaseStream(
           onSources(data.sources);
         } else if (data.type === 'confidence') {
           onConfidence(data.confidence);
+        } else if (data.type === 'traceId') {
+          onTraceId?.(data.traceId);
         } else if (data.type === 'done') {
           onDone();
         } else if (data.type === 'error') {
@@ -193,6 +196,58 @@ export async function submitFeedback(feedback: FeedbackRequest): Promise<{ id: s
     method: 'POST',
     body: JSON.stringify(feedback),
   });
+}
+
+// Thumbs up/down feedback (linked to trace)
+export async function submitTraceFeedback(traceId: string, feedbackType: 'thumbs_up' | 'thumbs_down', notes?: string): Promise<{ feedbackId: string }> {
+  return request('/feedback/trace', {
+    method: 'POST',
+    body: JSON.stringify({ traceId, feedbackType, notes }),
+  });
+}
+
+// Observability metrics (admin)
+export interface ObservabilityMetrics {
+  period: { start: string; end: string; days: number };
+  totalTraces: number;
+  avgResponseTimeMs: number;
+  avgRetrievalScore: number;
+  thumbsUp: number;
+  thumbsDown: number;
+  thumbsUpRatio: number;
+  dailyStats: Array<{
+    date: string;
+    traceCount: number;
+    avgResponseTimeMs: number;
+    avgRetrievalScore: number;
+    thumbsUp: number;
+    thumbsDown: number;
+  }>;
+  retrievalFailures: Array<{
+    traceId: string;
+    date: string;
+    queryText: string;
+    avgRetrievalScore: number;
+    confidence: string;
+    responseTimeMs: number;
+    feedbackNotes?: string;
+  }>;
+  generationFailures: Array<{
+    traceId: string;
+    date: string;
+    queryText: string;
+    avgRetrievalScore: number;
+    confidence: string;
+    responseTimeMs: number;
+    feedbackNotes?: string;
+  }>;
+}
+
+export async function getObservabilityMetrics(days?: number): Promise<ObservabilityMetrics> {
+  const params = new URLSearchParams();
+  if (days) params.set('days', String(days));
+  const qs = params.toString();
+  return request(`/query-log/observability/metrics${qs ? `?${qs}` : ''}`);
 }
 
 // Document search

@@ -3,9 +3,22 @@ import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
 import { getQueryLog, queryLogToCsv, flushQueryLog } from '../services/queryLog';
 import { buildFaqDashboard } from '../services/faqAnalytics';
 import { getFeedbackByDate } from '../services/feedback';
+import { getObservabilityMetrics } from '../services/ragTrace';
 import { logger } from '../utils/logger';
 
 const router = Router();
+
+// RAG observability metrics (admin only)
+router.get('/observability/metrics', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const days = parseInt(req.query.days as string) || 7;
+    const metrics = await getObservabilityMetrics(days);
+    res.json(metrics);
+  } catch (error) {
+    logger.error('Failed to build observability metrics', { error: String(error) });
+    res.status(500).json({ error: 'Failed to build observability metrics' });
+  }
+});
 
 // FAQ analytics dashboard (admin only)
 router.get('/faq/dashboard', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {

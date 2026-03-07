@@ -38,6 +38,7 @@ export interface QueryResponse {
   answer: string;
   sources: SourceCitation[];
   confidence: 'high' | 'partial' | 'low';
+  traceId?: string;
 }
 
 export interface ConversationTurn {
@@ -45,6 +46,7 @@ export interface ConversationTurn {
   content: string;
   sources?: SourceCitation[];
   confidence?: 'high' | 'partial' | 'low';
+  traceId?: string;
 }
 
 export interface FeedbackRequest {
@@ -54,6 +56,8 @@ export interface FeedbackRequest {
   transactionNumber?: string;
   notes?: string;
   sources: Array<{ documentName: string; chunkId: string; score: number }>;
+  traceId?: string;
+  feedbackType?: 'thumbs_up' | 'thumbs_down';
 }
 
 export interface User {

@@ -102,6 +102,7 @@ export interface QueryResponse {
   answer: string;
   sources: SourceCitation[];
   confidence: 'high' | 'partial' | 'low';
+  traceId?: string;
 }
 
 export interface FeedbackEntry {

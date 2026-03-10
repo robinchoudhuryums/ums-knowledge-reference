@@ -11,6 +11,7 @@ import { FaqDashboard } from './components/FaqDashboard';
 import { QualityDashboard } from './components/QualityDashboard';
 import { DocumentExtractor } from './components/DocumentExtractor';
 import { ObservabilityDashboard } from './components/ObservabilityDashboard';
+import { ChangePasswordForm } from './components/ChangePasswordForm';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Collection } from './types';
 import { listCollections } from './services/api';
@@ -29,7 +30,7 @@ const tabIcons: Record<Tab, string> = {
 };
 
 export default function App() {
-  const { auth, login, logout, isAuthenticated, isAdmin } = useAuth();
+  const { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [collections, setCollections] = useState<Collection[]>([]);
 
@@ -50,6 +51,10 @@ export default function App() {
 
   if (!isAuthenticated) {
     return <LoginForm onLogin={login} />;
+  }
+
+  if (mustChangePassword) {
+    return <ChangePasswordForm onPasswordChanged={handlePasswordChanged} />;
   }
 
   // Pop-out mode: compact chat-only window

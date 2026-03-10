@@ -50,6 +50,7 @@ export interface User {
   passwordHash: string;
   role: 'admin' | 'user';
   createdAt: string;
+  mustChangePassword?: boolean;
 }
 
 export interface SearchResult {

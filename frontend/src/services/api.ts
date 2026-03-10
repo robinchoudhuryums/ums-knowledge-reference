@@ -52,6 +52,19 @@ export async function login(username: string, password: string): Promise<{ token
   });
 }
 
+// Change password
+export async function changePassword(currentPassword: string, newPassword: string): Promise<{ token: string; user: User }> {
+  return request('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+// Server-side logout (revokes token)
+export async function logoutServer(): Promise<void> {
+  await request('/auth/logout', { method: 'POST' });
+}
+
 // Documents
 export async function listDocuments(collectionId?: string): Promise<{ documents: Document[] }> {
   const query = collectionId ? `?collectionId=${collectionId}` : '';

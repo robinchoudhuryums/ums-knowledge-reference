@@ -8,6 +8,9 @@ import { logger } from '../utils/logger';
 const JWT_SECRET = process.env.JWT_SECRET || 'ums-kb-dev-secret-change-in-production';
 const USERS_KEY = 'users.json';
 
+// JWT expiry: 30 minutes for HIPAA compliance (down from 8 hours)
+const JWT_EXPIRY = (process.env.JWT_EXPIRY || '30m') as jwt.SignOptions['expiresIn'];
+
 // Warn at startup if using the default JWT secret
 if (!process.env.JWT_SECRET) {
   console.warn('[SECURITY WARNING] JWT_SECRET not set — using insecure default. Set JWT_SECRET in production!');
@@ -31,8 +34,27 @@ function validatePassword(password: string): string | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Server-side token revocation
+// In-memory set of revoked JWT IDs. Cleared on server restart (acceptable since
+// JWTs are short-lived at 30min). For multi-instance deployments, move to Redis.
+// ---------------------------------------------------------------------------
+const revokedTokens = new Set<string>();
+
+export function revokeToken(jti: string): void {
+  revokedTokens.add(jti);
+  // Auto-clean after 35 minutes (JWT expiry + buffer)
+  setTimeout(() => revokedTokens.delete(jti), 35 * 60 * 1000);
+}
+
+function isTokenRevoked(jti: string): boolean {
+  return revokedTokens.has(jti);
+}
+
+// ---------------------------------------------------------------------------
+
 export interface AuthRequest extends Request {
-  user?: { id: string; username: string; role: 'admin' | 'user' };
+  user?: { id: string; username: string; role: 'admin' | 'user'; jti?: string };
 }
 
 async function getUsers(): Promise<User[]> {
@@ -46,25 +68,28 @@ async function saveUsers(users: User[]): Promise<void> {
 
 /**
  * Initialize default admin user if no users exist.
+ * Default admin is flagged with mustChangePassword = true.
  */
 export async function initializeAuth(): Promise<void> {
   const users = await getUsers();
   if (users.length === 0) {
-    const passwordHash = await bcrypt.hash('admin', 10);
+    const passwordHash = await bcrypt.hash('admin', 12);
     const adminUser: User = {
       id: 'admin-001',
       username: 'admin',
       passwordHash,
       role: 'admin',
       createdAt: new Date().toISOString(),
+      mustChangePassword: true,
     };
     await saveUsers([adminUser]);
-    logger.info('Default admin user created (username: admin, password: admin)');
+    logger.info('Default admin user created (username: admin) — password change required on first login');
   }
 }
 
 /**
  * Login endpoint handler.
+ * Returns mustChangePassword flag so frontend can force password change.
  */
 export async function loginHandler(req: Request, res: Response): Promise<void> {
   const { username, password } = req.body;
@@ -82,13 +107,76 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  // Generate a unique token ID for revocation support
+  const jti = `${user.id}-${Date.now()}`;
+
   const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
+    { id: user.id, username: user.username, role: user.role, jti },
     JWT_SECRET,
-    { expiresIn: '8h' }
+    { expiresIn: JWT_EXPIRY }
   );
 
+  res.json({
+    token,
+    user: { id: user.id, username: user.username, role: user.role },
+    mustChangePassword: !!user.mustChangePassword,
+  });
+}
+
+/**
+ * Change password endpoint handler.
+ */
+export async function changePasswordHandler(req: AuthRequest, res: Response): Promise<void> {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({ error: 'Current password and new password are required' });
+    return;
+  }
+
+  const passwordError = validatePassword(newPassword);
+  if (passwordError) {
+    res.status(400).json({ error: passwordError });
+    return;
+  }
+
+  const users = await getUsers();
+  const user = users.find(u => u.id === req.user!.id);
+
+  if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
+    res.status(401).json({ error: 'Current password is incorrect' });
+    return;
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, 12);
+  user.mustChangePassword = false;
+  await saveUsers(users);
+
+  // Revoke current token so user must re-login with new password
+  if (req.user?.jti) {
+    revokeToken(req.user.jti);
+  }
+
+  // Issue new token
+  const jti = `${user.id}-${Date.now()}`;
+  const token = jwt.sign(
+    { id: user.id, username: user.username, role: user.role, jti },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRY }
+  );
+
+  logger.info('Password changed', { userId: user.id, username: user.username });
   res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+}
+
+/**
+ * Logout endpoint handler — revokes the current token server-side.
+ */
+export async function logoutHandler(req: AuthRequest, res: Response): Promise<void> {
+  if (req.user?.jti) {
+    revokeToken(req.user.jti);
+  }
+  res.json({ message: 'Logged out' });
 }
 
 /**
@@ -131,6 +219,7 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
 
 /**
  * JWT authentication middleware.
+ * Checks token validity AND server-side revocation.
  */
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
@@ -141,7 +230,14 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
 
   const token = authHeader.slice(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string; role: 'admin' | 'user' };
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string; role: 'admin' | 'user'; jti?: string };
+
+    // Check server-side revocation
+    if (decoded.jti && isTokenRevoked(decoded.jti)) {
+      res.status(401).json({ error: 'Token has been revoked' });
+      return;
+    }
+
     req.user = decoded;
     next();
   } catch {

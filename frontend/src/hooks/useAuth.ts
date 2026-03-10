@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { AuthState } from '../types';
-import { login as apiLogin } from '../services/api';
+import { login as apiLogin, logoutServer } from '../services/api';
 
 // Auto-logout after 30 minutes of inactivity (HIPAA session timeout)
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
@@ -15,12 +15,17 @@ export function useAuth() {
     };
   });
 
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Revoke token server-side (fire-and-forget)
+    try { await logoutServer(); } catch { /* ignore if already expired */ }
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setAuth({ token: null, user: null });
+    setMustChangePassword(false);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }, []);
 
@@ -53,10 +58,22 @@ export function useAuth() {
     localStorage.setItem('token', result.token);
     localStorage.setItem('user', JSON.stringify(result.user));
     setAuth({ token: result.token, user: result.user });
+
+    // Check if server says password must be changed
+    if ((result as any).mustChangePassword) {
+      setMustChangePassword(true);
+    }
+  }, []);
+
+  const handlePasswordChanged = useCallback((token: string, user: { id: string; username: string; role: 'admin' | 'user' }) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    setAuth({ token, user });
+    setMustChangePassword(false);
   }, []);
 
   const isAuthenticated = !!auth.token;
   const isAdmin = auth.user?.role === 'admin';
 
-  return { auth, login, logout, isAuthenticated, isAdmin };
+  return { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged };
 }

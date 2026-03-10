@@ -32,6 +32,8 @@ export interface RagTrace {
   sessionId?: string;
   collectionIds?: string[];
   streamed: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
   createdAt: string;
 }
 

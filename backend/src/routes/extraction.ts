@@ -9,6 +9,7 @@ import { extractDocumentData, BEDROCK_EXTRACTION_MODEL } from '../services/docum
 import { listTemplates, getTemplateById } from '../services/extractionTemplates';
 import { logAuditEvent } from '../services/audit';
 import { logger } from '../utils/logger';
+import { validateFileContent } from '../utils/fileValidation';
 
 const router = Router();
 
@@ -77,6 +78,12 @@ router.post('/extract', authenticate, upload.single('file'), async (req, res) =>
     return res.status(400).json({
       error: `Unsupported file type: ${file.mimetype}. Supported: PDF, PNG, JPEG, TIFF, DOCX, TXT`,
     });
+  }
+
+  // Validate file content matches claimed MIME type (magic bytes check)
+  const contentError = validateFileContent(file.buffer, file.mimetype, file.originalname);
+  if (contentError) {
+    return res.status(400).json({ error: contentError });
   }
 
   try {

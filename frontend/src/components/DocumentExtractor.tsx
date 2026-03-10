@@ -78,6 +78,43 @@ export function DocumentExtractor() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleExportCsv = () => {
+    if (!templateDetail) return;
+    const headers = templateDetail.fields.map(f => f.label);
+    const values = templateDetail.fields.map(f => {
+      const val = editedData[f.key];
+      if (val === null || val === undefined) return '';
+      const str = String(val);
+      // Escape CSV: wrap in quotes if contains comma, quote, or newline
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    });
+    const csv = headers.join(',') + '\n' + values.join(',');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `extraction-${result?.templateId || 'data'}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportJson = () => {
+    const blob = new Blob([JSON.stringify(editedData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `extraction-${result?.templateId || 'data'}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleReset = () => {
     setResult(null);
     setEditedData({});
@@ -223,6 +260,12 @@ export function DocumentExtractor() {
               </div>
               <button onClick={handleCopyJson} style={styles.copyButton}>
                 {copied ? 'Copied!' : 'Copy JSON'}
+              </button>
+              <button onClick={handleExportJson} style={styles.copyButton}>
+                Export JSON
+              </button>
+              <button onClick={handleExportCsv} style={styles.copyButton}>
+                Export CSV
               </button>
               <button onClick={handleReset} style={styles.resetButton}>
                 New Extraction

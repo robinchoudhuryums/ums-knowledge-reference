@@ -17,6 +17,7 @@ import { fetchAndIngestFeeSchedule } from '../services/feeScheduleFetcher';
 import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
+import { validateFileContent } from '../utils/fileValidation';
 
 const router = Router();
 
@@ -56,6 +57,13 @@ router.post(
     try {
       if (!req.file) {
         res.status(400).json({ error: 'No file provided' });
+        return;
+      }
+
+      // Validate file content matches claimed MIME type (magic bytes check)
+      const validationError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
+      if (validationError) {
+        res.status(400).json({ error: validationError });
         return;
       }
 
@@ -357,6 +365,13 @@ router.post(
     try {
       if (!req.file) {
         res.status(400).json({ error: 'No file provided' });
+        return;
+      }
+
+      // Validate file content matches claimed MIME type
+      const contentError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
+      if (contentError) {
+        res.status(400).json({ error: contentError });
         return;
       }
 

@@ -272,6 +272,8 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const generationTimeMs = Date.now() - generationStart;
     const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
     const rawAnswer = responseBody.content?.[0]?.text || 'Unable to generate a response.';
+    const inputTokens = responseBody.usage?.input_tokens;
+    const outputTokens = responseBody.usage?.output_tokens;
 
     const avgScore = searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length;
     const { answer, confidence } = parseConfidence(rawAnswer, avgScore);
@@ -305,6 +307,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       responseText: answer, confidence,
       responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
       collectionIds, streamed: false,
+      inputTokens, outputTokens,
     }).catch(() => {});
 
     const response: QueryResponse = { answer, sources, confidence, traceId };
@@ -408,6 +411,8 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     const bedrockResponse = await bedrockClient.send(command);
 
     let fullAnswer = '';
+    let streamInputTokens: number | undefined;
+    let streamOutputTokens: number | undefined;
     if (bedrockResponse.body) {
       for await (const event of bedrockResponse.body) {
         if (event.chunk?.bytes) {
@@ -415,6 +420,10 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
           if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
             fullAnswer += parsed.delta.text;
             res.write(`data: ${JSON.stringify({ type: 'text', text: parsed.delta.text })}\n\n`);
+          } else if (parsed.type === 'message_delta' && parsed.usage) {
+            streamOutputTokens = parsed.usage.output_tokens;
+          } else if (parsed.type === 'message_start' && parsed.message?.usage) {
+            streamInputTokens = parsed.message.usage.input_tokens;
           }
         }
       }
@@ -457,6 +466,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       responseText: cleanAnswer, confidence,
       responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
       collectionIds, streamed: true,
+      inputTokens: streamInputTokens, outputTokens: streamOutputTokens,
     }).catch(() => {});
   } catch (error) {
     logger.error('Streaming query failed', { error: String(error) });

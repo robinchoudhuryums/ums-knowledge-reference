@@ -7,7 +7,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
-import { initializeAuth, loginHandler, createUserHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
+import { validateEnv } from './utils/envValidation';
+import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
 import { initializeVectorStore } from './services/vectorStore';
 import { startReindexScheduler } from './services/reindexer';
 import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
@@ -74,6 +75,8 @@ app.get('/api/health', (_req, res) => {
 // Auth routes
 app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/users', authenticate, requireAdmin, createUserHandler as any);
+app.post('/api/auth/change-password', authenticate, changePasswordHandler as any);
+app.post('/api/auth/logout', authenticate, logoutHandler as any);
 
 // Document routes
 app.use('/api/documents', documentRoutes);
@@ -114,6 +117,9 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 async function start() {
   try {
     logger.info('Initializing UMS Knowledge Base...');
+
+    // Validate required environment variables
+    validateEnv();
 
     // Initialize auth (create default admin if needed)
     await initializeAuth();

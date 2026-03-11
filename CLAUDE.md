@@ -71,6 +71,7 @@ docker build -t ums-knowledge .
 - **Chunk size/overlap** (`chunker.ts`): Affects retrieval granularity
 
 ## Recent Changes (reverse chronological)
+- **Form review enhancements**: CMN form type auto-detection (CMS-484, CMS-10126, CMS-10125, prior auth) with required-field rules (`config/formRules.ts`), improved blank detection (underscores, placeholders, unchecked checkboxes), confidence threshold categories (high/low at 60%), template caching via SHA-256 hash on S3 (`form-analysis-cache/`), batch review endpoint (up to 10 files), in-browser PDF preview, confidence-based coloring on annotated PDFs (red=missing, amber=low confidence, orange=required)
 - **IDF-enhanced BM25 hybrid search**: Added proper IDF weighting to BM25 scoring with corpus-wide term frequency stats, normalized keyword scores for balanced hybrid combination
 - **Re-ranking pipeline**: Added post-retrieval re-ranking that boosts section header matches, document-level relevance signals, and penalizes noise chunks
 - **Section header detection**: Chunker now auto-detects ALL CAPS, markdown, colon-terminated, and numbered section headers and attaches them as metadata
@@ -96,5 +97,5 @@ docker build -t ums-knowledge .
 The Bedrock IAM policy needs these actions:
 - `bedrock:InvokeModel` (generation, embeddings, vision via Converse)
 - `bedrock:InvokeModelWithResponseStream` (streaming responses)
-- Textract: `textract:DetectDocumentText`, `textract:AnalyzeDocument`, `textract:StartDocumentTextDetection`, `textract:GetDocumentTextDetection`
+- Textract: `textract:DetectDocumentText`, `textract:AnalyzeDocument`, `textract:StartDocumentTextDetection`, `textract:GetDocumentTextDetection`, `textract:StartDocumentAnalysis`, `textract:GetDocumentAnalysis`
 - S3: standard read/write/delete on the configured bucket

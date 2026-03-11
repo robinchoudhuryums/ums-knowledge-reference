@@ -71,6 +71,15 @@ docker build -t ums-knowledge .
 - **Chunk size/overlap** (`chunker.ts`): Affects retrieval granularity
 
 ## Recent Changes (reverse chronological)
+- **Intake data auto-fill**: New "Intake / Clinical" tab with form fields for patient demographics, physician info, supplier details, HCPCS, diagnosis, and insurance. Generates CMN/prior-auth field mappings from entered intake data for form pre-population.
+- **AI-assisted clinical note extraction**: Upload physician notes → Claude Sonnet extracts ICD-10 codes, test results (ABG, SpO2, PFT), medical necessity language, functional limitations, equipment recommendations, and HCPCS codes. Maps extracted data to CMN form fields. Backend: `clinicalNoteExtractor.ts`, route: `POST /api/documents/clinical-extract`.
+- **Interactive PDF annotation editor**: Client-side PDF viewer (PDF.js) with SVG overlay for interactive annotations. Drag-to-move, click-to-remove, undo/redo (Ctrl+Z/Y), manual highlight drawing with 4 color choices. Code-split via React.lazy(). Component: `AnnotatedPdfViewer.tsx`.
+- **Structured document extraction**: Extraction templates (PPD, CMN, Prior Auth, General) with Claude Sonnet via Bedrock. Upload any document → get structured JSON data matching template fields. Route: `POST /api/extraction/extract`.
+- **RAG observability tracing**: Per-query trace logging (`ragTrace.ts`) capturing retrieval scores, response times, and confidence. Observability dashboard with daily stats, retrieval/generation failure drill-down.
+- **Quality metrics dashboard**: Tracks query confidence distribution, flagged responses, and unanswered questions over time.
+- **CMS fee schedule fetcher**: Auto-fetches and ingests CMS DME fee schedules (`feeScheduleFetcher.ts`) with configurable refresh interval. Admin trigger: `POST /api/documents/fee-schedule/fetch`.
+- **Document reindexer**: Change detection service (`reindexer.ts`) that checks for modified documents and re-ingests them. Admin trigger: `POST /api/documents/reindex`.
+- **Document collections and tagging**: Organize documents into collections, add/remove tags, filter queries by collection.
 - **Form review enhancements**: CMN form type auto-detection (CMS-484, CMS-10126, CMS-10125, prior auth) with required-field rules (`config/formRules.ts`), improved blank detection (underscores, placeholders, unchecked checkboxes), confidence threshold categories (high/low at 60%), template caching via SHA-256 hash on S3 (`form-analysis-cache/`), batch review endpoint (up to 10 files), in-browser PDF preview, confidence-based coloring on annotated PDFs (red=missing, amber=low confidence, orange=required)
 - **IDF-enhanced BM25 hybrid search**: Added proper IDF weighting to BM25 scoring with corpus-wide term frequency stats, normalized keyword scores for balanced hybrid combination
 - **Re-ranking pipeline**: Added post-retrieval re-ranking that boosts section header matches, document-level relevance signals, and penalizes noise chunks

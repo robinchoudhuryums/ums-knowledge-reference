@@ -13,7 +13,7 @@ const JWT_EXPIRY = (process.env.JWT_EXPIRY || '30m') as jwt.SignOptions['expires
 
 // Warn at startup if using the default JWT secret
 if (!process.env.JWT_SECRET) {
-  console.warn('[SECURITY WARNING] JWT_SECRET not set — using insecure default. Set JWT_SECRET in production!');
+  logger.warn('[SECURITY WARNING] JWT_SECRET not set — using insecure default. Set JWT_SECRET in production!');
 }
 
 const MIN_PASSWORD_LENGTH = 8;

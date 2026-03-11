@@ -40,6 +40,21 @@ app.use(express.json({ limit: '1mb' }));
 // Disable X-Powered-By (helmet does this too, belt + suspenders)
 app.disable('x-powered-by');
 
+// HTTPS enforcement in production — redirects HTTP requests and sets HSTS header.
+// Behind Render/ALB the X-Forwarded-Proto header indicates the original protocol.
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      res.redirect(301, `https://${req.headers.host}${req.url}`);
+      return;
+    }
+    // HSTS: tell browsers to always use HTTPS for 1 year
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    next();
+  });
+}
+
 // Request logging — logs every incoming request with method, path, status, and duration
 app.use((req, res, next) => {
   const start = Date.now();

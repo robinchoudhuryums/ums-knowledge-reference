@@ -7,6 +7,7 @@
 
 import { loadMetadata, saveMetadata } from './s3Storage';
 import { logger } from '../utils/logger';
+import { redactPhi } from '../utils/phiRedactor';
 import { v4 as uuidv4 } from 'uuid';
 
 const TRACE_PREFIX = 'rag-traces/';
@@ -111,10 +112,17 @@ export function generateTraceId(): string {
 export async function logRagTrace(trace: Omit<RagTrace, 'createdAt'>): Promise<void> {
   try {
     await ensureToday();
-    todayTraces.push({
+
+    // Redact potential PHI from query and response text before persisting
+    const redactedTrace = {
       ...trace,
+      queryText: redactPhi(trace.queryText).text,
+      reformulatedQuery: trace.reformulatedQuery ? redactPhi(trace.reformulatedQuery).text : undefined,
+      responseText: redactPhi(trace.responseText).text,
       createdAt: new Date().toISOString(),
-    });
+    };
+
+    todayTraces.push(redactedTrace);
     await persistIfNeeded();
   } catch (error) {
     logger.error('Failed to log RAG trace', { error: String(error), traceId: trace.traceId });

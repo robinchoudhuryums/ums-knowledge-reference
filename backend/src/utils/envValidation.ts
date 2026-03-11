@@ -39,9 +39,13 @@ export function validateEnv(): void {
     }
   }
 
-  // Special check: JWT_SECRET set but using default
-  if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
-    warnings.push('JWT_SECRET is not set — using insecure default. This is DANGEROUS in production!');
+  // JWT_SECRET: fail hard in production if not set
+  if (!process.env.JWT_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+      missing.push('  - JWT_SECRET: Required in production — refusing to start with insecure default');
+    } else {
+      warnings.push('JWT_SECRET is not set — using insecure default. Set this before deploying!');
+    }
   }
 
   if (warnings.length > 0) {

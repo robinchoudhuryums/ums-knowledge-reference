@@ -1,6 +1,7 @@
 import { FeedbackEntry } from '../types';
 import { saveMetadata, loadMetadata } from './s3Storage';
 import { logger } from '../utils/logger';
+import { redactPhi } from '../utils/phiRedactor';
 import { v4 as uuidv4 } from 'uuid';
 
 const FEEDBACK_PREFIX = 'feedback/';
@@ -20,17 +21,18 @@ export async function saveFeedback(
     sources: Array<{ documentName: string; chunkId: string; score: number }>;
   }
 ): Promise<FeedbackEntry> {
+  // Redact potential PHI from all free-text fields before persisting
   const entry: FeedbackEntry = {
     id: uuidv4(),
     timestamp: new Date().toISOString(),
     userId,
     username,
     queryId: uuidv4(),
-    question: data.question,
-    answer: data.answer,
-    patientName: data.patientName,
+    question: redactPhi(data.question).text,
+    answer: redactPhi(data.answer).text,
+    patientName: data.patientName ? redactPhi(data.patientName).text : undefined,
     transactionNumber: data.transactionNumber,
-    notes: data.notes,
+    notes: data.notes ? redactPhi(data.notes).text : undefined,
     sources: data.sources.map(s => ({
       documentId: '',
       documentName: s.documentName,

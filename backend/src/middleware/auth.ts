@@ -18,6 +18,13 @@ if (!process.env.JWT_SECRET) {
 
 const MIN_PASSWORD_LENGTH = 8;
 
+// Account lockout settings
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+// Password history: prevent reuse of last N passwords
+const PASSWORD_HISTORY_SIZE = 5;
+
 function validatePassword(password: string): string | null {
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
@@ -32,6 +39,40 @@ function validatePassword(password: string): string | null {
     return 'Password must contain at least one number';
   }
   return null;
+}
+
+/**
+ * Check if a password matches any of the user's previous passwords.
+ */
+async function isPasswordReused(password: string, user: User): Promise<boolean> {
+  // Check current password
+  if (await bcrypt.compare(password, user.passwordHash)) return true;
+
+  // Check history
+  if (user.passwordHistory) {
+    for (const oldHash of user.passwordHistory) {
+      if (await bcrypt.compare(password, oldHash)) return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if an account is currently locked out.
+ */
+function isAccountLocked(user: User): boolean {
+  if (!user.lockedUntil) return false;
+  return new Date(user.lockedUntil).getTime() > Date.now();
+}
+
+/**
+ * Get remaining lockout time in seconds.
+ */
+function getLockoutRemainingSeconds(user: User): number {
+  if (!user.lockedUntil) return 0;
+  const remaining = new Date(user.lockedUntil).getTime() - Date.now();
+  return remaining > 0 ? Math.ceil(remaining / 1000) : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,9 +143,39 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   const users = await getUsers();
   const user = users.find(u => u.username === username);
 
+  // Check account lockout before anything else
+  if (user && isAccountLocked(user)) {
+    const remaining = getLockoutRemainingSeconds(user);
+    logger.warn('Login attempt on locked account', { username, remainingSeconds: remaining });
+    res.status(423).json({
+      error: `Account is locked due to too many failed attempts. Try again in ${Math.ceil(remaining / 60)} minutes.`,
+    });
+    return;
+  }
+
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    // Track failed attempts
+    if (user) {
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+        user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
+        logger.warn('Account locked due to failed attempts', {
+          username,
+          attempts: user.failedLoginAttempts,
+          lockedUntil: user.lockedUntil,
+        });
+      }
+      await saveUsers(users);
+    }
     res.status(401).json({ error: 'Invalid credentials' });
     return;
+  }
+
+  // Successful login — reset failed attempts and lockout
+  if (user.failedLoginAttempts || user.lockedUntil) {
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = undefined;
+    await saveUsers(users);
   }
 
   // Generate a unique token ID for revocation support
@@ -147,6 +218,19 @@ export async function changePasswordHandler(req: AuthRequest, res: Response): Pr
     res.status(401).json({ error: 'Current password is incorrect' });
     return;
   }
+
+  // Check password history — prevent reuse of recent passwords
+  if (await isPasswordReused(newPassword, user)) {
+    res.status(400).json({
+      error: `Cannot reuse any of your last ${PASSWORD_HISTORY_SIZE} passwords. Choose a different password.`,
+    });
+    return;
+  }
+
+  // Push current hash into history before overwriting
+  const history = user.passwordHistory || [];
+  history.unshift(user.passwordHash);
+  user.passwordHistory = history.slice(0, PASSWORD_HISTORY_SIZE);
 
   user.passwordHash = await bcrypt.hash(newPassword, 12);
   user.mustChangePassword = false;

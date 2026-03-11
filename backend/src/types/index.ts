@@ -51,6 +51,12 @@ export interface User {
   role: 'admin' | 'user';
   createdAt: string;
   mustChangePassword?: boolean;
+  /** Previous password hashes for reuse prevention (most recent first) */
+  passwordHistory?: string[];
+  /** Number of consecutive failed login attempts */
+  failedLoginAttempts?: number;
+  /** ISO timestamp when account was locked out */
+  lockedUntil?: string;
 }
 
 export interface SearchResult {

@@ -1,6 +1,7 @@
 import { QueryLogEntry, SourceCitation } from '../types';
 import { loadMetadata, saveMetadata } from './s3Storage';
 import { logger } from '../utils/logger';
+import { redactPhi } from '../utils/phiRedactor';
 
 const LOG_PREFIX = 'query-logs/';
 
@@ -61,12 +62,17 @@ export async function logQuery(
   // Deduplicate source document names
   const sourceDocNames = [...new Set(sources.map(s => s.documentName))].join('; ');
 
+  // Redact potential PHI from question and answer before persisting
+  const redactedQuestion = redactPhi(question).text;
+  const truncatedAnswer = answer.length > 500 ? answer.slice(0, 500) + '...' : answer;
+  const redactedAnswer = redactPhi(truncatedAnswer).text;
+
   todayEntries.push({
     timestamp: new Date().toISOString(),
     userId,
     username,
-    question,
-    answer: answer.length > 500 ? answer.slice(0, 500) + '...' : answer,
+    question: redactedQuestion,
+    answer: redactedAnswer,
     confidence,
     sourceDocuments: sourceDocNames,
     sourceCount: sources.length,

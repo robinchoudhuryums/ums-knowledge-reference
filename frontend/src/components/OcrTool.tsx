@@ -1,4 +1,4 @@
-import { useState, useRef, ChangeEvent } from 'react';
+import { useState, useRef, ChangeEvent, lazy, Suspense } from 'react';
 import {
   ocrDocument,
   OcrResponse,
@@ -9,6 +9,10 @@ import {
   FormReviewResult,
   BatchFormReviewResult,
 } from '../services/api';
+
+const AnnotatedPdfViewer = lazy(() =>
+  import('./AnnotatedPdfViewer').then(m => ({ default: m.AnnotatedPdfViewer }))
+);
 
 type Mode = 'ocr' | 'form-review' | 'batch-review';
 
@@ -25,6 +29,7 @@ export function OcrTool() {
   const [downloading, setDownloading] = useState<'annotated' | 'original' | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [showInteractiveViewer, setShowInteractiveViewer] = useState(false);
   const [expandedBatchIndex, setExpandedBatchIndex] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const batchFileRef = useRef<HTMLInputElement>(null);
@@ -41,6 +46,7 @@ export function OcrTool() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setShowPreview(false);
+    setShowInteractiveViewer(false);
     setExpandedBatchIndex(null);
     if (fileRef.current) fileRef.current.value = '';
     if (batchFileRef.current) batchFileRef.current.value = '';
@@ -343,6 +349,12 @@ export function OcrTool() {
                 >
                   {downloading === 'annotated' && !showPreview ? 'Loading...' : 'Preview Annotated'}
                 </button>
+                <button
+                  onClick={() => setShowInteractiveViewer(true)}
+                  style={styles.interactiveBtn}
+                >
+                  Edit Annotations
+                </button>
               </div>
               <p style={styles.downloadHint}>
                 The marked-up copy has a watermark and cannot be submitted to insurance. Send both copies so the provider sees what to fix.
@@ -351,7 +363,7 @@ export function OcrTool() {
           )}
 
           {/* In-browser PDF Preview */}
-          {showPreview && previewUrl && (
+          {showPreview && previewUrl && !showInteractiveViewer && (
             <div style={styles.previewSection}>
               <div style={styles.previewHeader}>
                 <span style={styles.previewTitle}>Annotated PDF Preview</span>
@@ -362,6 +374,20 @@ export function OcrTool() {
                 style={styles.previewIframe}
                 title="Annotated PDF Preview"
               />
+            </div>
+          )}
+
+          {/* Interactive Annotation Editor */}
+          {showInteractiveViewer && selectedFile && (
+            <div style={styles.interactiveViewerSection}>
+              <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: '#6B8299' }}>Loading annotation editor...</div>}>
+                <AnnotatedPdfViewer
+                  file={selectedFile}
+                  emptyFields={formResult.emptyFields}
+                  lowConfidenceFields={formResult.lowConfidenceFields}
+                  onClose={() => setShowInteractiveViewer(false)}
+                />
+              </Suspense>
             </div>
           )}
 
@@ -780,6 +806,11 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#F5F3FF', color: '#6D28D9',
     fontSize: '13px', fontWeight: 600, cursor: 'pointer',
   },
+  interactiveBtn: {
+    padding: '10px 20px', border: '1px solid #6EE7B7', borderRadius: '10px',
+    background: '#ECFDF5', color: '#065F46',
+    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+  },
   downloadBtnDisabled: {
     padding: '10px 20px', border: 'none', borderRadius: '10px',
     background: '#8DA4B8', color: 'white',
@@ -805,6 +836,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   previewIframe: {
     width: '100%', height: '600px', border: 'none',
+  },
+  interactiveViewerSection: {
+    height: '700px', borderBottom: '1px solid #E8EFF5',
   },
 
   // Completion bar

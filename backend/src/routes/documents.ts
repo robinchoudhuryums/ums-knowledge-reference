@@ -12,6 +12,8 @@ import {
 import { removeDocumentChunks, searchChunksByKeyword } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
 import { extractTextWithOcr } from '../services/ocr';
+import { analyzeFormFields } from '../services/formAnalyzer';
+import { createAnnotatedPdf } from '../services/pdfAnnotator';
 import { checkForChanges } from '../services/reindexer';
 import { fetchAndIngestFeeSchedule } from '../services/feeScheduleFetcher';
 import { Collection } from '../types';
@@ -394,6 +396,129 @@ router.post(
       res.status(500).json({ error: error instanceof Error ? error.message : 'OCR extraction failed' });
     }
   }
+);
+
+// --- Form Review (detect blank fields and create annotated PDF) ---
+
+const formReviewUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff'];
+    const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif'];
+    const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
+
+    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Form review supports PDF, PNG, JPEG, and TIFF files (got ${file.mimetype})`));
+    }
+  },
+});
+
+/**
+ * POST /api/documents/form-review — Analyze a form for blank fields.
+ * Returns JSON with field analysis and optionally generates annotated + original PDFs.
+ *
+ * Query params:
+ *   ?output=json (default) — returns field analysis only
+ *   ?output=annotated — returns the annotated PDF (with highlights and watermark)
+ *   ?output=original — returns the original clean PDF
+ */
+router.post(
+  '/form-review',
+  authenticate,
+  formReviewUpload.single('file'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'No file provided' });
+        return;
+      }
+
+      // Validate file content
+      const contentError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
+      if (contentError) {
+        res.status(400).json({ error: contentError });
+        return;
+      }
+
+      const output = (req.query.output as string) || 'json';
+
+      // Step 1: Analyze the form with Textract FORMS
+      const analysis = await analyzeFormFields(req.file.buffer, req.file.originalname);
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'ocr', {
+        operation: 'form_review',
+        filename: req.file.originalname,
+        totalFields: analysis.totalFields,
+        emptyFields: analysis.emptyCount,
+        output,
+      });
+
+      if (output === 'json') {
+        // Return the field analysis as JSON
+        res.json({
+          filename: req.file.originalname,
+          totalFields: analysis.totalFields,
+          emptyCount: analysis.emptyCount,
+          pageCount: analysis.pageCount,
+          emptyFields: analysis.emptyFields.map(f => ({
+            key: f.key,
+            page: f.page,
+            confidence: Math.round(f.confidence),
+          })),
+          filledFields: analysis.filledFields.map(f => ({
+            key: f.key,
+            value: f.value,
+            page: f.page,
+            confidence: Math.round(f.confidence),
+          })),
+        });
+        return;
+      }
+
+      // For PDF outputs, the source must be a PDF
+      const isPdf = req.file.mimetype === 'application/pdf' ||
+        req.file.originalname.toLowerCase().endsWith('.pdf');
+
+      if (!isPdf) {
+        res.status(400).json({
+          error: 'Annotated and original PDF outputs require a PDF input file. Use output=json for images.',
+        });
+        return;
+      }
+
+      if (output === 'annotated') {
+        // Step 2: Generate annotated PDF with highlights around empty fields
+        const annotatedPdf = await createAnnotatedPdf(req.file.buffer, analysis.emptyFields);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="REVIEW-${req.file.originalname}"`,
+        );
+        res.send(annotatedPdf);
+        return;
+      }
+
+      if (output === 'original') {
+        // Return the original PDF unchanged
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${req.file.originalname}"`,
+        );
+        res.send(req.file.buffer);
+        return;
+      }
+
+      res.status(400).json({ error: 'Invalid output parameter. Use: json, annotated, or original' });
+    } catch (error) {
+      logger.error('Form review failed', { error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Form review failed' });
+    }
+  },
 );
 
 // --- Fee Schedule ---

@@ -297,6 +297,83 @@ export async function ocrDocument(file: File): Promise<OcrResponse> {
   });
 }
 
+// Form Review
+export interface FormReviewField {
+  key: string;
+  value?: string;
+  page: number;
+  confidence: number;
+}
+
+export interface FormReviewResult {
+  filename: string;
+  totalFields: number;
+  emptyCount: number;
+  pageCount: number;
+  emptyFields: FormReviewField[];
+  filledFields: FormReviewField[];
+}
+
+export async function reviewForm(file: File): Promise<FormReviewResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return request('/documents/form-review?output=json', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function downloadAnnotatedPdf(file: File): Promise<Blob> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE}/documents/form-review?output=annotated`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.reload();
+      throw new Error('Session expired');
+    }
+    const err = await response.json().catch(() => ({ error: 'Download failed' }));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+
+  return response.blob();
+}
+
+export async function downloadOriginalPdf(file: File): Promise<Blob> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE}/documents/form-review?output=original`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.reload();
+      throw new Error('Session expired');
+    }
+    const err = await response.json().catch(() => ({ error: 'Download failed' }));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+
+  return response.blob();
+}
+
 // FAQ dashboard (admin)
 export interface FaqDashboardData {
   period: { start: string; end: string };

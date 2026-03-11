@@ -12,7 +12,7 @@ import {
 import { removeDocumentChunks, searchChunksByKeyword } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
 import { extractTextWithOcr } from '../services/ocr';
-import { analyzeFormFields } from '../services/formAnalyzer';
+import { analyzeFormFields, analyzeFormFieldsBatch } from '../services/formAnalyzer';
 import { createAnnotatedPdf } from '../services/pdfAnnotator';
 import { checkForChanges } from '../services/reindexer';
 import { fetchAndIngestFeeSchedule } from '../services/feeScheduleFetcher';
@@ -462,17 +462,43 @@ router.post(
           filename: req.file.originalname,
           totalFields: analysis.totalFields,
           emptyCount: analysis.emptyCount,
+          lowConfidenceCount: analysis.lowConfidenceCount,
+          requiredMissingCount: analysis.requiredMissingCount,
+          completionPercentage: analysis.completionPercentage,
           pageCount: analysis.pageCount,
+          cached: analysis.cached,
+          formType: analysis.formType,
           emptyFields: analysis.emptyFields.map(f => ({
             key: f.key,
             page: f.page,
             confidence: Math.round(f.confidence),
+            confidenceCategory: f.confidenceCategory,
+            isRequired: f.isRequired,
+            requiredLabel: f.requiredLabel,
+            section: f.section,
+            isCheckbox: f.isCheckbox,
           })),
           filledFields: analysis.filledFields.map(f => ({
             key: f.key,
             value: f.value,
             page: f.page,
             confidence: Math.round(f.confidence),
+            confidenceCategory: f.confidenceCategory,
+            isRequired: f.isRequired,
+            section: f.section,
+          })),
+          lowConfidenceFields: analysis.lowConfidenceFields.map(f => ({
+            key: f.key,
+            value: f.value,
+            page: f.page,
+            confidence: Math.round(f.confidence),
+            isEmpty: f.isEmpty,
+          })),
+          requiredMissingFields: analysis.requiredMissingFields.map(f => ({
+            key: f.key,
+            requiredLabel: f.requiredLabel,
+            section: f.section,
+            page: f.page,
           })),
         });
         return;
@@ -490,8 +516,8 @@ router.post(
       }
 
       if (output === 'annotated') {
-        // Step 2: Generate annotated PDF with highlights around empty fields
-        const annotatedPdf = await createAnnotatedPdf(req.file.buffer, analysis.emptyFields);
+        // Step 2: Generate annotated PDF with highlights around empty fields + low-confidence
+        const annotatedPdf = await createAnnotatedPdf(req.file.buffer, analysis.emptyFields, analysis.lowConfidenceFields);
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader(
@@ -517,6 +543,94 @@ router.post(
     } catch (error) {
       logger.error('Form review failed', { error: String(error) });
       res.status(500).json({ error: error instanceof Error ? error.message : 'Form review failed' });
+    }
+  },
+);
+
+// --- Batch Form Review ---
+
+const batchFormReviewUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff'];
+    const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif'];
+    const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
+
+    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Form review supports PDF, PNG, JPEG, and TIFF files (got ${file.mimetype})`));
+    }
+  },
+});
+
+/**
+ * POST /api/documents/form-review/batch — Analyze multiple forms at once.
+ * Returns a summary array with per-file results.
+ * Accepts up to 10 files via multipart form data (field name: "files").
+ */
+router.post(
+  '/form-review/batch',
+  authenticate,
+  batchFormReviewUpload.array('files', 10),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        res.status(400).json({ error: 'No files provided' });
+        return;
+      }
+
+      const fileInputs = files.map(f => ({
+        buffer: f.buffer,
+        filename: f.originalname,
+      }));
+
+      const results = await analyzeFormFieldsBatch(fileInputs);
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'ocr', {
+        operation: 'form_review_batch',
+        fileCount: files.length,
+        filenames: files.map(f => f.originalname),
+      });
+
+      const summary = results.map((r, i) => ({
+        filename: files[i].originalname,
+        totalFields: r.totalFields,
+        emptyCount: r.emptyCount,
+        requiredMissingCount: r.requiredMissingCount,
+        lowConfidenceCount: r.lowConfidenceCount,
+        completionPercentage: r.completionPercentage,
+        pageCount: r.pageCount,
+        cached: r.cached,
+        formType: r.formType,
+        emptyFields: r.emptyFields.map(f => ({
+          key: f.key,
+          page: f.page,
+          confidence: Math.round(f.confidence),
+          confidenceCategory: f.confidenceCategory,
+          isRequired: f.isRequired,
+          requiredLabel: f.requiredLabel,
+          section: f.section,
+          isCheckbox: f.isCheckbox,
+        })),
+        requiredMissingFields: r.requiredMissingFields.map(f => ({
+          key: f.key,
+          requiredLabel: f.requiredLabel,
+          section: f.section,
+          page: f.page,
+        })),
+      }));
+
+      res.json({
+        fileCount: files.length,
+        totalCachedCount: results.filter(r => r.cached).length,
+        results: summary,
+      });
+    } catch (error) {
+      logger.error('Batch form review failed', { error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Batch form review failed' });
     }
   },
 );

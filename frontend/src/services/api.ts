@@ -303,15 +303,52 @@ export interface FormReviewField {
   value?: string;
   page: number;
   confidence: number;
+  confidenceCategory?: 'high' | 'low';
+  isRequired?: boolean;
+  requiredLabel?: string;
+  section?: string;
+  isCheckbox?: boolean;
+  isEmpty?: boolean;
+}
+
+export interface FormTypeInfo {
+  key: string;
+  name: string;
+  description: string;
 }
 
 export interface FormReviewResult {
   filename: string;
   totalFields: number;
   emptyCount: number;
+  lowConfidenceCount: number;
+  requiredMissingCount: number;
+  completionPercentage: number;
   pageCount: number;
+  cached: boolean;
+  formType: FormTypeInfo | null;
   emptyFields: FormReviewField[];
   filledFields: FormReviewField[];
+  lowConfidenceFields: FormReviewField[];
+  requiredMissingFields: FormReviewField[];
+}
+
+export interface BatchFormReviewResult {
+  fileCount: number;
+  totalCachedCount: number;
+  results: Array<{
+    filename: string;
+    totalFields: number;
+    emptyCount: number;
+    requiredMissingCount: number;
+    lowConfidenceCount: number;
+    completionPercentage: number;
+    pageCount: number;
+    cached: boolean;
+    formType: FormTypeInfo | null;
+    emptyFields: FormReviewField[];
+    requiredMissingFields: FormReviewField[];
+  }>;
 }
 
 export async function reviewForm(file: File): Promise<FormReviewResult> {
@@ -372,6 +409,33 @@ export async function downloadOriginalPdf(file: File): Promise<Blob> {
   }
 
   return response.blob();
+}
+
+export async function reviewFormBatch(files: File[]): Promise<BatchFormReviewResult> {
+  const token = getToken();
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('files', file);
+  }
+
+  const response = await fetch(`${API_BASE}/documents/form-review/batch`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.reload();
+      throw new Error('Session expired');
+    }
+    const err = await response.json().catch(() => ({ error: 'Batch review failed' }));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
 }
 
 // FAQ dashboard (admin)

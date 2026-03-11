@@ -12,11 +12,12 @@ import { QualityDashboard } from './components/QualityDashboard';
 import { DocumentExtractor } from './components/DocumentExtractor';
 import { ObservabilityDashboard } from './components/ObservabilityDashboard';
 import { ChangePasswordForm } from './components/ChangePasswordForm';
+import { IntakeAutoFill } from './components/IntakeAutoFill';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
-type Tab = 'chat' | 'search' | 'extract' | 'documents' | 'ocr' | 'admin';
+type Tab = 'chat' | 'search' | 'extract' | 'intake' | 'documents' | 'ocr' | 'admin';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
@@ -24,6 +25,7 @@ const tabIcons: Record<Tab, string> = {
   chat: '\u2728',
   search: '\uD83D\uDD0D',
   extract: '\uD83D\uDCDD',
+  intake: '\uD83D\uDCCB',
   ocr: '\uD83D\uDCF7',
   documents: '\uD83D\uDCC1',
   admin: '\u2699\uFE0F',
@@ -78,6 +80,7 @@ export default function App() {
     { key: 'chat', label: 'Ask Questions' },
     { key: 'search', label: 'Search' },
     { key: 'extract', label: 'Extract' },
+    { key: 'intake', label: 'Intake / Clinical' },
     { key: 'ocr', label: 'OCR Scan' },
     { key: 'documents', label: 'Documents' },
     { key: 'admin', label: 'Admin', adminOnly: true },
@@ -122,6 +125,7 @@ export default function App() {
           {activeTab === 'chat' && <ChatInterface collections={collections} />}
           {activeTab === 'search' && <DocumentSearch collections={collections} />}
           {activeTab === 'extract' && <DocumentExtractor />}
+          {activeTab === 'intake' && <IntakeAutoFill />}
           {activeTab === 'ocr' && <OcrTool />}
           {activeTab === 'documents' && (
             <DocumentManager

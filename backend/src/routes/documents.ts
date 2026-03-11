@@ -16,6 +16,7 @@ import { analyzeFormFields, analyzeFormFieldsBatch } from '../services/formAnaly
 import { createAnnotatedPdf } from '../services/pdfAnnotator';
 import { checkForChanges } from '../services/reindexer';
 import { fetchAndIngestFeeSchedule } from '../services/feeScheduleFetcher';
+import { extractClinicalNotes } from '../services/clinicalNoteExtractor';
 import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
@@ -631,6 +632,71 @@ router.post(
     } catch (error) {
       logger.error('Batch form review failed', { error: String(error) });
       res.status(500).json({ error: error instanceof Error ? error.message : 'Batch form review failed' });
+    }
+  },
+);
+
+// --- Clinical Note Extraction (AI-assisted) ---
+
+const clinicalUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.docx', '.txt'];
+    const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
+
+    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Clinical note extraction supports PDF, images, DOCX, and TXT files (got ${file.mimetype})`));
+    }
+  },
+});
+
+/**
+ * POST /api/documents/clinical-extract — Extract structured clinical data from
+ * physician notes, face-to-face encounters, or other clinical documents.
+ *
+ * Returns extracted diagnoses, test results, medical necessity language,
+ * and mappings to CMN/prior-auth form fields.
+ */
+router.post(
+  '/clinical-extract',
+  authenticate,
+  clinicalUpload.single('file'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'No file provided' });
+        return;
+      }
+
+      const contentError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
+      if (contentError) {
+        res.status(400).json({ error: contentError });
+        return;
+      }
+
+      const result = await extractClinicalNotes(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+      );
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'ocr', {
+        operation: 'clinical_extract',
+        filename: req.file.originalname,
+        confidence: result.extraction.confidence,
+        icdCodesFound: result.extraction.icdCodes.length,
+        mappingsGenerated: result.fieldMappings.length,
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Clinical note extraction failed', { error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Clinical note extraction failed' });
     }
   },
 );

@@ -438,6 +438,78 @@ export async function reviewFormBatch(files: File[]): Promise<BatchFormReviewRes
   return response.json();
 }
 
+// Intake Data (auto-fill) types
+export interface IntakeData {
+  patientName?: string;
+  patientDob?: string;
+  patientAddress?: string;
+  patientPhone?: string;
+  medicareId?: string;
+  physicianName?: string;
+  physicianNpi?: string;
+  supplierName?: string;
+  hcpcsCode?: string;
+  diagnosisCode?: string;
+  insuranceName?: string;
+  policyNumber?: string;
+}
+
+// Clinical Note Extraction types
+export interface ClinicalTestResult {
+  testName: string;
+  result: string;
+  date: string | null;
+  unit: string | null;
+}
+
+export interface CmnFieldMapping {
+  fieldName: string;
+  suggestedValue: string;
+  sourceContext: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface ClinicalExtraction {
+  patientName: string | null;
+  patientDob: string | null;
+  patientAddress: string | null;
+  patientPhone: string | null;
+  memberId: string | null;
+  primaryDiagnosis: string | null;
+  icdCodes: string[];
+  secondaryDiagnoses: string[];
+  testResults: ClinicalTestResult[];
+  vitalSigns: Record<string, string>;
+  medicalNecessityLanguage: string | null;
+  previousTreatments: string[];
+  functionalLimitations: string[];
+  prognosis: string | null;
+  equipmentRecommended: string | null;
+  hcpcsCodes: string[];
+  lengthOfNeed: string | null;
+  physicianName: string | null;
+  physicianNpi: string | null;
+  encounterDate: string | null;
+  confidence: 'high' | 'medium' | 'low';
+  extractionNotes: string;
+  modelUsed: string;
+}
+
+export interface ClinicalExtractionResult {
+  extraction: ClinicalExtraction;
+  fieldMappings: CmnFieldMapping[];
+}
+
+export async function extractClinicalNotes(file: File): Promise<ClinicalExtractionResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return request('/documents/clinical-extract', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
 // FAQ dashboard (admin)
 export interface FaqDashboardData {
   period: { start: string; end: string };

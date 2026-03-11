@@ -153,3 +153,27 @@ export interface SourceCitation {
   sectionHeader?: string;
   score: number;
 }
+
+export interface MonitoredSource {
+  id: string;
+  name: string;
+  url: string;
+  collectionId: string;
+  /** How often to check for updates (hours) */
+  checkIntervalHours: number;
+  /** File type hint: 'auto' | 'pdf' | 'csv' | 'txt' */
+  fileType: 'auto' | 'pdf' | 'csv' | 'txt';
+  /** Whether this source is actively monitored */
+  enabled: boolean;
+  /** Category for grouping in the UI */
+  category: string;
+  createdBy: string;
+  createdAt: string;
+  lastCheckedAt?: string;
+  lastContentHash?: string;
+  lastIngestedAt?: string;
+  lastDocumentId?: string;
+  lastError?: string;
+  /** HTTP status from last check */
+  lastHttpStatus?: number;
+}

@@ -71,6 +71,7 @@ docker build -t ums-knowledge .
 - **Chunk size/overlap** (`chunker.ts`): Affects retrieval granularity
 
 ## Recent Changes (reverse chronological)
+- **Document source monitor**: Automated URL monitoring service (`sourceMonitor.ts`) that tracks external document URLs (LCDs, CMS policies, payer docs) for content changes. SHA-256 hash comparison, configurable per-source check intervals, auto-ingestion on change with previous version cleanup. Admin CRUD API at `/api/sources/`, force-check per source or all. Background scheduler ticks hourly.
 - **Intake data auto-fill**: New "Intake / Clinical" tab with form fields for patient demographics, physician info, supplier details, HCPCS, diagnosis, and insurance. Generates CMN/prior-auth field mappings from entered intake data for form pre-population.
 - **AI-assisted clinical note extraction**: Upload physician notes → Claude Sonnet extracts ICD-10 codes, test results (ABG, SpO2, PFT), medical necessity language, functional limitations, equipment recommendations, and HCPCS codes. Maps extracted data to CMN form fields. Backend: `clinicalNoteExtractor.ts`, route: `POST /api/documents/clinical-extract`.
 - **Interactive PDF annotation editor**: Client-side PDF viewer (PDF.js) with SVG overlay for interactive annotations. Drag-to-move, click-to-remove, undo/redo (Ctrl+Z/Y), manual highlight drawing with 4 color choices. Code-split via React.lazy(). Component: `AnnotatedPdfViewer.tsx`.

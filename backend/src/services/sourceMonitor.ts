@@ -1,0 +1,467 @@
+/**
+ * Document Source Monitor
+ *
+ * Monitors a list of configured URLs (public policy docs, fee schedules, LCD PDFs, etc.)
+ * for content changes. When a change is detected, the new version is automatically
+ * downloaded and ingested into the knowledge base, replacing the previous version.
+ *
+ * Sources are stored in S3 metadata and managed via admin API endpoints.
+ *
+ * Supports: PDF, CSV, TXT, and auto-detection by URL extension / Content-Type header.
+ */
+
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
+import { logger } from '../utils/logger';
+import { ingestDocument } from './ingestion';
+import { removeDocumentChunks } from './vectorStore';
+import { getDocumentsIndex, saveDocumentsIndex } from './s3Storage';
+import { MonitoredSource } from '../types';
+import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
+import https from 'https';
+import http from 'http';
+
+// S3 key for the source registry
+const SOURCES_INDEX_KEY = `${S3_PREFIXES.metadata}monitored-sources.json`;
+
+// Default check interval: every 24 hours
+const DEFAULT_CHECK_INTERVAL_HOURS = 24;
+
+// Scheduler runs every hour to check if any sources are due
+const SCHEDULER_TICK_MS = 60 * 60 * 1000; // 1 hour
+
+let schedulerInterval: ReturnType<typeof setInterval> | null = null;
+
+// ─── Source Registry (S3-backed) ───────────────────────────────────────
+
+export async function getMonitoredSources(): Promise<MonitoredSource[]> {
+  try {
+    const response = await s3Client.send(new GetObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: SOURCES_INDEX_KEY,
+    }));
+    const body = await response.Body?.transformToString();
+    return body ? JSON.parse(body) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveMonitoredSources(sources: MonitoredSource[]): Promise<void> {
+  await s3Client.send(new PutObjectCommand({
+    Bucket: S3_BUCKET,
+    Key: SOURCES_INDEX_KEY,
+    Body: JSON.stringify(sources, null, 2),
+    ContentType: 'application/json',
+    ServerSideEncryption: 'AES256',
+  }));
+}
+
+// ─── CRUD ──────────────────────────────────────────────────────────────
+
+export async function addMonitoredSource(input: {
+  name: string;
+  url: string;
+  collectionId: string;
+  checkIntervalHours?: number;
+  fileType?: MonitoredSource['fileType'];
+  category?: string;
+  createdBy: string;
+}): Promise<MonitoredSource> {
+  const sources = await getMonitoredSources();
+
+  // Prevent duplicate URLs
+  if (sources.find(s => s.url === input.url)) {
+    throw new Error('A source with this URL is already being monitored');
+  }
+
+  const source: MonitoredSource = {
+    id: uuidv4(),
+    name: input.name,
+    url: input.url,
+    collectionId: input.collectionId,
+    checkIntervalHours: input.checkIntervalHours || DEFAULT_CHECK_INTERVAL_HOURS,
+    fileType: input.fileType || 'auto',
+    enabled: true,
+    category: input.category || 'general',
+    createdBy: input.createdBy,
+    createdAt: new Date().toISOString(),
+  };
+
+  sources.push(source);
+  await saveMonitoredSources(sources);
+  logger.info('Monitored source added', { id: source.id, name: source.name, url: source.url });
+
+  return source;
+}
+
+export async function updateMonitoredSource(
+  id: string,
+  updates: Partial<Pick<MonitoredSource, 'name' | 'url' | 'collectionId' | 'checkIntervalHours' | 'fileType' | 'enabled' | 'category'>>
+): Promise<MonitoredSource> {
+  const sources = await getMonitoredSources();
+  const idx = sources.findIndex(s => s.id === id);
+  if (idx === -1) throw new Error('Monitored source not found');
+
+  // If URL is changing, check for duplicates
+  if (updates.url && updates.url !== sources[idx].url) {
+    if (sources.find(s => s.url === updates.url && s.id !== id)) {
+      throw new Error('A source with this URL is already being monitored');
+    }
+  }
+
+  Object.assign(sources[idx], updates);
+  await saveMonitoredSources(sources);
+  return sources[idx];
+}
+
+export async function removeMonitoredSource(id: string): Promise<void> {
+  const sources = await getMonitoredSources();
+  const idx = sources.findIndex(s => s.id === id);
+  if (idx === -1) throw new Error('Monitored source not found');
+
+  const source = sources[idx];
+
+  // Clean up the last ingested document if it exists
+  if (source.lastDocumentId) {
+    try {
+      await removeDocumentChunks(source.lastDocumentId);
+      const docs = await getDocumentsIndex();
+      const updated = docs.filter(d => d.id !== source.lastDocumentId);
+      if (updated.length !== docs.length) {
+        await saveDocumentsIndex(updated);
+      }
+    } catch (err) {
+      logger.warn('Failed to clean up document for removed source', {
+        sourceId: id,
+        documentId: source.lastDocumentId,
+        error: String(err),
+      });
+    }
+  }
+
+  sources.splice(idx, 1);
+  await saveMonitoredSources(sources);
+  logger.info('Monitored source removed', { id, name: source.name });
+}
+
+// ─── Download Utility ──────────────────────────────────────────────────
+
+function downloadFile(url: string, timeoutMs = 60000): Promise<{ buffer: Buffer; contentType?: string }> {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http;
+    const request = client.get(url, { timeout: timeoutMs }, (response) => {
+      // Follow redirects (up to 5)
+      if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        downloadFile(response.headers.location, timeoutMs).then(resolve).catch(reject);
+        return;
+      }
+
+      if (!response.statusCode || response.statusCode !== 200) {
+        reject(new Error(`HTTP ${response.statusCode} from ${url}`));
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      response.on('end', () => resolve({
+        buffer: Buffer.concat(chunks),
+        contentType: response.headers['content-type'],
+      }));
+      response.on('error', reject);
+    });
+
+    request.on('error', reject);
+    request.on('timeout', () => {
+      request.destroy();
+      reject(new Error(`Timeout fetching ${url}`));
+    });
+  });
+}
+
+// ─── File Type Detection ───────────────────────────────────────────────
+
+function detectMimeType(url: string, contentType?: string, fileType?: MonitoredSource['fileType']): string {
+  // Explicit file type takes precedence
+  if (fileType && fileType !== 'auto') {
+    const mimeMap: Record<string, string> = {
+      pdf: 'application/pdf',
+      csv: 'text/csv',
+      txt: 'text/plain',
+    };
+    return mimeMap[fileType] || 'application/octet-stream';
+  }
+
+  // Check Content-Type header
+  if (contentType) {
+    const ct = contentType.toLowerCase().split(';')[0].trim();
+    if (ct === 'application/pdf') return 'application/pdf';
+    if (ct === 'text/csv') return 'text/csv';
+    if (ct.startsWith('text/')) return 'text/plain';
+  }
+
+  // Fall back to URL extension
+  const urlLower = url.toLowerCase().split('?')[0];
+  if (urlLower.endsWith('.pdf')) return 'application/pdf';
+  if (urlLower.endsWith('.csv')) return 'text/csv';
+  if (urlLower.endsWith('.txt') || urlLower.endsWith('.md')) return 'text/plain';
+  if (urlLower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+  return 'application/pdf'; // Default assumption for policy documents
+}
+
+function detectFilename(source: MonitoredSource, contentType?: string): string {
+  const urlPath = source.url.split('?')[0].split('/').pop() || '';
+  if (urlPath && urlPath.includes('.')) return urlPath;
+
+  // Build a filename from the source name
+  const safeName = source.name.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-');
+  const mimeType = detectMimeType(source.url, contentType, source.fileType);
+  const extMap: Record<string, string> = {
+    'application/pdf': '.pdf',
+    'text/csv': '.csv',
+    'text/plain': '.txt',
+  };
+  const ext = extMap[mimeType] || '.pdf';
+  return `${safeName}${ext}`;
+}
+
+// ─── Check & Ingest a Single Source ────────────────────────────────────
+
+export async function checkSource(source: MonitoredSource): Promise<{
+  changed: boolean;
+  ingested: boolean;
+  message: string;
+}> {
+  logger.info('Checking monitored source', { id: source.id, name: source.name, url: source.url });
+
+  // Download the file
+  let buffer: Buffer;
+  let contentType: string | undefined;
+  try {
+    const result = await downloadFile(source.url);
+    buffer = result.buffer;
+    contentType = result.contentType;
+  } catch (error: any) {
+    const msg = `Download failed: ${error.message}`;
+    logger.warn('Source check failed', { sourceId: source.id, error: msg });
+    // Update source metadata with error
+    await updateSourceCheckResult(source.id, {
+      lastCheckedAt: new Date().toISOString(),
+      lastError: msg,
+      lastHttpStatus: extractHttpStatus(error.message),
+    });
+    return { changed: false, ingested: false, message: msg };
+  }
+
+  // Hash the content
+  const contentHash = createHash('sha256').update(buffer).digest('hex');
+
+  // Check if content has changed
+  if (contentHash === source.lastContentHash) {
+    await updateSourceCheckResult(source.id, {
+      lastCheckedAt: new Date().toISOString(),
+      lastError: undefined,
+      lastHttpStatus: 200,
+    });
+    return { changed: false, ingested: false, message: 'No changes detected' };
+  }
+
+  // Content has changed — ingest the new version
+  const mimeType = detectMimeType(source.url, contentType, source.fileType);
+  const filename = detectFilename(source, contentType);
+
+  logger.info('Source content changed, re-ingesting', {
+    sourceId: source.id,
+    name: source.name,
+    oldHash: source.lastContentHash?.slice(0, 12),
+    newHash: contentHash.slice(0, 12),
+    mimeType,
+    filename,
+    sizeBytes: buffer.length,
+  });
+
+  try {
+    // Remove previous version's chunks if we had one
+    if (source.lastDocumentId) {
+      try {
+        await removeDocumentChunks(source.lastDocumentId);
+        const docs = await getDocumentsIndex();
+        const docIdx = docs.findIndex(d => d.id === source.lastDocumentId);
+        if (docIdx !== -1) {
+          docs[docIdx].status = 'error';
+          docs[docIdx].errorMessage = `Replaced by updated version from ${source.name}`;
+          await saveDocumentsIndex(docs);
+        }
+      } catch (err) {
+        logger.warn('Failed to clean up previous version', { error: String(err) });
+      }
+    }
+
+    // Ingest new version
+    const result = await ingestDocument(
+      buffer,
+      filename,
+      mimeType,
+      source.collectionId,
+      'source-monitor',
+    );
+
+    // Update source metadata
+    await updateSourceCheckResult(source.id, {
+      lastCheckedAt: new Date().toISOString(),
+      lastContentHash: contentHash,
+      lastIngestedAt: new Date().toISOString(),
+      lastDocumentId: result.document.id,
+      lastError: undefined,
+      lastHttpStatus: 200,
+    });
+
+    logger.info('Source ingested successfully', {
+      sourceId: source.id,
+      name: source.name,
+      documentId: result.document.id,
+      chunkCount: result.chunkCount,
+    });
+
+    return {
+      changed: true,
+      ingested: true,
+      message: `Ingested ${result.chunkCount} chunks from updated ${source.name}`,
+    };
+  } catch (error: any) {
+    const msg = `Ingestion failed: ${error.message}`;
+    await updateSourceCheckResult(source.id, {
+      lastCheckedAt: new Date().toISOString(),
+      lastError: msg,
+      lastHttpStatus: 200,
+    });
+    return { changed: true, ingested: false, message: msg };
+  }
+}
+
+// ─── Batch Check (all due sources) ────────────────────────────────────
+
+export async function checkAllDueSources(): Promise<{
+  checked: number;
+  changed: number;
+  ingested: number;
+  errors: number;
+  results: Array<{ sourceId: string; name: string; changed: boolean; ingested: boolean; message: string }>;
+}> {
+  const sources = await getMonitoredSources();
+  const enabledSources = sources.filter(s => s.enabled);
+
+  const now = Date.now();
+  const dueSources = enabledSources.filter(s => {
+    if (!s.lastCheckedAt) return true; // Never checked
+    const lastCheck = new Date(s.lastCheckedAt).getTime();
+    const intervalMs = s.checkIntervalHours * 60 * 60 * 1000;
+    return (now - lastCheck) >= intervalMs;
+  });
+
+  if (dueSources.length === 0) {
+    return { checked: 0, changed: 0, ingested: 0, errors: 0, results: [] };
+  }
+
+  logger.info('Source monitor: checking due sources', {
+    total: enabledSources.length,
+    due: dueSources.length,
+  });
+
+  const results: Array<{ sourceId: string; name: string; changed: boolean; ingested: boolean; message: string }> = [];
+  let changed = 0;
+  let ingested = 0;
+  let errors = 0;
+
+  // Check sources sequentially to avoid overwhelming the server
+  for (const source of dueSources) {
+    try {
+      const result = await checkSource(source);
+      results.push({
+        sourceId: source.id,
+        name: source.name,
+        changed: result.changed,
+        ingested: result.ingested,
+        message: result.message,
+      });
+      if (result.changed) changed++;
+      if (result.ingested) ingested++;
+      if (!result.ingested && result.changed) errors++;
+    } catch (error) {
+      errors++;
+      results.push({
+        sourceId: source.id,
+        name: source.name,
+        changed: false,
+        ingested: false,
+        message: `Unexpected error: ${String(error)}`,
+      });
+    }
+  }
+
+  logger.info('Source monitor: check complete', { checked: dueSources.length, changed, ingested, errors });
+  return { checked: dueSources.length, changed, ingested, errors, results };
+}
+
+// ─── Force-check a single source by ID ────────────────────────────────
+
+export async function forceCheckSource(id: string): Promise<{
+  changed: boolean;
+  ingested: boolean;
+  message: string;
+}> {
+  const sources = await getMonitoredSources();
+  const source = sources.find(s => s.id === id);
+  if (!source) throw new Error('Monitored source not found');
+  return checkSource(source);
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────
+
+async function updateSourceCheckResult(
+  sourceId: string,
+  updates: Partial<MonitoredSource>
+): Promise<void> {
+  const sources = await getMonitoredSources();
+  const idx = sources.findIndex(s => s.id === sourceId);
+  if (idx === -1) return;
+  Object.assign(sources[idx], updates);
+  await saveMonitoredSources(sources);
+}
+
+function extractHttpStatus(errorMessage: string): number | undefined {
+  const match = errorMessage.match(/HTTP (\d+)/);
+  return match ? parseInt(match[1], 10) : undefined;
+}
+
+// ─── Background Scheduler ──────────────────────────────────────────────
+
+export function startSourceMonitor(): void {
+  logger.info('Starting document source monitor', {
+    tickIntervalMinutes: SCHEDULER_TICK_MS / 60000,
+  });
+
+  // Initial check after 10 minutes (let server warm up, after fee schedule fetcher)
+  setTimeout(() => {
+    checkAllDueSources().catch(err => {
+      logger.error('Source monitor initial check failed', { error: String(err) });
+    });
+  }, 10 * 60 * 1000);
+
+  // Recurring tick
+  schedulerInterval = setInterval(() => {
+    checkAllDueSources().catch(err => {
+      logger.error('Source monitor periodic check failed', { error: String(err) });
+    });
+  }, SCHEDULER_TICK_MS);
+}
+
+export function stopSourceMonitor(): void {
+  if (schedulerInterval) {
+    clearInterval(schedulerInterval);
+    schedulerInterval = null;
+    logger.info('Document source monitor stopped');
+  }
+}

@@ -12,12 +12,14 @@ import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler,
 import { initializeVectorStore } from './services/vectorStore';
 import { startReindexScheduler } from './services/reindexer';
 import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
+import { startSourceMonitor } from './services/sourceMonitor';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
 import usageRoutes from './routes/usage';
 import queryLogRoutes from './routes/queryLog';
 import extractionRoutes from './routes/extraction';
+import sourceMonitorRoutes from './routes/sourceMonitor';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -96,6 +98,9 @@ app.use('/api/query-log', queryLogRoutes);
 // Document extraction routes (structured form-filling)
 app.use('/api/extraction', extractionRoutes);
 
+// Source monitor routes (admin: manage auto-fetched external documents)
+app.use('/api/sources', sourceMonitorRoutes);
+
 // In production, serve the frontend static files from the same server.
 // The built frontend is expected at ../frontend/dist relative to the backend root.
 if (process.env.NODE_ENV === 'production') {
@@ -132,6 +137,9 @@ async function start() {
 
     // Start CMS fee schedule auto-fetcher (if URL configured)
     startFeeScheduleFetcher();
+
+    // Start document source monitor (checks external URLs for updates)
+    startSourceMonitor();
 
     app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

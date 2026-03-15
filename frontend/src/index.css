@@ -1,3 +1,6 @@
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 /* Global resets */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -10,6 +13,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background: #EDF4FC;
   color: #1A2B3C;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
 /* Markdown content styling inside chat messages */
@@ -115,17 +119,33 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(27, 111, 201, 0.12);
 }
 
-/* Button hover */
+/* Button hover effects */
 button:hover:not(:disabled) {
   filter: brightness(0.97);
+  transform: translateY(-0.5px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 button {
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 button:disabled {
   cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Smooth transitions for interactive elements */
+input, textarea, select {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Table row hover */
+tr:hover td {
+  background: rgba(240, 247, 255, 0.5);
 }
 
 /* Scrollbar styling */

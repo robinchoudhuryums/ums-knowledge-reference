@@ -6,6 +6,8 @@ import {
   deleteDocument,
   createCollection,
   deleteCollection,
+  updateDocumentTags,
+  listAllTags,
 } from '../services/api';
 
 interface Props {
@@ -23,6 +25,9 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
   const [newColName, setNewColName] = useState('');
   const [newColDesc, setNewColDesc] = useState('');
   const [showNewCol, setShowNewCol] = useState(false);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [editingTagsDocId, setEditingTagsDocId] = useState<string | null>(null);
+  const [tagInput, setTagInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadDocuments = async () => {
@@ -34,23 +39,50 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     }
   };
 
+  const loadTags = async () => {
+    try {
+      const result = await listAllTags();
+      setAllTags(result.tags);
+    } catch { /* ignore */ }
+  };
+
   useEffect(() => {
     loadDocuments();
+    loadTags();
   }, [selectedCollection]);
+
+  const [uploadQueue, setUploadQueue] = useState<Array<{ name: string; status: 'pending' | 'uploading' | 'done' | 'error'; error?: string }>>([]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    const fileList = Array.from(files);
     setUploading(true);
     setError('');
 
-    for (const file of Array.from(files)) {
+    // Initialize upload queue
+    const queue = fileList.map(f => ({ name: f.name, status: 'pending' as const }));
+    setUploadQueue(queue);
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      setUploadQueue(prev => prev.map((item, idx) =>
+        idx === i ? { ...item, status: 'uploading' } : item
+      ));
+      setUploadProgress(`Processing ${file.name} (${i + 1}/${fileList.length})...`);
+
       try {
-        setUploadProgress(`Uploading ${file.name}...`);
         await uploadDocument(file, selectedCollection || 'default');
+        setUploadQueue(prev => prev.map((item, idx) =>
+          idx === i ? { ...item, status: 'done' } : item
+        ));
       } catch (err) {
-        setError(`Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        const errMsg = err instanceof Error ? err.message : 'Unknown error';
+        setUploadQueue(prev => prev.map((item, idx) =>
+          idx === i ? { ...item, status: 'error', error: errMsg } : item
+        ));
+        setError(`Failed to upload ${file.name}: ${errMsg}`);
       }
     }
 
@@ -58,6 +90,9 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     setUploadProgress('');
     if (fileInputRef.current) fileInputRef.current.value = '';
     loadDocuments();
+
+    // Clear queue after 5s
+    setTimeout(() => setUploadQueue([]), 5000);
   };
 
   const handleDelete = async (doc: Document) => {
@@ -91,6 +126,31 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
       onCollectionsChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete collection');
+    }
+  };
+
+  const handleAddTag = async (docId: string, existingTags: string[]) => {
+    const tag = tagInput.trim().toLowerCase();
+    if (!tag) return;
+    const newTags = [...new Set([...existingTags, tag])];
+    try {
+      await updateDocumentTags(docId, newTags);
+      setTagInput('');
+      loadDocuments();
+      loadTags();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tags');
+    }
+  };
+
+  const handleRemoveTag = async (docId: string, existingTags: string[], tagToRemove: string) => {
+    const newTags = existingTags.filter(t => t !== tagToRemove);
+    try {
+      await updateDocumentTags(docId, newTags);
+      loadDocuments();
+      loadTags();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tags');
     }
   };
 
@@ -185,13 +245,38 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
 
         {error && <div style={styles.error}>{error}</div>}
 
+        {/* Upload progress queue */}
+        {uploadQueue.length > 0 && (
+          <div style={styles.uploadQueue}>
+            {uploadQueue.map((item, i) => (
+              <div key={i} style={styles.uploadQueueItem}>
+                <span style={{
+                  ...styles.uploadStatusDot,
+                  backgroundColor: item.status === 'done' ? '#16a34a' :
+                    item.status === 'error' ? '#dc2626' :
+                    item.status === 'uploading' ? '#1B6FC9' : '#8DA4B8',
+                }} />
+                <span style={styles.uploadFileName}>{item.name}</span>
+                <span style={styles.uploadStatus}>
+                  {item.status === 'pending' ? 'Waiting...' :
+                   item.status === 'uploading' ? 'Processing...' :
+                   item.status === 'done' ? 'Complete' :
+                   `Error: ${item.error}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div style={styles.tableWrapper}>
           <table style={styles.table}>
             <thead>
               <tr>
                 <th style={styles.th}>Name</th>
+                <th style={styles.th}>Status</th>
                 <th style={styles.th}>Size</th>
                 <th style={styles.th}>Chunks</th>
+                <th style={styles.th}>Tags</th>
                 <th style={styles.th}>Uploaded</th>
                 <th style={styles.th}>By</th>
                 {isAdmin && <th style={styles.th}>Actions</th>}
@@ -204,9 +289,63 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                     <span style={styles.fileIcon}>{getFileIcon(doc.originalName)}</span>
                     {doc.originalName}
                   </td>
+                  <td style={styles.td}>
+                    <span style={{
+                      ...styles.statusBadge,
+                      backgroundColor: doc.status === 'ready' ? '#dcfce7' :
+                        doc.status === 'processing' ? '#dbeafe' :
+                        doc.status === 'error' ? '#fef2f2' : '#f3f4f6',
+                      color: doc.status === 'ready' ? '#166534' :
+                        doc.status === 'processing' ? '#1e40af' :
+                        doc.status === 'error' ? '#b91c1c' : '#6b7280',
+                    }}>
+                      {doc.status}
+                    </span>
+                  </td>
                   <td style={{ ...styles.td, color: '#6B8299' }}>{formatSize(doc.sizeBytes)}</td>
                   <td style={styles.td}>
                     <span style={styles.chunkBadge}>{doc.chunkCount}</span>
+                  </td>
+                  <td style={styles.td}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
+                      {(doc.tags || []).map(tag => (
+                        <span key={tag} style={styles.tagChip}>
+                          {tag}
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleRemoveTag(doc.id, doc.tags || [], tag)}
+                              style={styles.tagRemove}
+                            >x</button>
+                          )}
+                        </span>
+                      ))}
+                      {isAdmin && editingTagsDocId === doc.id ? (
+                        <div style={{ display: 'flex', gap: '2px' }}>
+                          <input
+                            value={tagInput}
+                            onChange={e => setTagInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { e.preventDefault(); handleAddTag(doc.id, doc.tags || []); }
+                              if (e.key === 'Escape') setEditingTagsDocId(null);
+                            }}
+                            placeholder="tag"
+                            style={{ ...styles.smallInput, padding: '2px 6px', fontSize: '11px', width: '70px' }}
+                            list="tag-suggestions"
+                            autoFocus
+                          />
+                          <datalist id="tag-suggestions">
+                            {allTags.filter(t => !(doc.tags || []).includes(t)).map(t => (
+                              <option key={t} value={t} />
+                            ))}
+                          </datalist>
+                        </div>
+                      ) : isAdmin ? (
+                        <button
+                          onClick={() => { setEditingTagsDocId(doc.id); setTagInput(''); }}
+                          style={styles.addTagButton}
+                        >+</button>
+                      ) : null}
+                    </div>
                   </td>
                   <td style={{ ...styles.td, color: '#6B8299' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
                   <td style={{ ...styles.td, color: '#6B8299' }}>{doc.uploadedBy}</td>
@@ -219,7 +358,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
               ))}
               {documents.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 6 : 5} style={{ ...styles.td, textAlign: 'center', color: '#8DA4B8', padding: '40px 12px' }}>
+                  <td colSpan={isAdmin ? 8 : 7} style={{ ...styles.td, textAlign: 'center', color: '#8DA4B8', padding: '40px 12px' }}>
                     No documents uploaded yet
                   </td>
                 </tr>
@@ -259,4 +398,13 @@ const styles: Record<string, React.CSSProperties> = {
   fileIcon: { marginRight: '8px', fontSize: '15px' },
   chunkBadge: { background: '#E8EFF5', color: '#1B6FC9', padding: '2px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 600 },
   deleteButton: { padding: '5px 12px', background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 500 },
+  statusBadge: { display: 'inline-block', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, textTransform: 'capitalize' as const },
+  uploadQueue: { marginBottom: '16px', padding: '14px', background: '#F7FAFD', borderRadius: '12px', border: '1px solid #E8EFF5' },
+  uploadQueueItem: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', fontSize: '13px' },
+  uploadStatusDot: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
+  uploadFileName: { flex: 1, color: '#1A2B3C', fontWeight: 500 },
+  uploadStatus: { color: '#6B8299', fontSize: '12px' },
+  tagChip: { display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 8px', background: '#E3F2FD', color: '#1565C0', borderRadius: '4px', fontSize: '11px', fontWeight: 500 },
+  tagRemove: { background: 'none', border: 'none', color: '#90CAF9', cursor: 'pointer', fontSize: '10px', padding: '0 2px', lineHeight: 1 },
+  addTagButton: { background: 'none', border: '1px dashed #D6E4F0', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', color: '#1B6FC9', padding: '2px 6px', lineHeight: 1 },
 };

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, FormEvent, KeyboardEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ConversationTurn, SourceCitation, Collection } from '../types';
-import { queryKnowledgeBaseStream } from '../services/api';
+import { queryKnowledgeBaseStream, submitTraceFeedback } from '../services/api';
 import { SourceViewer } from './SourceViewer';
 import { FeedbackForm } from './FeedbackForm';
 
@@ -21,9 +21,11 @@ export function ChatInterface({ collections }: Props) {
   const [streamingText, setStreamingText] = useState('');
   const [streamingSources, setStreamingSources] = useState<SourceCitation[]>([]);
   const [streamingConfidence, setStreamingConfidence] = useState<'high' | 'partial' | 'low' | null>(null);
+  const [, setStreamingTraceId] = useState<string | null>(null);
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [expandedSource, setExpandedSource] = useState<SourceCitation | null>(null);
-  const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[] } | null>(null);
+  const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[]; traceId?: string } | null>(null);
+  const [thumbsVoted, setThumbsVoted] = useState<Record<string, 'up' | 'down'>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -47,6 +49,7 @@ export function ChatInterface({ collections }: Props) {
     setStreamingText('');
     setStreamingSources([]);
     setStreamingConfidence(null);
+    setStreamingTraceId(null);
 
     const history = conversation.map(t => ({ role: t.role, content: t.content }));
 
@@ -72,10 +75,13 @@ export function ChatInterface({ collections }: Props) {
           const cleanText = stripConfidenceTag(prev);
           setStreamingSources(sources => {
             setStreamingConfidence(conf => {
-              setConversation(conv => [
-                ...conv,
-                { role: 'assistant', content: cleanText, sources, confidence: conf || undefined },
-              ]);
+              setStreamingTraceId(tid => {
+                setConversation(conv => [
+                  ...conv,
+                  { role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined },
+                ]);
+                return null;
+              });
               return null;
             });
             return [];
@@ -94,9 +100,14 @@ export function ChatInterface({ collections }: Props) {
         setStreamingText('');
         setStreamingSources([]);
         setStreamingConfidence(null);
+        setStreamingTraceId(null);
         setLoading(false);
         inputRef.current?.focus();
-      }
+      },
+      // onTraceId
+      (traceId) => {
+        setStreamingTraceId(traceId);
+      },
     );
   }, [question, loading, conversation, selectedCollections]);
 
@@ -211,12 +222,41 @@ export function ChatInterface({ collections }: Props) {
                    'Not found in docs'}
                 </span>
               )}
+              {turn.role === 'assistant' && turn.traceId && (
+                <div style={styles.thumbsRow}>
+                  <button
+                    onClick={() => {
+                      if (!thumbsVoted[turn.traceId!]) {
+                        submitTraceFeedback(turn.traceId!, 'thumbs_up').catch(() => {});
+                        setThumbsVoted(prev => ({ ...prev, [turn.traceId!]: 'up' }));
+                      }
+                    }}
+                    style={thumbsVoted[turn.traceId] === 'up' ? styles.thumbsActive : styles.thumbsButton}
+                    title="Good answer"
+                  >
+                    &#x1F44D;
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!thumbsVoted[turn.traceId!]) {
+                        submitTraceFeedback(turn.traceId!, 'thumbs_down').catch(() => {});
+                        setThumbsVoted(prev => ({ ...prev, [turn.traceId!]: 'down' }));
+                      }
+                    }}
+                    style={thumbsVoted[turn.traceId] === 'down' ? styles.thumbsActive : styles.thumbsButton}
+                    title="Bad answer"
+                  >
+                    &#x1F44E;
+                  </button>
+                </div>
+              )}
               {turn.role === 'assistant' && (
                 <button
                   onClick={() => setFeedbackTarget({
                     question: getQuestionForTurn(i),
                     answer: turn.content,
                     sources: turn.sources || [],
+                    traceId: turn.traceId,
                   })}
                   style={styles.flagButton}
                   title="Flag this response for admin review"
@@ -335,7 +375,7 @@ export function ChatInterface({ collections }: Props) {
             &#9654;
           </button>
         </div>
-        <div style={styles.inputHint}>Press Enter to send, Shift+Enter for new line</div>
+        <div style={styles.inputHint}>Press Enter to send, Shift+Enter for new line &mdash; Do not enter patient names or PHI</div>
       </form>
 
       {/* Source viewer modal */}
@@ -349,6 +389,7 @@ export function ChatInterface({ collections }: Props) {
           question={feedbackTarget.question}
           answer={feedbackTarget.answer}
           sources={feedbackTarget.sources}
+          traceId={feedbackTarget.traceId}
           onClose={() => setFeedbackTarget(null)}
         />
       )}
@@ -367,33 +408,37 @@ const styles: Record<string, React.CSSProperties> = {
 
   messages: { flex: 1, overflowY: 'auto', padding: '20px 20px 0' },
 
-  welcome: { textAlign: 'center', paddingTop: '48px', maxWidth: '600px', margin: '0 auto' },
+  welcome: { textAlign: 'center', paddingTop: '56px', maxWidth: '620px', margin: '0 auto' },
   welcomeIconBg: {
-    width: '72px',
-    height: '72px',
-    borderRadius: '20px',
-    background: 'linear-gradient(135deg, #E3F2FD, #BBDEFB)',
+    width: '76px',
+    height: '76px',
+    borderRadius: '22px',
+    background: 'linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 50%, #90CAF9 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    margin: '0 auto 16px',
+    margin: '0 auto 20px',
+    boxShadow: '0 8px 24px rgba(27, 111, 201, 0.12)',
   },
   welcomeIcon: { fontSize: '36px' },
-  welcomeTitle: { margin: '0 0 8px', fontSize: '24px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
-  welcomeText: { margin: '0 0 4px', fontSize: '15px', color: '#4A6274' },
-  welcomeHint: { margin: '0 0 28px', fontSize: '13px', color: '#8DA4B8' },
+  welcomeTitle: { margin: '0 0 8px', fontSize: '26px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.5px' },
+  welcomeText: { margin: '0 0 4px', fontSize: '15px', color: '#4A6274', lineHeight: '1.5' },
+  welcomeHint: { margin: '0 0 32px', fontSize: '13px', color: '#8DA4B8' },
   suggestionsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'left' },
-  suggestion: { padding: '14px 16px', border: '1px solid #D6E4F0', borderRadius: '12px', background: 'white', cursor: 'pointer', fontSize: '13px', color: '#4A6274', textAlign: 'left', transition: 'all 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  suggestion: { padding: '14px 16px', border: '1px solid #D6E4F0', borderRadius: '12px', background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(4px)', cursor: 'pointer', fontSize: '13px', color: '#4A6274', textAlign: 'left', transition: 'all 0.2s ease', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', lineHeight: '1.4' },
 
-  userMessage: { marginBottom: '16px', padding: '14px 18px', background: 'linear-gradient(135deg, #E3F2FD, #BBDEFB)', borderRadius: '16px 16px 4px 16px', maxWidth: '85%', marginLeft: 'auto', border: '1px solid #90CAF9' },
-  assistantMessage: { marginBottom: '16px', padding: '18px', backgroundColor: '#F0F7FF', borderRadius: '16px', border: '1px solid #E8EFF5', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' },
+  userMessage: { marginBottom: '16px', padding: '14px 18px', background: 'linear-gradient(135deg, #E3F2FD, #D6EBFF)', borderRadius: '16px 16px 4px 16px', maxWidth: '85%', marginLeft: 'auto', border: '1px solid rgba(144, 202, 249, 0.6)', boxShadow: '0 1px 4px rgba(27, 111, 201, 0.06)' },
+  assistantMessage: { marginBottom: '16px', padding: '18px', backgroundColor: 'rgba(240, 247, 255, 0.7)', borderRadius: '16px', border: '1px solid #E8EFF5', boxShadow: '0 1px 4px rgba(0,0,0,0.03)' },
   messageHeader: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' },
   messageLabel: { fontWeight: 600, fontSize: '13px', color: '#0D2137' },
   confidenceBadge: { fontSize: '11px', padding: '3px 10px', borderRadius: '6px', fontWeight: 500 },
   confidenceHigh: { backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' },
   confidencePartial: { backgroundColor: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' },
   confidenceLow: { backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' },
-  flagButton: { marginLeft: 'auto', padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#8DA4B8', transition: 'all 0.15s' },
+  thumbsRow: { display: 'flex', gap: '2px', marginLeft: 'auto' },
+  thumbsButton: { padding: '3px 6px', background: 'none', border: '1px solid #E8EFF5', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', opacity: 0.5, transition: 'all 0.15s' },
+  thumbsActive: { padding: '3px 6px', background: '#E3F2FD', border: '1px solid #1B6FC9', borderRadius: '6px', cursor: 'default', fontSize: '14px', opacity: 1 },
+  flagButton: { padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#8DA4B8', transition: 'all 0.15s' },
   lowConfidenceWarning: { marginTop: '12px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '10px', fontSize: '13px', color: '#92400e', lineHeight: '1.5' },
   streamingDot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#1B6FC9', animation: 'pulse 1.2s ease-in-out infinite' },
   userText: { fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#1A2B3C' },
@@ -408,8 +453,8 @@ const styles: Record<string, React.CSSProperties> = {
   sourcePageBadge: { fontSize: '10px', color: '#6B8299', background: '#E8EFF5', padding: '2px 6px', borderRadius: '4px', fontWeight: 500 },
   sourceScore: { fontSize: '10px', color: '#8DA4B8', fontWeight: 500 },
 
-  inputArea: { padding: '14px 20px 12px', borderTop: '1px solid #E8EFF5', background: '#F0F7FF' },
-  inputWrapper: { display: 'flex', alignItems: 'flex-end', gap: '10px', background: '#ffffff', border: '1px solid #D6E4F0', borderRadius: '14px', padding: '10px 14px', transition: 'all 0.15s', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+  inputArea: { padding: '14px 20px 12px', borderTop: '1px solid #E8EFF5', background: 'linear-gradient(180deg, #F0F7FF, #E8F1FB)' },
+  inputWrapper: { display: 'flex', alignItems: 'flex-end', gap: '10px', background: 'rgba(255,255,255,0.95)', border: '1px solid #D6E4F0', borderRadius: '14px', padding: '10px 14px', transition: 'all 0.2s ease', boxShadow: '0 2px 12px rgba(0,0,0,0.04)', backdropFilter: 'blur(8px)' },
   textarea: { flex: 1, padding: '4px 0', border: 'none', background: 'transparent', fontSize: '14px', lineHeight: '1.5', resize: 'none', outline: 'none', fontFamily: 'inherit', minHeight: '24px', maxHeight: '120px', color: '#1A2B3C' },
   sendButton: { padding: '8px 14px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', lineHeight: '1', flexShrink: 0, boxShadow: '0 2px 6px rgba(27, 111, 201, 0.25)' },
   inputHint: { textAlign: 'center', fontSize: '11px', color: '#B0C4D8', marginTop: '6px' },

@@ -8,23 +8,31 @@ import { PopoutButton } from './components/PopoutButton';
 import { OcrTool } from './components/OcrTool';
 import { QueryLogViewer } from './components/QueryLogViewer';
 import { FaqDashboard } from './components/FaqDashboard';
+import { QualityDashboard } from './components/QualityDashboard';
+import { DocumentExtractor } from './components/DocumentExtractor';
+import { ObservabilityDashboard } from './components/ObservabilityDashboard';
+import { ChangePasswordForm } from './components/ChangePasswordForm';
+import { IntakeAutoFill } from './components/IntakeAutoFill';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
-type Tab = 'chat' | 'search' | 'documents' | 'ocr' | 'admin';
+type Tab = 'chat' | 'search' | 'extract' | 'intake' | 'documents' | 'ocr' | 'admin';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
 const tabIcons: Record<Tab, string> = {
   chat: '\u2728',
   search: '\uD83D\uDD0D',
+  extract: '\uD83D\uDCDD',
+  intake: '\uD83D\uDCCB',
   ocr: '\uD83D\uDCF7',
   documents: '\uD83D\uDCC1',
   admin: '\u2699\uFE0F',
 };
 
 export default function App() {
-  const { auth, login, logout, isAuthenticated, isAdmin } = useAuth();
+  const { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [collections, setCollections] = useState<Collection[]>([]);
 
@@ -47,6 +55,10 @@ export default function App() {
     return <LoginForm onLogin={login} />;
   }
 
+  if (mustChangePassword) {
+    return <ChangePasswordForm onPasswordChanged={handlePasswordChanged} />;
+  }
+
   // Pop-out mode: compact chat-only window
   if (isPopout) {
     return (
@@ -67,6 +79,8 @@ export default function App() {
   const tabs: { key: Tab; label: string; adminOnly?: boolean }[] = [
     { key: 'chat', label: 'Ask Questions' },
     { key: 'search', label: 'Search' },
+    { key: 'extract', label: 'Extract' },
+    { key: 'intake', label: 'Intake / Clinical' },
     { key: 'ocr', label: 'OCR Scan' },
     { key: 'documents', label: 'Documents' },
     { key: 'admin', label: 'Admin', adminOnly: true },
@@ -107,23 +121,42 @@ export default function App() {
       </header>
 
       <main style={styles.main}>
-        {activeTab === 'chat' && <ChatInterface collections={collections} />}
-        {activeTab === 'search' && <DocumentSearch collections={collections} />}
-        {activeTab === 'ocr' && <OcrTool />}
-        {activeTab === 'documents' && (
-          <DocumentManager
-            isAdmin={isAdmin}
-            collections={collections}
-            onCollectionsChange={loadCollections}
-          />
-        )}
-        {activeTab === 'admin' && isAdmin && (
-          <div style={styles.adminPanel}>
-            <FaqDashboard />
-            <hr style={styles.adminDivider} />
-            <QueryLogViewer />
-          </div>
-        )}
+        <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
+          {activeTab === 'chat' && <ChatInterface collections={collections} />}
+          {activeTab === 'search' && <DocumentSearch collections={collections} />}
+          {activeTab === 'extract' && <DocumentExtractor />}
+          {activeTab === 'intake' && <IntakeAutoFill />}
+          {activeTab === 'ocr' && <OcrTool />}
+          {activeTab === 'documents' && (
+            <DocumentManager
+              isAdmin={isAdmin}
+              collections={collections}
+              onCollectionsChange={loadCollections}
+            />
+          )}
+          {activeTab === 'admin' && isAdmin && (
+            <div style={styles.adminPanel}>
+              <div style={styles.adminHeader}>
+                <h2 style={styles.adminTitle}>Admin Dashboard</h2>
+                <p style={styles.adminSubtitle}>Analytics, query logs, and knowledge base insights</p>
+              </div>
+              <div style={styles.adminGrid}>
+                <div style={styles.adminSection}>
+                  <ObservabilityDashboard />
+                </div>
+                <div style={styles.adminSection}>
+                  <QualityDashboard />
+                </div>
+                <div style={styles.adminSection}>
+                  <FaqDashboard />
+                </div>
+                <div style={styles.adminSection}>
+                  <QueryLogViewer />
+                </div>
+              </div>
+            </div>
+          )}
+        </ErrorBoundary>
       </main>
     </div>
   );
@@ -137,10 +170,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     padding: '0 24px',
     height: '62px',
-    background: '#ffffff',
+    background: 'rgba(255, 255, 255, 0.92)',
+    backdropFilter: 'blur(12px)',
     color: '#1A2B3C',
-    boxShadow: '0 1px 4px rgba(0, 0, 0, 0.06)',
-    borderBottom: '1px solid #D6E4F0',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02)',
+    borderBottom: '1px solid rgba(214, 228, 240, 0.7)',
     position: 'relative' as const,
     zIndex: 10,
   },
@@ -174,11 +208,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    transition: 'all 0.15s ease',
+    transition: 'all 0.2s ease',
+    letterSpacing: '0.01em',
   },
   tabActive: {
     padding: '7px 14px',
-    background: '#E3F2FD',
+    background: 'linear-gradient(135deg, rgba(27, 111, 201, 0.08), rgba(66, 165, 245, 0.1))',
     color: '#1565C0',
     border: 'none',
     borderRadius: '8px',
@@ -188,6 +223,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
+    boxShadow: 'inset 0 0 0 1px rgba(27, 111, 201, 0.15)',
   },
   tabIcon: { fontSize: '14px' },
   userBadge: {
@@ -235,7 +271,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   main: { flex: 1, overflow: 'hidden' },
   adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px', background: '#ffffff' },
-  adminDivider: { border: 'none', borderTop: '1px solid #D6E4F0', margin: '12px 24px' },
+  adminHeader: { padding: '28px 28px 0' },
+  adminTitle: { margin: '0 0 4px', fontSize: '24px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
+  adminSubtitle: { margin: '0 0 24px', fontSize: '14px', color: '#8DA4B8' },
+  adminGrid: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
+  adminSection: { background: '#ffffff' },
   popoutHeader: {
     display: 'flex',
     justifyContent: 'space-between',

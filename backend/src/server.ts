@@ -4,24 +4,56 @@ dotenv.config();
 import path from 'path';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
-import { initializeAuth, loginHandler, createUserHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
+import { validateEnv } from './utils/envValidation';
+import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
 import { initializeVectorStore } from './services/vectorStore';
+import { startReindexScheduler } from './services/reindexer';
+import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
+import { startSourceMonitor } from './services/sourceMonitor';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
 import usageRoutes from './routes/usage';
 import queryLogRoutes from './routes/queryLog';
+import extractionRoutes from './routes/extraction';
+import sourceMonitorRoutes from './routes/sourceMonitor';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
-// Middleware
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+  crossOriginEmbedderPolicy: false,
+}));
+
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true,
 }));
+
 app.use(express.json({ limit: '1mb' }));
+
+// Disable X-Powered-By (helmet does this too, belt + suspenders)
+app.disable('x-powered-by');
+
+// HTTPS enforcement in production — redirects HTTP requests and sets HSTS header.
+// Behind Render/ALB the X-Forwarded-Proto header indicates the original protocol.
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      res.redirect(301, `https://${req.headers.host}${req.url}`);
+      return;
+    }
+    // HSTS: tell browsers to always use HTTPS for 1 year
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    next();
+  });
+}
 
 // Request logging — logs every incoming request with method, path, status, and duration
 app.use((req, res, next) => {
@@ -33,14 +65,35 @@ app.use((req, res, next) => {
   next();
 });
 
+// Rate limiting — login: strict (brute force protection), API: general
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 10,                     // 10 attempts per window
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,  // 1 minute
+  max: 60,               // 60 requests per minute
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/', apiLimiter);
+
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'ums-knowledge-base' });
 });
 
 // Auth routes
-app.post('/api/auth/login', loginHandler);
+app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/users', authenticate, requireAdmin, createUserHandler as any);
+app.post('/api/auth/change-password', authenticate, changePasswordHandler as any);
+app.post('/api/auth/logout', authenticate, logoutHandler as any);
 
 // Document routes
 app.use('/api/documents', documentRoutes);
@@ -56,6 +109,12 @@ app.use('/api/usage', usageRoutes);
 
 // Query log routes (admin CSV export)
 app.use('/api/query-log', queryLogRoutes);
+
+// Document extraction routes (structured form-filling)
+app.use('/api/extraction', extractionRoutes);
+
+// Source monitor routes (admin: manage auto-fetched external documents)
+app.use('/api/sources', sourceMonitorRoutes);
 
 // In production, serve the frontend static files from the same server.
 // The built frontend is expected at ../frontend/dist relative to the backend root.
@@ -79,11 +138,23 @@ async function start() {
   try {
     logger.info('Initializing UMS Knowledge Base...');
 
+    // Validate required environment variables
+    validateEnv();
+
     // Initialize auth (create default admin if needed)
     await initializeAuth();
 
     // Load vector store index into memory
     await initializeVectorStore();
+
+    // Start background re-indexing scheduler
+    startReindexScheduler();
+
+    // Start CMS fee schedule auto-fetcher (if URL configured)
+    startFeeScheduleFetcher();
+
+    // Start document source monitor (checks external URLs for updates)
+    startSourceMonitor();
 
     app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

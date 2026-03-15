@@ -47,6 +47,24 @@ export async function getDocumentFromS3(s3Key: string): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+/**
+ * Get the S3 ETag (content hash) for a document without downloading it.
+ * Returns null if the object doesn't exist.
+ */
+export async function getDocumentETag(s3Key: string): Promise<string | null> {
+  try {
+    const result = await s3Client.send(new HeadObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: s3Key,
+    }));
+    return result.ETag?.replace(/"/g, '') || null;
+  } catch (error: unknown) {
+    const err = error as { name?: string };
+    if (err.name === 'NotFound' || err.name === 'NoSuchKey') return null;
+    throw error;
+  }
+}
+
 export async function deleteDocumentFromS3(s3Key: string): Promise<void> {
   await s3Client.send(new DeleteObjectCommand({
     Bucket: S3_BUCKET,

@@ -5,6 +5,10 @@ import { logger } from '../utils/logger';
 // In-memory cache of the vector index for fast search
 let cachedIndex: VectorStoreIndex | null = null;
 
+// IDF cache — rebuilt when index changes
+let idfCache: Map<string, number> | null = null;
+let idfChunkCount = 0;
+
 /**
  * Compute cosine similarity between two vectors.
  */
@@ -30,28 +34,116 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * Simple BM25-like keyword scoring for hybrid search.
+ * Tokenize text into terms for BM25 scoring.
  */
-function bm25Score(query: string, text: string): number {
-  const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-  const docTerms = text.toLowerCase().split(/\s+/);
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 2);
+}
+
+/**
+ * Build IDF (Inverse Document Frequency) map from the corpus.
+ * IDF(term) = ln((N - df + 0.5) / (df + 0.5) + 1)
+ */
+function buildIdfMap(chunks: StoredChunk[]): Map<string, number> {
+  const N = chunks.length;
+  const docFreq = new Map<string, number>();
+
+  for (const chunk of chunks) {
+    const terms = new Set(tokenize(chunk.text));
+    for (const term of terms) {
+      docFreq.set(term, (docFreq.get(term) || 0) + 1);
+    }
+  }
+
+  const idf = new Map<string, number>();
+  for (const [term, df] of docFreq) {
+    idf.set(term, Math.log((N - df + 0.5) / (df + 0.5) + 1));
+  }
+
+  return idf;
+}
+
+function getIdfMap(chunks: StoredChunk[]): Map<string, number> {
+  if (!idfCache || idfChunkCount !== chunks.length) {
+    idfCache = buildIdfMap(chunks);
+    idfChunkCount = chunks.length;
+  }
+  return idfCache;
+}
+
+/**
+ * BM25 scoring with proper IDF weighting.
+ */
+function bm25Score(query: string, text: string, idf: Map<string, number>): number {
+  const queryTerms = tokenize(query);
+  const docTerms = tokenize(text);
   const docLength = docTerms.length;
-  const avgDocLength = 500; // approximate average
+  const avgDocLength = 500;
   const k1 = 1.2;
   const b = 0.75;
 
+  const tf = new Map<string, number>();
+  for (const term of docTerms) {
+    tf.set(term, (tf.get(term) || 0) + 1);
+  }
+
   let score = 0;
   for (const term of queryTerms) {
-    const termFreq = docTerms.filter(t => t.includes(term)).length;
+    const termFreq = tf.get(term) || 0;
     if (termFreq === 0) continue;
 
-    // Simplified BM25 (without IDF since we don't have corpus stats readily)
+    const idfScore = idf.get(term) || 0;
     const numerator = termFreq * (k1 + 1);
     const denominator = termFreq + k1 * (1 - b + b * (docLength / avgDocLength));
-    score += numerator / denominator;
+    score += idfScore * (numerator / denominator);
   }
 
   return score;
+}
+
+/**
+ * Re-rank search results using cross-features:
+ * - Boost chunks with section headers matching query terms
+ * - Boost chunks from documents with more matching chunks
+ * - Penalize very short chunks
+ */
+function reRankResults(
+  results: Array<{ chunk: StoredChunk; document: Document; score: number }>,
+  queryText: string
+): Array<{ chunk: StoredChunk; document: Document; score: number }> {
+  const queryTerms = new Set(tokenize(queryText));
+
+  const docChunkCounts = new Map<string, number>();
+  for (const r of results) {
+    docChunkCounts.set(r.chunk.documentId, (docChunkCounts.get(r.chunk.documentId) || 0) + 1);
+  }
+
+  return results.map(r => {
+    let boost = 0;
+
+    if (r.chunk.sectionHeader) {
+      const headerTerms = tokenize(r.chunk.sectionHeader);
+      const matchCount = headerTerms.filter(t => queryTerms.has(t)).length;
+      if (matchCount > 0) {
+        boost += 0.05 * Math.min(matchCount / queryTerms.size, 1);
+      }
+    }
+
+    const docCount = docChunkCounts.get(r.chunk.documentId) || 1;
+    if (docCount > 1) {
+      boost += 0.02 * Math.min(docCount - 1, 3);
+    }
+
+    if (r.chunk.text.length < 50) {
+      boost -= 0.1;
+    }
+
+    return { ...r, score: r.score + boost };
+  });
 }
 
 /**
@@ -61,6 +153,9 @@ export async function initializeVectorStore(): Promise<void> {
   cachedIndex = await loadVectorIndex();
   if (cachedIndex) {
     logger.info('Vector store loaded from S3', { chunkCount: cachedIndex.chunks.length });
+    // Pre-build IDF cache on startup
+    idfCache = buildIdfMap(cachedIndex.chunks);
+    idfChunkCount = cachedIndex.chunks.length;
   } else {
     cachedIndex = { version: 1, lastUpdated: new Date().toISOString(), chunks: [] };
     logger.info('Vector store initialized empty');
@@ -89,6 +184,9 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
   cachedIndex!.chunks.push(...storedChunks);
   cachedIndex!.lastUpdated = new Date().toISOString();
 
+  // Invalidate IDF cache since corpus changed
+  idfCache = null;
+
   await saveVectorIndex(cachedIndex!);
   logger.info('Chunks added to vector store', { addedCount: storedChunks.length, totalCount: cachedIndex!.chunks.length });
 }
@@ -102,6 +200,9 @@ export async function removeDocumentChunks(documentId: string): Promise<void> {
   const before = cachedIndex!.chunks.length;
   cachedIndex!.chunks = cachedIndex!.chunks.filter(c => c.documentId !== documentId);
   const removed = before - cachedIndex!.chunks.length;
+
+  // Invalidate IDF cache
+  idfCache = null;
 
   cachedIndex!.lastUpdated = new Date().toISOString();
   await saveVectorIndex(cachedIndex!);
@@ -118,6 +219,7 @@ export async function searchVectorStore(
   options: {
     topK?: number;
     collectionIds?: string[];
+    tags?: string[];
     semanticWeight?: number;
     keywordWeight?: number;
   } = {}
@@ -128,16 +230,23 @@ export async function searchVectorStore(
   const semanticWeight = options.semanticWeight ?? 0.7;
   const keywordWeight = options.keywordWeight ?? 0.3;
 
-  // Get document index to filter by collection and resolve document info
+  // Get document index to filter by collection/tags and resolve document info
   const documents = await getDocumentsIndex();
   const docMap = new Map(documents.map(d => [d.id, d]));
 
-  // Filter chunks by collection if specified
+  // Filter chunks by collection and/or tags if specified
   let candidates = cachedIndex!.chunks;
-  if (options.collectionIds && options.collectionIds.length > 0) {
+  const hasCollectionFilter = options.collectionIds && options.collectionIds.length > 0;
+  const hasTagFilter = options.tags && options.tags.length > 0;
+
+  if (hasCollectionFilter || hasTagFilter) {
     const allowedDocIds = new Set(
       documents
-        .filter(d => options.collectionIds!.includes(d.collectionId))
+        .filter(d => {
+          if (hasCollectionFilter && !options.collectionIds!.includes(d.collectionId)) return false;
+          if (hasTagFilter && (!d.tags || !options.tags!.some(t => d.tags!.includes(t)))) return false;
+          return true;
+        })
         .map(d => d.id)
     );
     candidates = candidates.filter(c => allowedDocIds.has(c.documentId));
@@ -145,24 +254,19 @@ export async function searchVectorStore(
 
   if (candidates.length === 0) return [];
 
-  // Score all candidates
+  // Build IDF map from full corpus
+  const idf = getIdfMap(cachedIndex!.chunks);
+
+  // Score all candidates with IDF-enhanced BM25
   const scored = candidates.map(chunk => {
     const semanticScore = cosineSimilarity(queryEmbedding, chunk.embedding);
-    const keywordScore = bm25Score(queryText, chunk.text);
-    const combinedScore = semanticWeight * semanticScore + keywordWeight * keywordScore;
+    const keywordScore = bm25Score(queryText, chunk.text, idf);
+    // Normalize BM25 to 0-1 range
+    const normalizedKeyword = Math.min(keywordScore / 10, 1);
+    const combinedScore = semanticWeight * semanticScore + keywordWeight * normalizedKeyword;
 
     return {
-      chunk: {
-        id: chunk.id,
-        documentId: chunk.documentId,
-        chunkIndex: chunk.chunkIndex,
-        text: chunk.text,
-        tokenCount: chunk.tokenCount,
-        startOffset: chunk.startOffset,
-        endOffset: chunk.endOffset,
-        pageNumber: chunk.pageNumber,
-        sectionHeader: chunk.sectionHeader,
-      } as DocumentChunk,
+      chunk,
       document: docMap.get(chunk.documentId) || {
         id: chunk.documentId,
         filename: 'unknown',
@@ -181,9 +285,28 @@ export async function searchVectorStore(
     };
   });
 
-  // Sort by score descending and take top-K
+  // Sort by score, take 2x topK for re-ranking pool
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, topK);
+  const reRankPool = scored.slice(0, topK * 2);
+  const reRanked = reRankResults(reRankPool, queryText);
+  reRanked.sort((a, b) => b.score - a.score);
+
+  // Build final results with clean chunk objects
+  return reRanked.slice(0, topK).map(r => ({
+    chunk: {
+      id: r.chunk.id,
+      documentId: r.chunk.documentId,
+      chunkIndex: r.chunk.chunkIndex,
+      text: r.chunk.text,
+      tokenCount: r.chunk.tokenCount,
+      startOffset: r.chunk.startOffset,
+      endOffset: r.chunk.endOffset,
+      pageNumber: r.chunk.pageNumber,
+      sectionHeader: r.chunk.sectionHeader,
+    } as DocumentChunk,
+    document: r.document,
+    score: r.score,
+  }));
 }
 
 /**

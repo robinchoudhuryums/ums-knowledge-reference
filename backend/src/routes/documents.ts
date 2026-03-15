@@ -12,9 +12,15 @@ import {
 import { removeDocumentChunks, searchChunksByKeyword } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
 import { extractTextWithOcr } from '../services/ocr';
+import { analyzeFormFields, analyzeFormFieldsBatch } from '../services/formAnalyzer';
+import { createAnnotatedPdf } from '../services/pdfAnnotator';
+import { checkForChanges } from '../services/reindexer';
+import { fetchAndIngestFeeSchedule } from '../services/feeScheduleFetcher';
+import { extractClinicalNotes } from '../services/clinicalNoteExtractor';
 import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
+import { validateFileContent } from '../utils/fileValidation';
 
 const router = Router();
 
@@ -57,6 +63,13 @@ router.post(
         return;
       }
 
+      // Validate file content matches claimed MIME type (magic bytes check)
+      const validationError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
+      if (validationError) {
+        res.status(400).json({ error: validationError });
+        return;
+      }
+
       const collectionId = req.body.collectionId || 'default';
 
       const result = await ingestDocument(
@@ -88,9 +101,10 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const docs = await getDocumentsIndex();
     const collectionId = req.query.collectionId as string | undefined;
 
+    // Show all non-replaced documents (ready, processing, error) so users see status
     const filtered = collectionId
-      ? docs.filter(d => d.collectionId === collectionId && d.status === 'ready')
-      : docs.filter(d => d.status === 'ready');
+      ? docs.filter(d => d.collectionId === collectionId && !d.errorMessage?.startsWith('Replaced by'))
+      : docs.filter(d => !d.errorMessage?.startsWith('Replaced by'));
 
     res.json({ documents: filtered });
   } catch (error) {
@@ -236,6 +250,55 @@ router.delete('/collections/:id', authenticate, requireAdmin, async (req: AuthRe
   }
 });
 
+// --- Document Tags ---
+
+// Update tags for a document
+router.put('/:id/tags', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { tags } = req.body;
+    if (!Array.isArray(tags) || tags.some((t: unknown) => typeof t !== 'string')) {
+      res.status(400).json({ error: 'Tags must be an array of strings' });
+      return;
+    }
+
+    const docs = await getDocumentsIndex();
+    const doc = docs.find(d => d.id === req.params.id);
+    if (!doc) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    // Normalize tags: lowercase, trim, deduplicate
+    doc.tags = [...new Set(tags.map((t: string) => t.toLowerCase().trim()).filter(Boolean))];
+    await saveDocumentsIndex(docs);
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
+      documentId: doc.id,
+      action: 'tags_updated',
+      tags: doc.tags,
+    });
+
+    res.json({ document: doc });
+  } catch (error) {
+    logger.error('Failed to update tags', { error: String(error) });
+    res.status(500).json({ error: 'Failed to update tags' });
+  }
+});
+
+// List all unique tags across all documents
+router.get('/tags/list', authenticate, async (_req: AuthRequest, res: Response) => {
+  try {
+    const docs = await getDocumentsIndex();
+    const tagSet = new Set<string>();
+    for (const doc of docs) {
+      if (doc.tags) doc.tags.forEach(t => tagSet.add(t));
+    }
+    res.json({ tags: Array.from(tagSet).sort() });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to list tags' });
+  }
+});
+
 // --- Document Search (keyword search across chunk text) ---
 
 router.get('/search/text', authenticate, async (req: AuthRequest, res: Response) => {
@@ -253,6 +316,29 @@ router.get('/search/text', authenticate, async (req: AuthRequest, res: Response)
   } catch (error) {
     logger.error('Document search failed', { error: String(error) });
     res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+// --- Re-indexing (admin trigger) ---
+
+router.post('/reindex', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    logger.info('Manual re-index triggered', { userId: req.user!.id });
+    const result = await checkForChanges();
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
+      action: 'reindex',
+      checked: result.checked,
+      reindexed: result.reindexed,
+    });
+
+    res.json({
+      message: `Checked ${result.checked} documents, re-indexed ${result.reindexed.length}`,
+      ...result,
+    });
+  } catch (error) {
+    logger.error('Re-index failed', { error: String(error) });
+    res.status(500).json({ error: 'Re-index check failed' });
   }
 });
 
@@ -285,6 +371,13 @@ router.post(
         return;
       }
 
+      // Validate file content matches claimed MIME type
+      const contentError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
+      if (contentError) {
+        res.status(400).json({ error: contentError });
+        return;
+      }
+
       const result = await extractTextWithOcr(req.file.buffer, req.file.originalname);
 
       await logAuditEvent(req.user!.id, req.user!.username, 'ocr', {
@@ -305,5 +398,323 @@ router.post(
     }
   }
 );
+
+// --- Form Review (detect blank fields and create annotated PDF) ---
+
+const formReviewUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff'];
+    const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif'];
+    const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
+
+    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Form review supports PDF, PNG, JPEG, and TIFF files (got ${file.mimetype})`));
+    }
+  },
+});
+
+/**
+ * POST /api/documents/form-review — Analyze a form for blank fields.
+ * Returns JSON with field analysis and optionally generates annotated + original PDFs.
+ *
+ * Query params:
+ *   ?output=json (default) — returns field analysis only
+ *   ?output=annotated — returns the annotated PDF (with highlights and watermark)
+ *   ?output=original — returns the original clean PDF
+ */
+router.post(
+  '/form-review',
+  authenticate,
+  formReviewUpload.single('file'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'No file provided' });
+        return;
+      }
+
+      // Validate file content
+      const contentError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
+      if (contentError) {
+        res.status(400).json({ error: contentError });
+        return;
+      }
+
+      const output = (req.query.output as string) || 'json';
+
+      // Step 1: Analyze the form with Textract FORMS
+      const analysis = await analyzeFormFields(req.file.buffer, req.file.originalname);
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'ocr', {
+        operation: 'form_review',
+        filename: req.file.originalname,
+        totalFields: analysis.totalFields,
+        emptyFields: analysis.emptyCount,
+        output,
+      });
+
+      if (output === 'json') {
+        // Return the field analysis as JSON
+        res.json({
+          filename: req.file.originalname,
+          totalFields: analysis.totalFields,
+          emptyCount: analysis.emptyCount,
+          lowConfidenceCount: analysis.lowConfidenceCount,
+          requiredMissingCount: analysis.requiredMissingCount,
+          completionPercentage: analysis.completionPercentage,
+          pageCount: analysis.pageCount,
+          cached: analysis.cached,
+          formType: analysis.formType,
+          emptyFields: analysis.emptyFields.map(f => ({
+            key: f.key,
+            page: f.page,
+            confidence: Math.round(f.confidence),
+            confidenceCategory: f.confidenceCategory,
+            isRequired: f.isRequired,
+            requiredLabel: f.requiredLabel,
+            section: f.section,
+            isCheckbox: f.isCheckbox,
+          })),
+          filledFields: analysis.filledFields.map(f => ({
+            key: f.key,
+            value: f.value,
+            page: f.page,
+            confidence: Math.round(f.confidence),
+            confidenceCategory: f.confidenceCategory,
+            isRequired: f.isRequired,
+            section: f.section,
+          })),
+          lowConfidenceFields: analysis.lowConfidenceFields.map(f => ({
+            key: f.key,
+            value: f.value,
+            page: f.page,
+            confidence: Math.round(f.confidence),
+            isEmpty: f.isEmpty,
+          })),
+          requiredMissingFields: analysis.requiredMissingFields.map(f => ({
+            key: f.key,
+            requiredLabel: f.requiredLabel,
+            section: f.section,
+            page: f.page,
+          })),
+        });
+        return;
+      }
+
+      // For PDF outputs, the source must be a PDF
+      const isPdf = req.file.mimetype === 'application/pdf' ||
+        req.file.originalname.toLowerCase().endsWith('.pdf');
+
+      if (!isPdf) {
+        res.status(400).json({
+          error: 'Annotated and original PDF outputs require a PDF input file. Use output=json for images.',
+        });
+        return;
+      }
+
+      if (output === 'annotated') {
+        // Step 2: Generate annotated PDF with highlights around empty fields + low-confidence
+        const annotatedPdf = await createAnnotatedPdf(req.file.buffer, analysis.emptyFields, analysis.lowConfidenceFields);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="REVIEW-${req.file.originalname}"`,
+        );
+        res.send(annotatedPdf);
+        return;
+      }
+
+      if (output === 'original') {
+        // Return the original PDF unchanged
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${req.file.originalname}"`,
+        );
+        res.send(req.file.buffer);
+        return;
+      }
+
+      res.status(400).json({ error: 'Invalid output parameter. Use: json, annotated, or original' });
+    } catch (error) {
+      logger.error('Form review failed', { error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Form review failed' });
+    }
+  },
+);
+
+// --- Batch Form Review ---
+
+const batchFormReviewUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff'];
+    const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif'];
+    const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
+
+    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Form review supports PDF, PNG, JPEG, and TIFF files (got ${file.mimetype})`));
+    }
+  },
+});
+
+/**
+ * POST /api/documents/form-review/batch — Analyze multiple forms at once.
+ * Returns a summary array with per-file results.
+ * Accepts up to 10 files via multipart form data (field name: "files").
+ */
+router.post(
+  '/form-review/batch',
+  authenticate,
+  batchFormReviewUpload.array('files', 10),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        res.status(400).json({ error: 'No files provided' });
+        return;
+      }
+
+      const fileInputs = files.map(f => ({
+        buffer: f.buffer,
+        filename: f.originalname,
+      }));
+
+      const results = await analyzeFormFieldsBatch(fileInputs);
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'ocr', {
+        operation: 'form_review_batch',
+        fileCount: files.length,
+        filenames: files.map(f => f.originalname),
+      });
+
+      const summary = results.map((r, i) => ({
+        filename: files[i].originalname,
+        totalFields: r.totalFields,
+        emptyCount: r.emptyCount,
+        requiredMissingCount: r.requiredMissingCount,
+        lowConfidenceCount: r.lowConfidenceCount,
+        completionPercentage: r.completionPercentage,
+        pageCount: r.pageCount,
+        cached: r.cached,
+        formType: r.formType,
+        emptyFields: r.emptyFields.map(f => ({
+          key: f.key,
+          page: f.page,
+          confidence: Math.round(f.confidence),
+          confidenceCategory: f.confidenceCategory,
+          isRequired: f.isRequired,
+          requiredLabel: f.requiredLabel,
+          section: f.section,
+          isCheckbox: f.isCheckbox,
+        })),
+        requiredMissingFields: r.requiredMissingFields.map(f => ({
+          key: f.key,
+          requiredLabel: f.requiredLabel,
+          section: f.section,
+          page: f.page,
+        })),
+      }));
+
+      res.json({
+        fileCount: files.length,
+        totalCachedCount: results.filter(r => r.cached).length,
+        results: summary,
+      });
+    } catch (error) {
+      logger.error('Batch form review failed', { error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Batch form review failed' });
+    }
+  },
+);
+
+// --- Clinical Note Extraction (AI-assisted) ---
+
+const clinicalUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    const allowedExts = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.docx', '.txt'];
+    const ext = '.' + (file.originalname.split('.').pop() || '').toLowerCase();
+
+    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Clinical note extraction supports PDF, images, DOCX, and TXT files (got ${file.mimetype})`));
+    }
+  },
+});
+
+/**
+ * POST /api/documents/clinical-extract — Extract structured clinical data from
+ * physician notes, face-to-face encounters, or other clinical documents.
+ *
+ * Returns extracted diagnoses, test results, medical necessity language,
+ * and mappings to CMN/prior-auth form fields.
+ */
+router.post(
+  '/clinical-extract',
+  authenticate,
+  clinicalUpload.single('file'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'No file provided' });
+        return;
+      }
+
+      const contentError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
+      if (contentError) {
+        res.status(400).json({ error: contentError });
+        return;
+      }
+
+      const result = await extractClinicalNotes(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+      );
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'ocr', {
+        operation: 'clinical_extract',
+        filename: req.file.originalname,
+        confidence: result.extraction.confidence,
+        icdCodesFound: result.extraction.icdCodes.length,
+        mappingsGenerated: result.fieldMappings.length,
+      });
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Clinical note extraction failed', { error: String(error) });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Clinical note extraction failed' });
+    }
+  },
+);
+
+// --- Fee Schedule ---
+
+/**
+ * POST /api/documents/fee-schedule/fetch — Manually trigger CMS fee schedule fetch (admin only)
+ */
+router.post('/fee-schedule/fetch', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const forceRefresh = req.body?.forceRefresh === true;
+    const result = await fetchAndIngestFeeSchedule(forceRefresh);
+    res.json(result);
+  } catch (error) {
+    logger.error('Fee schedule fetch failed', { error: String(error) });
+    res.status(500).json({ error: 'Fee schedule fetch failed' });
+  }
+});
 
 export default router;

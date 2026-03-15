@@ -33,3 +33,6 @@ export const BEDROCK_EMBEDDING_MODEL = process.env.BEDROCK_EMBEDDING_MODEL || 'a
 // For a RAG tool, retrieval quality drives answer quality more than model size.
 // Override with BEDROCK_GENERATION_MODEL env var if needed.
 export const BEDROCK_GENERATION_MODEL = process.env.BEDROCK_GENERATION_MODEL || 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+// Sonnet for structured extraction tasks (more accurate for form-filling).
+// Generation model (Haiku) is used for RAG queries; extraction model (Sonnet) for document data extraction.
+export const BEDROCK_EXTRACTION_MODEL = process.env.BEDROCK_EXTRACTION_MODEL || 'us.anthropic.claude-sonnet-4-6-20250514-v1:0';

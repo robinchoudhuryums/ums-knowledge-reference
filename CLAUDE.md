@@ -46,6 +46,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 # Backend
 cd backend && npm install && npm run dev    # Dev server with tsx watch
 cd backend && npx tsc --noEmit              # Type-check only
+cd backend && npm test                      # Run unit tests (vitest)
 
 # Frontend
 cd frontend && npm install && npm run dev   # Vite dev server
@@ -70,6 +71,28 @@ docker build -t ums-knowledge .
 - **Chunk size/overlap** (`chunker.ts`): Affects retrieval granularity
 
 ## Recent Changes (reverse chronological)
+- **HIPAA hardening**: PHI redaction layer (`phiRedactor.ts`) applied to query logs, RAG traces, and feedback before S3 persistence — regex-based detection of SSNs, DOBs, MRNs, phone numbers, emails, addresses, Medicare/Medicaid IDs, and contextual patient names. JWT secret fail-fast in production (server refuses to start with default secret). HTTPS enforcement middleware with HSTS (1-year max-age). Account lockout after 5 failed login attempts (15-minute cooldown). Password history tracking prevents reuse of last 5 passwords. 18 unit tests for PHI redaction.
+- **Document source monitor**: Automated URL monitoring service (`sourceMonitor.ts`) that tracks external document URLs (LCDs, CMS policies, payer docs) for content changes. SHA-256 hash comparison, configurable per-source check intervals, auto-ingestion on change with previous version cleanup. Admin CRUD API at `/api/sources/`, force-check per source or all. Background scheduler ticks hourly.
+- **Intake data auto-fill**: New "Intake / Clinical" tab with form fields for patient demographics, physician info, supplier details, HCPCS, diagnosis, and insurance. Generates CMN/prior-auth field mappings from entered intake data for form pre-population.
+- **AI-assisted clinical note extraction**: Upload physician notes → Claude Sonnet extracts ICD-10 codes, test results (ABG, SpO2, PFT), medical necessity language, functional limitations, equipment recommendations, and HCPCS codes. Maps extracted data to CMN form fields. Backend: `clinicalNoteExtractor.ts`, route: `POST /api/documents/clinical-extract`.
+- **Interactive PDF annotation editor**: Client-side PDF viewer (PDF.js) with SVG overlay for interactive annotations. Drag-to-move, click-to-remove, undo/redo (Ctrl+Z/Y), manual highlight drawing with 4 color choices. Code-split via React.lazy(). Component: `AnnotatedPdfViewer.tsx`.
+- **Structured document extraction**: Extraction templates (PPD, CMN, Prior Auth, General) with Claude Sonnet via Bedrock. Upload any document → get structured JSON data matching template fields. Route: `POST /api/extraction/extract`.
+- **RAG observability tracing**: Per-query trace logging (`ragTrace.ts`) capturing retrieval scores, response times, and confidence. Observability dashboard with daily stats, retrieval/generation failure drill-down.
+- **Quality metrics dashboard**: Tracks query confidence distribution, flagged responses, and unanswered questions over time.
+- **CMS fee schedule fetcher**: Auto-fetches and ingests CMS DME fee schedules (`feeScheduleFetcher.ts`) with configurable refresh interval. Admin trigger: `POST /api/documents/fee-schedule/fetch`.
+- **Document reindexer**: Change detection service (`reindexer.ts`) that checks for modified documents and re-ingests them. Admin trigger: `POST /api/documents/reindex`.
+- **Document collections and tagging**: Organize documents into collections, add/remove tags, filter queries by collection.
+- **Form review enhancements**: CMN form type auto-detection (CMS-484, CMS-10126, CMS-10125, prior auth) with required-field rules (`config/formRules.ts`), improved blank detection (underscores, placeholders, unchecked checkboxes), confidence threshold categories (high/low at 60%), template caching via SHA-256 hash on S3 (`form-analysis-cache/`), batch review endpoint (up to 10 files), in-browser PDF preview, confidence-based coloring on annotated PDFs (red=missing, amber=low confidence, orange=required)
+- **IDF-enhanced BM25 hybrid search**: Added proper IDF weighting to BM25 scoring with corpus-wide term frequency stats, normalized keyword scores for balanced hybrid combination
+- **Re-ranking pipeline**: Added post-retrieval re-ranking that boosts section header matches, document-level relevance signals, and penalizes noise chunks
+- **Section header detection**: Chunker now auto-detects ALL CAPS, markdown, colon-terminated, and numbered section headers and attaches them as metadata
+- **Conversation memory with summarization**: Older conversation turns are summarized into a compact context string, recent 4 turns kept verbatim for follow-up accuracy
+- **Document status tracking**: Frontend now shows document status (ready/processing/error) with colored badges; upload queue with per-file progress indicators
+- **Admin dashboard improvements**: Unified admin view with header, analytics grid layout
+- **Error boundaries**: React ErrorBoundary wraps all tab content for graceful degradation
+- **Retry logic**: Bedrock API calls (embeddings) now retry up to 3x with exponential backoff
+- **Unit tests**: Added 20 tests covering cosine similarity, BM25 scoring, IDF, tokenization, section header detection, and chunking logic (vitest)
+- **TypeScript fixes**: Added `types: ["node"]` to tsconfig; moved ExtractedText interface to shared types
 - Added conciseness guideline to system prompt for balanced response length
 - Added vision-based image description for PDFs (Bedrock Converse API + Haiku 4.5)
 - PDF ingestion runs Textract OCR alongside pdf-parse to capture text in images
@@ -85,5 +108,5 @@ docker build -t ums-knowledge .
 The Bedrock IAM policy needs these actions:
 - `bedrock:InvokeModel` (generation, embeddings, vision via Converse)
 - `bedrock:InvokeModelWithResponseStream` (streaming responses)
-- Textract: `textract:DetectDocumentText`, `textract:AnalyzeDocument`, `textract:StartDocumentTextDetection`, `textract:GetDocumentTextDetection`
+- Textract: `textract:DetectDocumentText`, `textract:AnalyzeDocument`, `textract:StartDocumentTextDetection`, `textract:GetDocumentTextDetection`, `textract:StartDocumentAnalysis`, `textract:GetDocumentAnalysis`
 - S3: standard read/write/delete on the configured bucket

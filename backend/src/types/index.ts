@@ -1,3 +1,8 @@
+export interface ExtractedText {
+  text: string;
+  pageBreaks?: number[];
+}
+
 export interface Document {
   id: string;
   filename: string;
@@ -13,6 +18,8 @@ export interface Document {
   chunkCount: number;
   version: number;
   previousVersionId?: string;
+  tags?: string[];
+  contentHash?: string;
 }
 
 export interface DocumentChunk {
@@ -43,6 +50,13 @@ export interface User {
   passwordHash: string;
   role: 'admin' | 'user';
   createdAt: string;
+  mustChangePassword?: boolean;
+  /** Previous password hashes for reuse prevention (most recent first) */
+  passwordHistory?: string[];
+  /** Number of consecutive failed login attempts */
+  failedLoginAttempts?: number;
+  /** ISO timestamp when account was locked out */
+  lockedUntil?: string;
 }
 
 export interface SearchResult {
@@ -95,6 +109,7 @@ export interface QueryResponse {
   answer: string;
   sources: SourceCitation[];
   confidence: 'high' | 'partial' | 'low';
+  traceId?: string;
 }
 
 export interface FeedbackEntry {
@@ -143,4 +158,28 @@ export interface SourceCitation {
   pageNumber?: number;
   sectionHeader?: string;
   score: number;
+}
+
+export interface MonitoredSource {
+  id: string;
+  name: string;
+  url: string;
+  collectionId: string;
+  /** How often to check for updates (hours) */
+  checkIntervalHours: number;
+  /** File type hint: 'auto' | 'pdf' | 'csv' | 'txt' */
+  fileType: 'auto' | 'pdf' | 'csv' | 'txt';
+  /** Whether this source is actively monitored */
+  enabled: boolean;
+  /** Category for grouping in the UI */
+  category: string;
+  createdBy: string;
+  createdAt: string;
+  lastCheckedAt?: string;
+  lastContentHash?: string;
+  lastIngestedAt?: string;
+  lastDocumentId?: string;
+  lastError?: string;
+  /** HTTP status from last check */
+  lastHttpStatus?: number;
 }

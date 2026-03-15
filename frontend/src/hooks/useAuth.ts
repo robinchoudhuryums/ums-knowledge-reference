@@ -1,6 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { AuthState } from '../types';
-import { login as apiLogin } from '../services/api';
+import { login as apiLogin, logoutServer } from '../services/api';
+
+// Auto-logout after 30 minutes of inactivity (HIPAA session timeout)
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 
 export function useAuth() {
   const [auth, setAuth] = useState<AuthState>(() => {
@@ -12,21 +15,65 @@ export function useAuth() {
     };
   });
 
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const logout = useCallback(async () => {
+    // Revoke token server-side (fire-and-forget)
+    try { await logoutServer(); } catch { /* ignore if already expired */ }
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setAuth({ token: null, user: null });
+    setMustChangePassword(false);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  // Reset inactivity timer on user activity
+  const resetInactivityTimer = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      logout();
+    }, INACTIVITY_TIMEOUT_MS);
+  }, [logout]);
+
+  // Track user activity for inactivity timeout
+  useEffect(() => {
+    if (!auth.token) return;
+
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    const handler = () => resetInactivityTimer();
+
+    events.forEach(e => window.addEventListener(e, handler, { passive: true }));
+    resetInactivityTimer(); // Start timer
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handler));
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [auth.token, resetInactivityTimer]);
+
   const login = useCallback(async (username: string, password: string) => {
     const result = await apiLogin(username, password);
     localStorage.setItem('token', result.token);
     localStorage.setItem('user', JSON.stringify(result.user));
     setAuth({ token: result.token, user: result.user });
+
+    // Check if server says password must be changed
+    if ((result as any).mustChangePassword) {
+      setMustChangePassword(true);
+    }
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setAuth({ token: null, user: null });
+  const handlePasswordChanged = useCallback((token: string, user: { id: string; username: string; role: 'admin' | 'user' }) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    setAuth({ token, user });
+    setMustChangePassword(false);
   }, []);
 
   const isAuthenticated = !!auth.token;
   const isAdmin = auth.user?.role === 'admin';
 
-  return { auth, login, logout, isAuthenticated, isAdmin };
+  return { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged };
 }

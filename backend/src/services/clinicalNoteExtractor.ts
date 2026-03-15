@@ -150,6 +150,7 @@ export async function extractClinicalNotes(
     text.substring(0, 80000),
   );
 
+  // Use prompt caching: the clinical system prompt is identical across all extractions.
   const command = new InvokeModelCommand({
     modelId: BEDROCK_EXTRACTION_MODEL,
     contentType: 'application/json',
@@ -157,7 +158,7 @@ export async function extractClinicalNotes(
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: 8192,
-      system: SYSTEM_PROMPT,
+      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: userPrompt }],
       temperature: 0.05,
     }),

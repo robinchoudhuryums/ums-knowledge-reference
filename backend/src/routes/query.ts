@@ -47,7 +47,7 @@ async function reformulateQuery(
             content: `Conversation:\n${turnText}\n\nLatest user message: ${question}\n\nRewrite as a standalone search query:`,
           },
         ],
-        system: REFORMULATION_PROMPT,
+        system: [{ type: 'text', text: REFORMULATION_PROMPT, cache_control: { type: 'ephemeral' } }],
         temperature: 0,
       }),
     });
@@ -78,6 +78,22 @@ Guidelines:
 - Use clear, professional language appropriate for a healthcare/medical supply workplace.
 - Format responses with markdown: use **bold** for key terms, bullet lists for steps/items, and headers for multi-part answers.
 - At the end of your response, on a new line, output a confidence tag in exactly this format: [CONFIDENCE: HIGH], [CONFIDENCE: PARTIAL], or [CONFIDENCE: LOW] based on how well the source documents cover the question. HIGH means the documents directly address the question. PARTIAL means some relevant information exists but the answer may be incomplete. LOW means little or no relevant information was found in the documents.`;
+
+/**
+ * Build the system prompt as a content block array with cache_control.
+ * Bedrock prompt caching saves up to 90% on repeated system prompt tokens.
+ * The cache_control breakpoint tells Bedrock to cache everything up to and
+ * including that block. Cache reads cost 0.1x base input price.
+ */
+function buildSystemBlocks(): Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> {
+  return [
+    {
+      type: 'text' as const,
+      text: SYSTEM_PROMPT,
+      cache_control: { type: 'ephemeral' as const },
+    },
+  ];
+}
 
 // Minimum average similarity score to consider results relevant
 const LOW_CONFIDENCE_THRESHOLD = 0.3;
@@ -262,7 +278,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       body: JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31',
         max_tokens: 4096,
-        system: SYSTEM_PROMPT,
+        system: buildSystemBlocks(),
         messages,
         temperature: 0.15,
       }),
@@ -272,6 +288,14 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const generationTimeMs = Date.now() - generationStart;
     const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
     const rawAnswer = responseBody.content?.[0]?.text || 'Unable to generate a response.';
+    // Log cache usage if available (cache_read_input_tokens / cache_creation_input_tokens)
+    if (responseBody.usage?.cache_read_input_tokens || responseBody.usage?.cache_creation_input_tokens) {
+      logger.info('Prompt cache stats', {
+        traceId,
+        cacheRead: responseBody.usage.cache_read_input_tokens || 0,
+        cacheCreation: responseBody.usage.cache_creation_input_tokens || 0,
+      });
+    }
     const inputTokens = responseBody.usage?.input_tokens;
     const outputTokens = responseBody.usage?.output_tokens;
 
@@ -402,7 +426,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       body: JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31',
         max_tokens: 4096,
-        system: SYSTEM_PROMPT,
+        system: buildSystemBlocks(),
         messages,
         temperature: 0.15,
       }),

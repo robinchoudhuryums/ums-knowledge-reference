@@ -153,6 +153,8 @@ export async function extractDocumentData(
   const { system, user } = buildExtractionPrompt(template, text);
 
   // Step 3: Call Bedrock with Sonnet (more accurate for structured extraction)
+  // Use prompt caching: the system prompt is identical across calls with the same template.
+  // Cache reads cost 0.1x base input price, saving significantly on repeated extractions.
   const command = new InvokeModelCommand({
     modelId: BEDROCK_EXTRACTION_MODEL,
     contentType: 'application/json',
@@ -160,7 +162,7 @@ export async function extractDocumentData(
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: 8192,
-      system,
+      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: user }],
       temperature: 0.05, // Very low — we want precise extraction
     }),

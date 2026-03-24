@@ -2,9 +2,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import path from 'path';
+import crypto from 'crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
 import { validateEnv } from './utils/envValidation';
@@ -36,9 +38,48 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
 
 // Disable X-Powered-By (helmet does this too, belt + suspenders)
 app.disable('x-powered-by');
+
+// ─── CSRF Protection (double-submit cookie pattern) ──────────────────
+// On every response, set a random CSRF token cookie. State-changing requests
+// (POST/PUT/DELETE) must echo that token back in the X-CSRF-Token header.
+// Since cookies are set with SameSite=Strict, a cross-origin attacker cannot
+// read the cookie value to include it in the header.
+const CSRF_COOKIE = 'csrf_token';
+const CSRF_HEADER = 'x-csrf-token';
+const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/health'];
+
+app.use((req, res, next) => {
+  // Set/refresh the CSRF cookie on every response
+  let csrfToken = req.cookies?.[CSRF_COOKIE];
+  if (!csrfToken) {
+    csrfToken = crypto.randomBytes(32).toString('hex');
+  }
+  res.cookie(CSRF_COOKIE, csrfToken, {
+    httpOnly: false,  // Frontend JS needs to read this
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  });
+
+  // Only enforce on state-changing methods
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    // Skip CSRF check for exempt paths (login, health)
+    if (!CSRF_EXEMPT_PATHS.some(p => req.path === p || req.path.startsWith(p))) {
+      const headerToken = req.headers[CSRF_HEADER] as string | undefined;
+      if (!headerToken || headerToken !== csrfToken) {
+        res.status(403).json({ error: 'CSRF token missing or invalid' });
+        return;
+      }
+    }
+  }
+
+  next();
+});
 
 // HTTPS enforcement in production — redirects HTTP requests and sets HSTS header.
 // Behind Render/ALB the X-Forwarded-Proto header indicates the original protocol.

@@ -10,6 +10,7 @@ import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchRe
 import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
 import { logger } from '../utils/logger';
+import { redactPhi } from '../utils/phiRedactor';
 
 const router = Router();
 
@@ -308,7 +309,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     await recordQuery(req.user!.id);
 
     await logAuditEvent(req.user!.id, req.user!.username, 'query', {
-      question,
+      question: redactPhi(question).text,
       sourcesUsed: sources.length,
       collectionIds,
       confidence,
@@ -467,7 +468,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     // Record usage and audit (fire and forget)
     recordQuery(req.user!.id).catch(() => {});
     logAuditEvent(req.user!.id, req.user!.username, 'query', {
-      question,
+      question: redactPhi(question).text,
       sourcesUsed: sources.length,
       collectionIds,
       confidence,

@@ -41,8 +41,8 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `usage.ts` — Usage stats and limits
 - **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `formRules.ts` (CMN form type rules)
 - **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, account lockout)
-- **Utils** (`backend/src/utils/`): `logger.ts`, `phiRedactor.ts` (PHI scrubbing), `envValidation.ts`, `fileValidation.ts`
-- **Tests** (`backend/src/__tests__/`): `vectorStore.test.ts` (20 tests), `phiRedactor.test.ts` (18 tests) — 38 total, vitest
+- **Utils** (`backend/src/utils/`): `logger.ts`, `phiRedactor.ts` (PHI scrubbing), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention)
+- **Tests** (`backend/src/__tests__/`): `vectorStore.test.ts` (20 tests), `phiRedactor.test.ts` (18 tests), `urlValidation.test.ts` (13 tests) — 51 total, vitest
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
@@ -121,6 +121,7 @@ docker build -t ums-knowledge .
 - **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
 
 ## Recent Changes (reverse chronological)
+- **Security audit fixes**: (1) SSRF prevention — new `urlValidation.ts` utility blocks private IPs, localhost, cloud metadata endpoints, and non-HTTP protocols on all URL download functions (`feeScheduleFetcher.ts`, `sourceMonitor.ts`); redirect targets re-validated; download size capped at 100MB. 13 unit tests. (2) CSRF protection — double-submit cookie pattern on all state-changing endpoints; `cookie-parser` middleware; frontend sends `x-csrf-token` header on POST/PUT/DELETE. (3) PHI redaction in audit logs — `redactPhi()` applied to question text in both streaming and non-streaming query audit log entries. (4) Docker non-root user — container now runs as `appuser` (UID 1000). (5) CORS hardened — `render.yaml` no longer sets `CORS_ORIGIN: "*"`; must be configured per-deployment. (6) URL validation on source monitor CRUD — add/update operations validate URLs before persisting.
 - **Prompt caching**: Enabled Bedrock prompt caching (`cache_control: ephemeral`) on system prompts across all LLM call sites — RAG queries (streaming + non-streaming), query reformulation, document extraction, clinical note extraction. Reduces cached token costs to 0.1x and TTFT by up to 85%. Cache hit/miss logging added to non-streaming RAG queries.
 - **HIPAA hardening**: PHI redaction layer (`phiRedactor.ts`) applied to query logs, RAG traces, and feedback before S3 persistence — regex-based detection of SSNs, DOBs, MRNs, phone numbers, emails, addresses, Medicare/Medicaid IDs, and contextual patient names. JWT secret fail-fast in production (server refuses to start with default secret). HTTPS enforcement middleware with HSTS (1-year max-age). Account lockout after 5 failed login attempts (15-minute cooldown). Password history tracking prevents reuse of last 5 passwords. 18 unit tests for PHI redaction.
 - **Document source monitor**: Automated URL monitoring service (`sourceMonitor.ts`) that tracks external document URLs (LCDs, CMS policies, payer docs) for content changes. SHA-256 hash comparison, configurable per-source check intervals, auto-ingestion on change with previous version cleanup. Admin CRUD API at `/api/sources/`, force-check per source or all. Background scheduler ticks hourly.

@@ -9,6 +9,15 @@ function getToken(): string | null {
   return localStorage.getItem('token');
 }
 
+/**
+ * Read the CSRF token from the cookie set by the server.
+ * The server sets this as a non-httpOnly cookie so JS can read it.
+ */
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/(^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -19,6 +28,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  // Include CSRF token for state-changing requests
+  const method = (options.method || 'GET').toUpperCase();
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers['x-csrf-token'] = csrfToken;
+    }
+  }
+
   // Don't set Content-Type for FormData (browser sets multipart boundary)
   if (!(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
@@ -26,6 +44,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'same-origin',
     headers,
   });
 
@@ -139,11 +158,14 @@ export async function queryKnowledgeBaseStream(
   onTraceId?: (traceId: string) => void,
 ): Promise<void> {
   const token = getToken();
+  const csrfToken = getCsrfToken();
   const response = await fetch(`${API_BASE}/query/stream`, {
     method: 'POST',
+    credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
     },
     body: JSON.stringify({ question, collectionIds, conversationHistory }),
   });
@@ -363,12 +385,17 @@ export async function reviewForm(file: File): Promise<FormReviewResult> {
 
 export async function downloadAnnotatedPdf(file: File): Promise<Blob> {
   const token = getToken();
+  const csrfToken = getCsrfToken();
   const formData = new FormData();
   formData.append('file', file);
 
   const response = await fetch(`${API_BASE}/documents/form-review?output=annotated`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'same-origin',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+    },
     body: formData,
   });
 
@@ -388,12 +415,17 @@ export async function downloadAnnotatedPdf(file: File): Promise<Blob> {
 
 export async function downloadOriginalPdf(file: File): Promise<Blob> {
   const token = getToken();
+  const csrfToken = getCsrfToken();
   const formData = new FormData();
   formData.append('file', file);
 
   const response = await fetch(`${API_BASE}/documents/form-review?output=original`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'same-origin',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+    },
     body: formData,
   });
 
@@ -413,6 +445,7 @@ export async function downloadOriginalPdf(file: File): Promise<Blob> {
 
 export async function reviewFormBatch(files: File[]): Promise<BatchFormReviewResult> {
   const token = getToken();
+  const csrfToken = getCsrfToken();
   const formData = new FormData();
   for (const file of files) {
     formData.append('files', file);
@@ -420,7 +453,11 @@ export async function reviewFormBatch(files: File[]): Promise<BatchFormReviewRes
 
   const response = await fetch(`${API_BASE}/documents/form-review/batch`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'same-origin',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+    },
     body: formData,
   });
 

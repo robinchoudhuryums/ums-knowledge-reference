@@ -5,6 +5,9 @@ import { logger } from '../utils/logger';
 // In-memory cache of the vector index for fast search
 let cachedIndex: VectorStoreIndex | null = null;
 
+// Initialization lock to prevent concurrent initializeVectorStore() calls
+let initPromise: Promise<void> | null = null;
+
 // IDF cache — rebuilt when index changes
 let idfCache: Map<string, number> | null = null;
 let idfChunkCount = 0;
@@ -148,17 +151,35 @@ function reRankResults(
 
 /**
  * Initialize the vector store by loading from S3.
+ * Uses a lock to prevent concurrent initialization from racing.
  */
 export async function initializeVectorStore(): Promise<void> {
-  cachedIndex = await loadVectorIndex();
-  if (cachedIndex) {
-    logger.info('Vector store loaded from S3', { chunkCount: cachedIndex.chunks.length });
-    // Pre-build IDF cache on startup
-    idfCache = buildIdfMap(cachedIndex.chunks);
-    idfChunkCount = cachedIndex.chunks.length;
-  } else {
-    cachedIndex = { version: 1, lastUpdated: new Date().toISOString(), chunks: [] };
-    logger.info('Vector store initialized empty');
+  // If already initialized, skip
+  if (cachedIndex) return;
+
+  // If another call is already initializing, wait for it
+  if (initPromise) {
+    await initPromise;
+    return;
+  }
+
+  initPromise = (async () => {
+    cachedIndex = await loadVectorIndex();
+    if (cachedIndex) {
+      logger.info('Vector store loaded from S3', { chunkCount: cachedIndex.chunks.length });
+      // Pre-build IDF cache on startup
+      idfCache = buildIdfMap(cachedIndex.chunks);
+      idfChunkCount = cachedIndex.chunks.length;
+    } else {
+      cachedIndex = { version: 1, lastUpdated: new Date().toISOString(), chunks: [] };
+      logger.info('Vector store initialized empty');
+    }
+  })();
+
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
   }
 }
 

@@ -3,7 +3,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { generateEmbedding } from '../services/embeddings';
 import { searchVectorStore } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
-import { checkUsageLimit, recordQuery } from '../services/usage';
+import { checkAndRecordQuery, recordQuery } from '../services/usage';
 import { logQuery } from '../services/queryLog';
 import { generateTraceId, logRagTrace } from '../services/ragTrace';
 import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';
@@ -217,8 +217,8 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // Check usage limit
-    const usageCheck = await checkUsageLimit(req.user!.id);
+    // Atomically check usage limit and record the query to prevent races
+    const usageCheck = await checkAndRecordQuery(req.user!.id);
     if (!usageCheck.allowed) {
       res.status(429).json({ error: usageCheck.reason, usage: usageCheck.usage });
       return;
@@ -244,7 +244,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const retrievalTimeMs = Date.now() - retrievalStart;
 
     if (searchResults.length === 0) {
-      await recordQuery(req.user!.id);
+      // Usage already recorded by checkAndRecordQuery above
       const responseTimeMs = Date.now() - pipelineStart;
       const response: QueryResponse = {
         answer:
@@ -306,7 +306,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const sources = buildSourceCitations(searchResults);
     const responseTimeMs = Date.now() - pipelineStart;
 
-    await recordQuery(req.user!.id);
+    // Usage already recorded by checkAndRecordQuery above
 
     await logAuditEvent(req.user!.id, req.user!.username, 'query', {
       question: redactPhi(question).text,
@@ -354,8 +354,8 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       return;
     }
 
-    // Check usage limit before streaming
-    const usageCheck = await checkUsageLimit(req.user!.id);
+    // Atomically check usage limit and record the query to prevent races
+    const usageCheck = await checkAndRecordQuery(req.user!.id);
     if (!usageCheck.allowed) {
       res.status(429).json({ error: usageCheck.reason, usage: usageCheck.usage });
       return;
@@ -402,7 +402,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
       res.end();
-      await recordQuery(req.user!.id);
+      // Usage already recorded by checkAndRecordQuery above
       logRagTrace({
         traceId, timestamp: new Date().toISOString(),
         userId: req.user!.id, username: req.user!.username,
@@ -465,8 +465,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
 
     const responseTimeMs = Date.now() - pipelineStart;
 
-    // Record usage and audit (fire and forget)
-    recordQuery(req.user!.id).catch(() => {});
+    // Usage already recorded by checkAndRecordQuery above; just log audit
     logAuditEvent(req.user!.id, req.user!.username, 'query', {
       question: redactPhi(question).text,
       sourcesUsed: sources.length,

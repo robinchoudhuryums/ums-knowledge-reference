@@ -5,7 +5,13 @@ import { Collection, Document, FeedbackRequest, QueryResponse, SourceCitation, U
 // VITE_API_URL can override this for split deployments if needed.
 const API_BASE = (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api');
 
-function getToken(): string | null {
+/**
+ * Get the legacy Bearer token from localStorage (if any).
+ * The primary auth mechanism is now the httpOnly cookie set by the server,
+ * which is sent automatically with every request. This fallback supports
+ * the transition period.
+ */
+function getLegacyToken(): string | null {
   return localStorage.getItem('token');
 }
 
@@ -19,13 +25,15 @@ function getCsrfToken(): string | null {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
+  const legacyToken = getLegacyToken();
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {}),
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  // The httpOnly cookie is the primary auth mechanism (sent automatically via credentials: 'same-origin').
+  // Legacy Bearer header is kept as a fallback during migration.
+  if (legacyToken) {
+    headers['Authorization'] = `Bearer ${legacyToken}`;
   }
 
   // Include CSRF token for state-changing requests
@@ -51,8 +59,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     // If the server rejects our token, clear stale auth and reload to show login
     if (response.status === 401) {
-      localStorage.removeItem('token');
+      localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('user');
+      localStorage.removeItem('token');
       window.location.reload();
       throw new Error('Session expired. Please log in again.');
     }
@@ -157,14 +166,14 @@ export async function queryKnowledgeBaseStream(
   onError: (error: string) => void,
   onTraceId?: (traceId: string) => void,
 ): Promise<void> {
-  const token = getToken();
+  const legacyToken = getLegacyToken();
   const csrfToken = getCsrfToken();
   const response = await fetch(`${API_BASE}/query/stream`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(legacyToken ? { Authorization: `Bearer ${legacyToken}` } : {}),
       ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
     },
     body: JSON.stringify({ question, collectionIds, conversationHistory }),
@@ -384,7 +393,7 @@ export async function reviewForm(file: File): Promise<FormReviewResult> {
 }
 
 export async function downloadAnnotatedPdf(file: File): Promise<Blob> {
-  const token = getToken();
+  const legacyToken = getLegacyToken();
   const csrfToken = getCsrfToken();
   const formData = new FormData();
   formData.append('file', file);
@@ -393,7 +402,7 @@ export async function downloadAnnotatedPdf(file: File): Promise<Blob> {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(legacyToken ? { Authorization: `Bearer ${legacyToken}` } : {}),
       ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
     },
     body: formData,
@@ -414,7 +423,7 @@ export async function downloadAnnotatedPdf(file: File): Promise<Blob> {
 }
 
 export async function downloadOriginalPdf(file: File): Promise<Blob> {
-  const token = getToken();
+  const legacyToken = getLegacyToken();
   const csrfToken = getCsrfToken();
   const formData = new FormData();
   formData.append('file', file);
@@ -423,7 +432,7 @@ export async function downloadOriginalPdf(file: File): Promise<Blob> {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(legacyToken ? { Authorization: `Bearer ${legacyToken}` } : {}),
       ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
     },
     body: formData,
@@ -444,7 +453,7 @@ export async function downloadOriginalPdf(file: File): Promise<Blob> {
 }
 
 export async function reviewFormBatch(files: File[]): Promise<BatchFormReviewResult> {
-  const token = getToken();
+  const legacyToken = getLegacyToken();
   const csrfToken = getCsrfToken();
   const formData = new FormData();
   for (const file of files) {
@@ -455,7 +464,7 @@ export async function reviewFormBatch(files: File[]): Promise<BatchFormReviewRes
     method: 'POST',
     credentials: 'same-origin',
     headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(legacyToken ? { Authorization: `Bearer ${legacyToken}` } : {}),
       ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
     },
     body: formData,
@@ -657,9 +666,10 @@ export async function getExtractionModel(): Promise<{ model: string }> {
 
 // Query log (admin) — downloads CSV as a blob and triggers browser download
 export async function downloadQueryLogCsv(date: string): Promise<void> {
-  const token = getToken();
+  const legacyToken = getLegacyToken();
   const response = await fetch(`${API_BASE}/query-log/${date}/csv`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'same-origin',
+    headers: legacyToken ? { Authorization: `Bearer ${legacyToken}` } : {},
   });
 
   if (!response.ok) {

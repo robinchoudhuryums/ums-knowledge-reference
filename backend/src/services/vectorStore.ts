@@ -1,5 +1,6 @@
 import { StoredChunk, VectorStoreIndex, SearchResult, Document, DocumentChunk } from '../types';
 import { saveVectorIndex, loadVectorIndex, getDocumentsIndex } from './s3Storage';
+import { getEmbeddingProvider } from './embeddings';
 import { logger } from '../utils/logger';
 
 // In-memory cache of the vector index for fast search
@@ -171,7 +172,14 @@ export async function initializeVectorStore(): Promise<void> {
       idfCache = buildIdfMap(cachedIndex.chunks);
       idfChunkCount = cachedIndex.chunks.length;
     } else {
-      cachedIndex = { version: 1, lastUpdated: new Date().toISOString(), chunks: [] };
+      const ep = getEmbeddingProvider();
+      cachedIndex = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        chunks: [],
+        embeddingModel: ep.modelId,
+        embeddingDimensions: ep.dimensions,
+      };
       logger.info('Vector store initialized empty');
     }
   })();
@@ -204,6 +212,11 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
 
   cachedIndex!.chunks.push(...storedChunks);
   cachedIndex!.lastUpdated = new Date().toISOString();
+
+  // Stamp current embedding model metadata
+  const ep = getEmbeddingProvider();
+  cachedIndex!.embeddingModel = ep.modelId;
+  cachedIndex!.embeddingDimensions = ep.dimensions;
 
   // Invalidate IDF cache since corpus changed
   idfCache = null;

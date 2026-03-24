@@ -12,6 +12,7 @@ import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { bedrockClient, BEDROCK_EXTRACTION_MODEL } from '../config/aws';
 import { extractText } from './textExtractor';
 import { logger } from '../utils/logger';
+import { withRetry, withTimeout } from '../utils/resilience';
 
 export interface ClinicalExtraction {
   // Patient
@@ -166,7 +167,14 @@ export async function extractClinicalNotes(
 
   let responseText: string;
   try {
-    const response = await bedrockClient.send(command);
+    const response = await withRetry(
+      () => withTimeout(
+        () => bedrockClient.send(command),
+        60000,
+        'Bedrock clinical extraction',
+      ),
+      { maxRetries: 3, baseDelayMs: 1000, label: 'Bedrock clinical extraction' },
+    );
     const body = JSON.parse(new TextDecoder().decode(response.body));
     responseText = body.content?.[0]?.text || '';
   } catch (error: any) {

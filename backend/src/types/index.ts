@@ -57,6 +57,8 @@ export interface User {
   failedLoginAttempts?: number;
   /** ISO timestamp when account was locked out */
   lockedUntil?: string;
+  /** ISO timestamp of last successful login */
+  lastLogin?: string;
 }
 
 export interface SearchResult {
@@ -70,7 +72,7 @@ export interface AuditLogEntry {
   timestamp: string;
   userId: string;
   username: string;
-  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr';
+  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr' | 'user_create' | 'user_update' | 'user_delete' | 'user_reset_password';
   details: Record<string, unknown>;
 }
 
@@ -78,6 +80,8 @@ export interface VectorStoreIndex {
   version: number;
   lastUpdated: string;
   chunks: StoredChunk[];
+  embeddingModel?: string;    // Model used for embeddings
+  embeddingDimensions?: number; // Dimension count
 }
 
 export interface StoredChunk {

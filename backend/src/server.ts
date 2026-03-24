@@ -9,12 +9,14 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
+import { runWithCorrelationId } from './utils/correlationId';
 import { validateEnv } from './utils/envValidation';
 import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
 import { initializeVectorStore } from './services/vectorStore';
 import { startReindexScheduler } from './services/reindexer';
 import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
 import { startSourceMonitor } from './services/sourceMonitor';
+import { startJobCleanup } from './services/jobQueue';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
@@ -22,6 +24,8 @@ import usageRoutes from './routes/usage';
 import queryLogRoutes from './routes/queryLog';
 import extractionRoutes from './routes/extraction';
 import sourceMonitorRoutes from './routes/sourceMonitor';
+import errorRoutes from './routes/errors';
+import userRoutes from './routes/users';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -96,14 +100,24 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// Request logging — logs every incoming request with method, path, status, and duration
+// Request correlation ID + logging — assigns a unique ID per request for traceability
 app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+  const correlationId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+  res.setHeader('X-Request-Id', correlationId);
+
+  runWithCorrelationId(correlationId, () => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`, {
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: res.statusCode,
+        durationMs: duration,
+      });
+    });
+    next();
   });
-  next();
 });
 
 // Rate limiting — login: strict (brute force protection), API: general
@@ -157,6 +171,12 @@ app.use('/api/extraction', extractionRoutes);
 // Source monitor routes (admin: manage auto-fetched external documents)
 app.use('/api/sources', sourceMonitorRoutes);
 
+// User management routes (admin CRUD)
+app.use('/api/users', userRoutes);
+
+// Client error reporting routes
+app.use('/api/errors', errorRoutes);
+
 // In production, serve the frontend static files from the same server.
 // The built frontend is expected at ../frontend/dist relative to the backend root.
 if (process.env.NODE_ENV === 'production') {
@@ -196,6 +216,9 @@ async function start() {
 
     // Start document source monitor (checks external URLs for updates)
     startSourceMonitor();
+
+    // Start job queue cleanup (removes old completed/failed jobs every 10 minutes)
+    startJobCleanup();
 
     app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

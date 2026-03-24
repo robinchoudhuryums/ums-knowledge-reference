@@ -6,7 +6,7 @@ import { loadMetadata, saveMetadata } from '../services/s3Storage';
 import { logger } from '../utils/logger';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ums-kb-dev-secret-change-in-production';
-const USERS_KEY = 'users.json';
+export const USERS_KEY = 'users.json';
 
 // JWT expiry: 30 minutes for HIPAA compliance (down from 8 hours)
 const JWT_EXPIRY = (process.env.JWT_EXPIRY || '30m') as jwt.SignOptions['expiresIn'];
@@ -127,12 +127,12 @@ export interface AuthRequest extends Request {
   user?: { id: string; username: string; role: 'admin' | 'user'; jti?: string };
 }
 
-async function getUsers(): Promise<User[]> {
+export async function getUsers(): Promise<User[]> {
   const users = await loadMetadata<User[]>(USERS_KEY);
   return users || [];
 }
 
-async function saveUsers(users: User[]): Promise<void> {
+export async function saveUsers(users: User[]): Promise<void> {
   await saveMetadata(USERS_KEY, users);
 }
 
@@ -200,12 +200,11 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Successful login — reset failed attempts and lockout
-  if (user.failedLoginAttempts || user.lockedUntil) {
-    user.failedLoginAttempts = 0;
-    user.lockedUntil = undefined;
-    await saveUsers(users);
-  }
+  // Successful login — reset failed attempts, lockout, and track lastLogin
+  user.failedLoginAttempts = 0;
+  user.lockedUntil = undefined;
+  user.lastLogin = new Date().toISOString();
+  await saveUsers(users);
 
   // Generate a unique token ID for revocation support
   const jti = `${user.id}-${Date.now()}`;

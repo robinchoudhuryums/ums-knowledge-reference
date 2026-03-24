@@ -14,9 +14,12 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `visionExtractor.ts` — Sends PDFs to Haiku 4.5 via Bedrock Converse API to describe images/diagrams
   - `ocr.ts` — AWS Textract OCR (sync for images, async for multi-page PDFs)
   - `chunker.ts` — Splits text into overlapping chunks with section header detection
-  - `embeddings.ts` — Amazon Titan Embed V2 via Bedrock, batch support (parallel batches of 20), retry with exponential backoff
-  - `vectorStore.ts` — JSON-based vector store on S3 with cosine similarity search + IDF-enhanced BM25 keyword boosting + re-ranking
+  - `embeddings.ts` — Embedding facade (delegates to `EmbeddingProvider`), batch support (parallel batches of 20), retry with exponential backoff
+  - `embeddingProvider.ts` — `EmbeddingProvider` interface for swappable embedding models
+  - `titanEmbeddingProvider.ts` — Amazon Titan Embed V2 implementation of `EmbeddingProvider`
+  - `vectorStore.ts` — JSON-based vector store on S3 with cosine similarity search + IDF-enhanced BM25 keyword boosting + re-ranking. Tracks embedding model metadata.
   - `s3Storage.ts` — S3 operations for documents, vectors, metadata
+  - `jobQueue.ts` — In-memory async job queue for long-running extractions, with status polling and auto-cleanup
   - `audit.ts` — HIPAA audit logging to S3
   - `usage.ts` — Per-user daily query limits
   - `queryLog.ts` — Query analytics with CSV export
@@ -34,15 +37,19 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Routes** (`backend/src/routes/`):
   - `query.ts` — RAG query (non-streaming + streaming SSE), query reformulation for follow-ups
   - `documents.ts` — Document upload, listing, deletion, clinical extraction, fee schedule fetch, reindex
-  - `extraction.ts` — Structured document extraction with template selection
+  - `extraction.ts` — Structured document extraction with template selection + async job endpoints
+  - `users.ts` — Admin user management CRUD (list, update role, delete, password reset)
+  - `errors.ts` — Frontend error reporting endpoint
   - `feedback.ts` — User feedback and response flagging
   - `queryLog.ts` — Query log viewing and CSV export
   - `sourceMonitor.ts` — Admin CRUD API for monitored document sources
   - `usage.ts` — Usage stats and limits
 - **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `formRules.ts` (CMN form type rules)
 - **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, account lockout)
-- **Utils** (`backend/src/utils/`): `logger.ts`, `phiRedactor.ts` (PHI scrubbing), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention)
-- **Tests** (`backend/src/__tests__/`): `vectorStore.test.ts` (20 tests), `phiRedactor.test.ts` (18 tests), `urlValidation.test.ts` (13 tests), `auth.test.ts` (14 tests), `usage.test.ts` (6 tests) — 71 total, vitest
+- **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `phiRedactor.ts` (PHI scrubbing), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout)
+- **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts` — decoupled from S3 for future database migration
+- **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
+- **Tests** (`backend/src/__tests__/`): `vectorStore.test.ts` (20), `phiRedactor.test.ts` (18), `urlValidation.test.ts` (13), `auth.test.ts` (14), `usage.test.ts` (6), `hipaaCompliance.test.ts` (30) — 101 total, vitest
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
@@ -121,6 +128,15 @@ docker build -t ums-knowledge .
 - **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
 
 ## Recent Changes (reverse chronological)
+- **Horizontal scaling prep**: Cache abstraction layer (`cache/interfaces.ts`) with `CacheProvider` and `SetProvider` interfaces. In-memory implementation with TTL and LRU eviction (10K cap). `SCALING.md` documents all in-memory state and migration paths for multi-instance deployment.
+- **HIPAA compliance test suite**: 30 automated tests covering PHI redaction patterns (SSN, phone, email, DOB, MRN, names), false positive prevention (HCPCS codes), redaction performance (<100ms for 100KB), auth security controls, password policy, audit trail fields, HTTPS/HSTS config, session timeout, account lockout. Total: 101 tests.
+- **Async document extraction**: Job queue (`jobQueue.ts`) with `POST /api/extraction/extract/async` returning `202 {jobId}`, `GET /api/extraction/jobs/:id` for status polling, `GET /api/extraction/jobs` for user's job list. Background processing with progress tracking. Auto-cleanup of completed jobs after 1 hour.
+- **Frontend error tracking**: `POST /api/errors/report` endpoint receives client errors. `errorReporting.ts` service with deduplication (60s window), global `window.onerror`/`unhandledrejection` handlers, `ErrorBoundary` integration via `componentDidCatch`.
+- **User management**: Admin CRUD at `/api/users` — list users, update roles (prevents demoting last admin), delete users (prevents self-delete), force password reset with temp password + `mustChangePassword` flag. `lastLogin` tracking.
+- **Embedding model abstraction**: `EmbeddingProvider` interface with `TitanEmbeddingProvider` implementation. Facade in `embeddings.ts` delegates to swappable provider. Vector store index now tracks `embeddingModel` and `embeddingDimensions` metadata.
+- **Storage abstraction layer**: `MetadataStore`, `DocumentStore`, `VectorStore` interfaces in `storage/interfaces.ts`. S3 implementations wrap existing functions. Singleton exports for callers. Foundation for PostgreSQL/pgvector migration.
+- **Retry/circuit breaker**: Shared `withRetry` (exponential backoff + jitter), `withTimeout`, and `CircuitBreaker` class in `utils/resilience.ts`. Applied to Bedrock extraction and clinical note calls. Embeddings migrated from local retry to shared utility.
+- **Structured JSON logging**: Logger rewritten to output JSON with ISO timestamps, levels, correlation IDs. `correlationId.ts` uses `AsyncLocalStorage` for per-request tracing. Request middleware generates UUID per request (or reads `X-Request-Id`).
 - **httpOnly cookie auth**: JWT tokens now stored in httpOnly cookies (immune to XSS) instead of localStorage. Backend `authenticate` middleware reads from cookie first, Authorization header as fallback. Login/logout/change-password endpoints set/clear the cookie. Frontend uses `credentials: 'same-origin'` on all fetch calls. `isLoggedIn` flag in localStorage replaces token for UI state.
 - **Race condition fixes**: (1) Vector store initialization lock prevents concurrent `initializeVectorStore()` calls from corrupting state. (2) Query log and RAG trace day-boundary transitions use promise-based locks with double-check pattern to prevent data loss. (3) Usage tracking: new `checkAndRecordQuery()` atomically checks limits and records usage in one step, eliminating the TOCTOU race between `checkUsageLimit` and `recordQuery`.
 - **CI pipeline**: GitHub Actions workflow (`.github/workflows/ci.yml`) with backend lint/type-check/test, frontend type-check/build, and Docker build verification. Runs on push to main and claude/* branches plus all PRs.
@@ -178,7 +194,15 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/documents/clinical-extract` | User | Extract clinical data from physician notes |
 | POST | `/api/documents/fee-schedule/fetch` | Admin | Trigger CMS fee schedule fetch |
 | POST | `/api/documents/reindex` | Admin | Trigger document reindex |
-| POST | `/api/extraction/extract` | User | Structured document extraction with template |
+| POST | `/api/extraction/extract` | User | Structured document extraction with template (sync) |
+| POST | `/api/extraction/extract/async` | User | Start async extraction job, returns jobId |
+| GET | `/api/extraction/jobs/:id` | User | Get async job status and result |
+| GET | `/api/extraction/jobs` | User | List user's async jobs |
+| GET | `/api/users` | Admin | List all users |
+| PUT | `/api/users/:id/role` | Admin | Update user role |
+| DELETE | `/api/users/:id` | Admin | Delete user |
+| POST | `/api/users/:id/reset-password` | Admin | Force-reset user password |
+| POST | `/api/errors/report` | User | Report frontend error |
 | POST | `/api/feedback` | User | Submit feedback on a response |
 | GET | `/api/query-log` | Admin | View query logs |
 | GET | `/api/query-log/export` | Admin | Export query logs as CSV |

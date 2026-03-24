@@ -1,27 +1,43 @@
+import { getCorrelationId } from './correlationId';
+
 type LogLevel = 'info' | 'warn' | 'error' | 'debug';
 
-function formatMessage(level: LogLevel, message: string, meta?: Record<string, unknown>): string {
-  const timestamp = new Date().toISOString();
-  const base = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
-  if (meta && Object.keys(meta).length > 0) {
-    return `${base} ${JSON.stringify(meta)}`;
+function buildLogEntry(level: LogLevel, message: string, meta?: Record<string, unknown>): string {
+  const entry: Record<string, unknown> = {
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+  };
+
+  const correlationId = getCorrelationId();
+  if (correlationId) {
+    entry.correlationId = correlationId;
   }
-  return base;
+
+  if (meta) {
+    for (const [key, value] of Object.entries(meta)) {
+      if (!(key in entry)) {
+        entry[key] = value;
+      }
+    }
+  }
+
+  return JSON.stringify(entry);
 }
 
 export const logger = {
   info(message: string, meta?: Record<string, unknown>) {
-    console.log(formatMessage('info', message, meta));
+    console.log(buildLogEntry('info', message, meta));
   },
   warn(message: string, meta?: Record<string, unknown>) {
-    console.warn(formatMessage('warn', message, meta));
+    console.warn(buildLogEntry('warn', message, meta));
   },
   error(message: string, meta?: Record<string, unknown>) {
-    console.error(formatMessage('error', message, meta));
+    console.error(buildLogEntry('error', message, meta));
   },
   debug(message: string, meta?: Record<string, unknown>) {
     if (process.env.NODE_ENV !== 'production') {
-      console.debug(formatMessage('debug', message, meta));
+      console.debug(buildLogEntry('debug', message, meta));
     }
   },
 };

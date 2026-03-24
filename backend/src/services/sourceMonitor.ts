@@ -18,6 +18,7 @@ import { removeDocumentChunks } from './vectorStore';
 import { getDocumentsIndex, saveDocumentsIndex } from './s3Storage';
 import { MonitoredSource } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { validateUrl, MAX_DOWNLOAD_SIZE } from '../utils/urlValidation';
 import { createHash } from 'crypto';
 import https from 'https';
 import http from 'http';
@@ -71,6 +72,12 @@ export async function addMonitoredSource(input: {
 }): Promise<MonitoredSource> {
   const sources = await getMonitoredSources();
 
+  // Validate URL against SSRF attacks
+  const urlError = validateUrl(input.url);
+  if (urlError) {
+    throw new Error(`Invalid URL: ${urlError}`);
+  }
+
   // Prevent duplicate URLs
   if (sources.find(s => s.url === input.url)) {
     throw new Error('A source with this URL is already being monitored');
@@ -104,8 +111,12 @@ export async function updateMonitoredSource(
   const idx = sources.findIndex(s => s.id === id);
   if (idx === -1) throw new Error('Monitored source not found');
 
-  // If URL is changing, check for duplicates
+  // If URL is changing, validate and check for duplicates
   if (updates.url && updates.url !== sources[idx].url) {
+    const urlError = validateUrl(updates.url);
+    if (urlError) {
+      throw new Error(`Invalid URL: ${urlError}`);
+    }
     if (sources.find(s => s.url === updates.url && s.id !== id)) {
       throw new Error('A source with this URL is already being monitored');
     }
@@ -148,13 +159,22 @@ export async function removeMonitoredSource(id: string): Promise<void> {
 
 // ─── Download Utility ──────────────────────────────────────────────────
 
-function downloadFile(url: string, timeoutMs = 60000): Promise<{ buffer: Buffer; contentType?: string }> {
+function downloadFile(url: string, timeoutMs = 60000, redirectCount = 0): Promise<{ buffer: Buffer; contentType?: string }> {
+  if (redirectCount > 5) {
+    return Promise.reject(new Error('Too many redirects'));
+  }
+
+  const urlError = validateUrl(url);
+  if (urlError) {
+    return Promise.reject(new Error(`Invalid URL: ${urlError}`));
+  }
+
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http;
     const request = client.get(url, { timeout: timeoutMs }, (response) => {
-      // Follow redirects (up to 5)
+      // Follow redirects — re-validate each redirect target
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        downloadFile(response.headers.location, timeoutMs).then(resolve).catch(reject);
+        downloadFile(response.headers.location, timeoutMs, redirectCount + 1).then(resolve).catch(reject);
         return;
       }
 
@@ -164,7 +184,16 @@ function downloadFile(url: string, timeoutMs = 60000): Promise<{ buffer: Buffer;
       }
 
       const chunks: Buffer[] = [];
-      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      let totalSize = 0;
+      response.on('data', (chunk: Buffer) => {
+        totalSize += chunk.length;
+        if (totalSize > MAX_DOWNLOAD_SIZE) {
+          request.destroy();
+          reject(new Error(`Download exceeds maximum size of ${MAX_DOWNLOAD_SIZE} bytes`));
+          return;
+        }
+        chunks.push(chunk);
+      });
       response.on('end', () => resolve({
         buffer: Buffer.concat(chunks),
         contentType: response.headers['content-type'],

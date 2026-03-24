@@ -56,6 +56,9 @@ let todayDate = '';
 let lastPersist = 0;
 const PERSIST_INTERVAL_MS = 15_000;
 
+// Lock to prevent concurrent day-boundary transitions from racing
+let ensurePromise: Promise<void> | null = null;
+
 function getTodayKey(): string {
   return new Date().toISOString().split('T')[0];
 }
@@ -64,19 +67,36 @@ async function ensureToday(): Promise<void> {
   const today = getTodayKey();
   if (todayDate === today) return;
 
-  // Flush previous day
-  if (todayTraces.length > 0 || todayFeedback.length > 0) {
-    await forceFlush();
+  // If another call is already transitioning, wait for it
+  if (ensurePromise) {
+    await ensurePromise;
+    return;
   }
 
-  // Load today's data from S3
-  const [traces, feedback] = await Promise.all([
-    loadMetadata<RagTrace[]>(`${TRACE_PREFIX}${today}-traces.json`),
-    loadMetadata<RagFeedback[]>(`${TRACE_PREFIX}${today}-feedback.json`),
-  ]);
-  todayTraces = traces || [];
-  todayFeedback = feedback || [];
-  todayDate = today;
+  ensurePromise = (async () => {
+    // Double-check after acquiring lock
+    if (todayDate === today) return;
+
+    // Flush previous day
+    if (todayTraces.length > 0 || todayFeedback.length > 0) {
+      await forceFlush();
+    }
+
+    // Load today's data from S3
+    const [traces, feedback] = await Promise.all([
+      loadMetadata<RagTrace[]>(`${TRACE_PREFIX}${today}-traces.json`),
+      loadMetadata<RagFeedback[]>(`${TRACE_PREFIX}${today}-feedback.json`),
+    ]);
+    todayTraces = traces || [];
+    todayFeedback = feedback || [];
+    todayDate = today;
+  })();
+
+  try {
+    await ensurePromise;
+  } finally {
+    ensurePromise = null;
+  }
 }
 
 async function persistIfNeeded(): Promise<void> {

@@ -29,6 +29,9 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 ENV NODE_ENV=production
 ENV PORT=3001
 
+# Run as the built-in non-root 'node' user (UID 1000, already exists in node images)
+USER node
+
 EXPOSE 3001
 
 CMD ["node", "backend/dist/server.js"]

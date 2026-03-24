@@ -29,4 +29,4 @@ services:
       - key: JWT_SECRET
         generateValue: true  # Render auto-generates a secure random string
       - key: CORS_ORIGIN
-        value: "*"  # same-origin in production; safe since auth is token-based
+        sync: false  # set to your actual frontend domain in Render dashboard (e.g. https://ums-knowledge-base.onrender.com)

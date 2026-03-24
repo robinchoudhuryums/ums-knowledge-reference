@@ -6,10 +6,39 @@ import { loadMetadata, saveMetadata } from '../services/s3Storage';
 import { logger } from '../utils/logger';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ums-kb-dev-secret-change-in-production';
-const USERS_KEY = 'users.json';
+export const USERS_KEY = 'users.json';
 
 // JWT expiry: 30 minutes for HIPAA compliance (down from 8 hours)
 const JWT_EXPIRY = (process.env.JWT_EXPIRY || '30m') as jwt.SignOptions['expiresIn'];
+
+// Cookie name for httpOnly JWT token
+export const AUTH_COOKIE = 'ums_auth_token';
+
+/**
+ * Set the JWT token as an httpOnly cookie on the response.
+ * This prevents XSS attacks from stealing the token via JavaScript.
+ */
+export function setAuthCookie(res: Response, token: string): void {
+  res.cookie(AUTH_COOKIE, token, {
+    httpOnly: true,       // JS cannot read this cookie (XSS protection)
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: 30 * 60 * 1000, // 30 minutes (matches JWT expiry)
+  });
+}
+
+/**
+ * Clear the auth cookie on logout.
+ */
+export function clearAuthCookie(res: Response): void {
+  res.clearCookie(AUTH_COOKIE, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+  });
+}
 
 // Warn at startup if using the default JWT secret
 if (!process.env.JWT_SECRET) {
@@ -98,12 +127,12 @@ export interface AuthRequest extends Request {
   user?: { id: string; username: string; role: 'admin' | 'user'; jti?: string };
 }
 
-async function getUsers(): Promise<User[]> {
+export async function getUsers(): Promise<User[]> {
   const users = await loadMetadata<User[]>(USERS_KEY);
   return users || [];
 }
 
-async function saveUsers(users: User[]): Promise<void> {
+export async function saveUsers(users: User[]): Promise<void> {
   await saveMetadata(USERS_KEY, users);
 }
 
@@ -171,12 +200,11 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Successful login — reset failed attempts and lockout
-  if (user.failedLoginAttempts || user.lockedUntil) {
-    user.failedLoginAttempts = 0;
-    user.lockedUntil = undefined;
-    await saveUsers(users);
-  }
+  // Successful login — reset failed attempts, lockout, and track lastLogin
+  user.failedLoginAttempts = 0;
+  user.lockedUntil = undefined;
+  user.lastLogin = new Date().toISOString();
+  await saveUsers(users);
 
   // Generate a unique token ID for revocation support
   const jti = `${user.id}-${Date.now()}`;
@@ -187,6 +215,10 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     { expiresIn: JWT_EXPIRY }
   );
 
+  // Set httpOnly cookie (primary auth mechanism — immune to XSS)
+  setAuthCookie(res, token);
+
+  // Also return token in body for backwards compatibility during migration
   res.json({
     token,
     user: { id: user.id, username: user.username, role: user.role },
@@ -249,6 +281,8 @@ export async function changePasswordHandler(req: AuthRequest, res: Response): Pr
     { expiresIn: JWT_EXPIRY }
   );
 
+  setAuthCookie(res, token);
+
   logger.info('Password changed', { userId: user.id, username: user.username });
   res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
 }
@@ -260,6 +294,7 @@ export async function logoutHandler(req: AuthRequest, res: Response): Promise<vo
   if (req.user?.jti) {
     revokeToken(req.user.jti);
   }
+  clearAuthCookie(res);
   res.json({ message: 'Logged out' });
 }
 
@@ -303,16 +338,20 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
 
 /**
  * JWT authentication middleware.
+ * Accepts token from httpOnly cookie (preferred) or Authorization header (fallback).
  * Checks token validity AND server-side revocation.
  */
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
+  // Prefer httpOnly cookie (immune to XSS), fall back to Authorization header
+  const cookieToken = req.cookies?.[AUTH_COOKIE];
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+
+  if (!token) {
     res.status(401).json({ error: 'No token provided' });
     return;
   }
 
-  const token = authHeader.slice(7);
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string; role: 'admin' | 'user'; jti?: string };
 

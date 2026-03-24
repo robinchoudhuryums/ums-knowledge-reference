@@ -7,10 +7,13 @@ const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 
 export function useAuth() {
   const [auth, setAuth] = useState<AuthState>(() => {
-    const token = localStorage.getItem('token');
+    // Token is now stored in an httpOnly cookie (not accessible to JS).
+    // We still keep a flag in localStorage to know if the user is logged in
+    // (the server will reject if the cookie is actually missing/expired).
+    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
     const userStr = localStorage.getItem('user');
     return {
-      token,
+      token: isLoggedIn ? 'httponly' : null, // Sentinel — actual token is in cookie
       user: userStr ? JSON.parse(userStr) : null,
     };
   });
@@ -20,10 +23,12 @@ export function useAuth() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logout = useCallback(async () => {
-    // Revoke token server-side (fire-and-forget)
+    // Revoke token server-side + clear httpOnly cookie (fire-and-forget)
     try { await logoutServer(); } catch { /* ignore if already expired */ }
-    localStorage.removeItem('token');
+    localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('user');
+    // Also clean up legacy token key if present
+    localStorage.removeItem('token');
     setAuth({ token: null, user: null });
     setMustChangePassword(false);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -55,9 +60,10 @@ export function useAuth() {
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await apiLogin(username, password);
-    localStorage.setItem('token', result.token);
+    // Token is now set as httpOnly cookie by the server; we just store user info
+    localStorage.setItem('isLoggedIn', 'true');
     localStorage.setItem('user', JSON.stringify(result.user));
-    setAuth({ token: result.token, user: result.user });
+    setAuth({ token: 'httponly', user: result.user });
 
     // Check if server says password must be changed
     if ((result as any).mustChangePassword) {
@@ -65,10 +71,11 @@ export function useAuth() {
     }
   }, []);
 
-  const handlePasswordChanged = useCallback((token: string, user: { id: string; username: string; role: 'admin' | 'user' }) => {
-    localStorage.setItem('token', token);
+  const handlePasswordChanged = useCallback((_token: string, user: { id: string; username: string; role: 'admin' | 'user' }) => {
+    // Token cookie is set by server; just update local state
+    localStorage.setItem('isLoggedIn', 'true');
     localStorage.setItem('user', JSON.stringify(user));
-    setAuth({ token, user });
+    setAuth({ token: 'httponly', user });
     setMustChangePassword(false);
   }, []);
 

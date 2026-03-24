@@ -18,6 +18,7 @@ import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { logger } from '../utils/logger';
 import { ingestDocument } from './ingestion';
 import { v4 as uuidv4 } from 'uuid';
+import { validateUrl, MAX_DOWNLOAD_SIZE } from '../utils/urlValidation';
 import https from 'https';
 import http from 'http';
 import { createHash } from 'crypto';
@@ -44,14 +45,24 @@ interface FetchMeta {
 
 /**
  * Download a file from a URL and return as Buffer.
+ * Validates the URL against SSRF attacks before downloading.
  */
-function downloadFile(url: string): Promise<Buffer> {
+function downloadFile(url: string, redirectCount = 0): Promise<Buffer> {
+  if (redirectCount > 5) {
+    return Promise.reject(new Error('Too many redirects'));
+  }
+
+  const urlError = validateUrl(url);
+  if (urlError) {
+    return Promise.reject(new Error(`Invalid URL: ${urlError}`));
+  }
+
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http;
     const request = client.get(url, { timeout: 60000 }, (response) => {
-      // Follow redirects
+      // Follow redirects — re-validate each redirect target
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        downloadFile(response.headers.location).then(resolve).catch(reject);
+        downloadFile(response.headers.location, redirectCount + 1).then(resolve).catch(reject);
         return;
       }
 
@@ -61,7 +72,16 @@ function downloadFile(url: string): Promise<Buffer> {
       }
 
       const chunks: Buffer[] = [];
-      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      let totalSize = 0;
+      response.on('data', (chunk: Buffer) => {
+        totalSize += chunk.length;
+        if (totalSize > MAX_DOWNLOAD_SIZE) {
+          request.destroy();
+          reject(new Error(`Download exceeds maximum size of ${MAX_DOWNLOAD_SIZE} bytes`));
+          return;
+        }
+        chunks.push(chunk);
+      });
       response.on('end', () => resolve(Buffer.concat(chunks)));
       response.on('error', reject);
     });

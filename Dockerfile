@@ -29,9 +29,8 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 ENV NODE_ENV=production
 ENV PORT=3001
 
-# Run as non-root user for security (limits blast radius if app is compromised)
-RUN useradd -m -u 1000 appuser
-USER appuser
+# Run as the built-in non-root 'node' user (UID 1000, already exists in node images)
+USER node
 
 EXPOSE 3001
 

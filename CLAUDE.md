@@ -8,38 +8,77 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 ### Backend (`backend/`)
 - **Runtime**: Node.js + Express + TypeScript
 - **Entry**: `backend/src/index.ts`
-- **Key services**:
+- **Key services** (`backend/src/services/`):
   - `ingestion.ts` — Full pipeline: upload to S3 → extract text → vision describe images → chunk → embed → store in vector store
   - `textExtractor.ts` — Extracts text from PDFs (pdf-parse + Textract OCR in parallel), DOCX, XLSX, CSV
   - `visionExtractor.ts` — Sends PDFs to Haiku 4.5 via Bedrock Converse API to describe images/diagrams
   - `ocr.ts` — AWS Textract OCR (sync for images, async for multi-page PDFs)
   - `chunker.ts` — Splits text into overlapping chunks with section header detection
-  - `embeddings.ts` — Amazon Titan Embed V2 via Bedrock
-  - `vectorStore.ts` — JSON-based vector store on S3 with cosine similarity search + keyword boosting
+  - `embeddings.ts` — Amazon Titan Embed V2 via Bedrock, batch support (parallel batches of 20), retry with exponential backoff
+  - `vectorStore.ts` — JSON-based vector store on S3 with cosine similarity search + IDF-enhanced BM25 keyword boosting + re-ranking
   - `s3Storage.ts` — S3 operations for documents, vectors, metadata
   - `audit.ts` — HIPAA audit logging to S3
   - `usage.ts` — Per-user daily query limits
   - `queryLog.ts` — Query analytics with CSV export
+  - `ragTrace.ts` — Per-query RAG observability tracing (retrieval scores, timing, confidence)
   - `faqAnalytics.ts` — FAQ pattern detection from query logs
-- **Routes**: `query.ts` (RAG query + streaming SSE), `documents.ts`, `feedback.ts`, `queryLog.ts`, `usage.ts`
-- **Auth**: JWT-based with role support (admin/user), middleware in `middleware/auth.ts`
+  - `feedback.ts` — User feedback/flagging service
+  - `formAnalyzer.ts` — CMN form analysis with blank detection and confidence scoring
+  - `pdfAnnotator.ts` — Server-side PDF annotation support
+  - `documentExtractor.ts` — Structured document extraction with templates (PPD, CMN, Prior Auth, General) using Claude Sonnet
+  - `extractionTemplates.ts` — Extraction template definitions and field schemas
+  - `clinicalNoteExtractor.ts` — AI-assisted clinical note extraction (ICD-10, test results, medical necessity) using Claude Sonnet
+  - `sourceMonitor.ts` — Automated URL monitoring for external document changes (SHA-256 hash comparison)
+  - `feeScheduleFetcher.ts` — CMS DME fee schedule auto-fetch and ingestion
+  - `reindexer.ts` — Document change detection and re-ingestion service
+- **Routes** (`backend/src/routes/`):
+  - `query.ts` — RAG query (non-streaming + streaming SSE), query reformulation for follow-ups
+  - `documents.ts` — Document upload, listing, deletion, clinical extraction, fee schedule fetch, reindex
+  - `extraction.ts` — Structured document extraction with template selection
+  - `feedback.ts` — User feedback and response flagging
+  - `queryLog.ts` — Query log viewing and CSV export
+  - `sourceMonitor.ts` — Admin CRUD API for monitored document sources
+  - `usage.ts` — Usage stats and limits
+- **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `formRules.ts` (CMN form type rules)
+- **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, account lockout)
+- **Utils** (`backend/src/utils/`): `logger.ts`, `phiRedactor.ts` (PHI scrubbing), `envValidation.ts`, `fileValidation.ts`
+- **Tests** (`backend/src/__tests__/`): `vectorStore.test.ts` (20 tests), `phiRedactor.test.ts` (18 tests) — 38 total, vitest
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
 - **Entry**: `frontend/src/App.tsx`
-- **Components**: `ChatInterface.tsx` (main chat), `DocumentManager.tsx`, `DocumentSearch.tsx`, `FaqDashboard.tsx`, `FeedbackForm.tsx`, `LoginForm.tsx`, `OcrTool.tsx`, `PopoutButton.tsx`, `QueryLogViewer.tsx`, `SourceViewer.tsx`
+- **Components** (`frontend/src/components/`):
+  - `ChatInterface.tsx` — Main chat with streaming SSE, markdown rendering, source citations
+  - `DocumentManager.tsx` — Document upload with progress, status badges, collection management
+  - `DocumentSearch.tsx` — Document search and filtering
+  - `DocumentExtractor.tsx` — Structured data extraction UI with template selection
+  - `IntakeAutoFill.tsx` — Intake/Clinical tab for patient demographics, CMN field mapping
+  - `AnnotatedPdfViewer.tsx` — Interactive PDF viewer with drag/move annotations, undo/redo (code-split via React.lazy)
+  - `FaqDashboard.tsx` — FAQ pattern analytics
+  - `FeedbackForm.tsx` — User feedback on responses
+  - `LoginForm.tsx` — Login with account lockout display
+  - `ChangePasswordForm.tsx` — Password change with history enforcement
+  - `OcrTool.tsx` — OCR tool for ad-hoc text extraction
+  - `ObservabilityDashboard.tsx` — RAG trace observability with daily stats, failure drill-down
+  - `QualityDashboard.tsx` — Query confidence distribution, flagged responses, unanswered tracking
+  - `QueryLogViewer.tsx` — Query log viewer with CSV export
+  - `SourceViewer.tsx` — Source citation viewer
+  - `PopoutButton.tsx` — Popout window utility
+  - `ErrorBoundary.tsx` — React error boundary for graceful degradation
+- **Hooks**: `frontend/src/hooks/useAuth.ts`
+- **API client**: `frontend/src/services/api.ts`
+- **Types**: `frontend/src/types/index.ts`
 - **Styling**: Inline styles + `index.css` (healthcare blue palette with hexagonal/molecular background pattern)
-- **API client**: `frontend/src/api.ts`
 
 ### AWS Services Used
-- **S3**: Document storage, vector store, metadata, audit logs
-- **Bedrock**: Claude Haiku 4.5 (generation + vision), Titan Embed V2 (embeddings)
+- **S3**: Document storage, vector store, metadata, audit logs, form analysis cache
+- **Bedrock**: Claude Haiku 4.5 (RAG generation + vision), Claude Sonnet 4.6 (structured extraction + clinical notes), Titan Embed V2 (embeddings)
 - **Textract**: OCR for scanned PDFs and images
 
 ### Deployment
 - Single Docker container via `Dockerfile` (serves both backend API and frontend static build)
 - Configured for Render.com via `render.yaml`
-- Environment variables in `.env` (see `.env.example`)
+- Environment variables in `.env` (see `backend/.env.example`)
 
 ## Development Commands
 ```bash
@@ -59,18 +98,30 @@ docker build -t ums-knowledge .
 ## Key Configuration
 - `backend/src/config/aws.ts` — AWS clients, S3 bucket, Bedrock model IDs
 - Generation model: `us.anthropic.claude-haiku-4-5-20251001-v1:0` (cross-region inference profile)
+- Extraction model: `us.anthropic.claude-sonnet-4-6-20250514-v1:0` (structured extraction + clinical)
 - Embedding model: `amazon.titan-embed-text-v2:0`
-- System prompt: `backend/src/routes/query.ts` (line ~15)
-- Temperature: `0.15`, max tokens: `4096`, default topK: `6` chunks
+- System prompt: `backend/src/routes/query.ts` (line ~70)
+- Temperature: `0.15` (RAG), `0.05` (extraction), `0.1` (vision), `0` (reformulation)
+- Max tokens: `4096` (RAG), `8192` (extraction), `150` (reformulation)
+- Default topK: `6` chunks
 
 ## Tuning Knobs for Response Quality
-- **System prompt** (`query.ts:15`): Controls tone, conciseness, citation style
-- **Temperature** (`query.ts:151,243`): Currently 0.15 (conservative). Higher = more varied
-- **Max tokens** (`query.ts:148,240`): Currently 4096. Lower = forces shorter answers
-- **topK** (`query.ts:122,212`): Default 6 chunks. Fewer = more focused, more = comprehensive
+- **System prompt** (`query.ts:70`): Controls tone, conciseness, citation style
+- **Temperature** (`query.ts:267,407`): Currently 0.15 (conservative). Higher = more varied
+- **Max tokens** (`query.ts:264,404`): Currently 4096. Lower = forces shorter answers
+- **topK** (`query.ts:224,359`): Default 6 chunks. Fewer = more focused, more = comprehensive
 - **Chunk size/overlap** (`chunker.ts`): Affects retrieval granularity
 
+## API Cost Optimization
+- **Prompt caching**: All Bedrock InvokeModel calls use `cache_control: { type: 'ephemeral' }` on system prompt blocks. Cache reads cost 0.1x base input price (90% savings). Applied to RAG queries (streaming + non-streaming), query reformulation, document extraction, and clinical note extraction. See `query.ts:88` (`buildSystemBlocks()`).
+- **Embedding batching**: `embeddings.ts` processes chunks in parallel batches of 20 via `Promise.all`
+- **Retry with exponential backoff**: Embedding calls retry up to 3x (1s, 2s, 4s delays)
+- **Model selection**: Haiku 4.5 for RAG (fast/cheap), Sonnet 4.6 for extraction (accurate)
+- **Input truncation**: 8K chars for embeddings, 80K for extraction, 2K for user queries
+- **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
+
 ## Recent Changes (reverse chronological)
+- **Prompt caching**: Enabled Bedrock prompt caching (`cache_control: ephemeral`) on system prompts across all LLM call sites — RAG queries (streaming + non-streaming), query reformulation, document extraction, clinical note extraction. Reduces cached token costs to 0.1x and TTFT by up to 85%. Cache hit/miss logging added to non-streaming RAG queries.
 - **HIPAA hardening**: PHI redaction layer (`phiRedactor.ts`) applied to query logs, RAG traces, and feedback before S3 persistence — regex-based detection of SSNs, DOBs, MRNs, phone numbers, emails, addresses, Medicare/Medicaid IDs, and contextual patient names. JWT secret fail-fast in production (server refuses to start with default secret). HTTPS enforcement middleware with HSTS (1-year max-age). Account lockout after 5 failed login attempts (15-minute cooldown). Password history tracking prevents reuse of last 5 passwords. 18 unit tests for PHI redaction.
 - **Document source monitor**: Automated URL monitoring service (`sourceMonitor.ts`) that tracks external document URLs (LCDs, CMS policies, payer docs) for content changes. SHA-256 hash comparison, configurable per-source check intervals, auto-ingestion on change with previous version cleanup. Admin CRUD API at `/api/sources/`, force-check per source or all. Background scheduler ticks hourly.
 - **Intake data auto-fill**: New "Intake / Clinical" tab with form fields for patient demographics, physician info, supplier details, HCPCS, diagnosis, and insurance. Generates CMN/prior-auth field mappings from entered intake data for form pre-population.
@@ -91,7 +142,7 @@ docker build -t ums-knowledge .
 - **Admin dashboard improvements**: Unified admin view with header, analytics grid layout
 - **Error boundaries**: React ErrorBoundary wraps all tab content for graceful degradation
 - **Retry logic**: Bedrock API calls (embeddings) now retry up to 3x with exponential backoff
-- **Unit tests**: Added 20 tests covering cosine similarity, BM25 scoring, IDF, tokenization, section header detection, and chunking logic (vitest)
+- **Unit tests**: 38 tests covering cosine similarity, BM25 scoring, IDF, tokenization, section header detection, chunking logic, and PHI redaction (vitest)
 - **TypeScript fixes**: Added `types: ["node"]` to tsconfig; moved ExtractedText interface to shared types
 - Added conciseness guideline to system prompt for balanced response length
 - Added vision-based image description for PDFs (Bedrock Converse API + Haiku 4.5)
@@ -110,3 +161,26 @@ The Bedrock IAM policy needs these actions:
 - `bedrock:InvokeModelWithResponseStream` (streaming responses)
 - Textract: `textract:DetectDocumentText`, `textract:AnalyzeDocument`, `textract:StartDocumentTextDetection`, `textract:GetDocumentTextDetection`, `textract:StartDocumentAnalysis`, `textract:GetDocumentAnalysis`
 - S3: standard read/write/delete on the configured bucket
+
+## API Endpoints Summary
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/query` | User | RAG query (non-streaming) |
+| POST | `/api/query/stream` | User | RAG query (streaming SSE) |
+| POST | `/api/documents/upload` | User | Upload document for ingestion |
+| GET | `/api/documents` | User | List documents |
+| DELETE | `/api/documents/:id` | Admin | Delete document |
+| POST | `/api/documents/clinical-extract` | User | Extract clinical data from physician notes |
+| POST | `/api/documents/fee-schedule/fetch` | Admin | Trigger CMS fee schedule fetch |
+| POST | `/api/documents/reindex` | Admin | Trigger document reindex |
+| POST | `/api/extraction/extract` | User | Structured document extraction with template |
+| POST | `/api/feedback` | User | Submit feedback on a response |
+| GET | `/api/query-log` | Admin | View query logs |
+| GET | `/api/query-log/export` | Admin | Export query logs as CSV |
+| GET | `/api/usage` | User | View usage stats |
+| GET | `/api/sources` | Admin | List monitored document sources |
+| POST | `/api/sources` | Admin | Add monitored source |
+| PUT | `/api/sources/:id` | Admin | Update monitored source |
+| DELETE | `/api/sources/:id` | Admin | Delete monitored source |
+| POST | `/api/sources/:id/check` | Admin | Force-check a source for changes |
+| POST | `/api/sources/check-all` | Admin | Force-check all sources |

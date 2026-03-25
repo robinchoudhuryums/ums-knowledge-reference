@@ -188,15 +188,46 @@ export async function extractClinicalNotes(
   // Step 4: Generate CMN field mappings
   const fieldMappings = generateFieldMappings(extraction);
 
+  // Step 5: Validate ICD-10 codes
+  const validationWarnings = validateIcd10Codes(extraction.icdCodes);
+  if (validationWarnings.length > 0) {
+    extraction.extractionNotes += (extraction.extractionNotes ? '\n' : '') +
+      `ICD-10 validation: ${validationWarnings.join('; ')}`;
+  }
+
   logger.info('Clinical note extraction complete', {
     filename,
     confidence: extraction.confidence,
     icdCodesFound: extraction.icdCodes.length,
+    icd10Warnings: validationWarnings.length,
     testResultsFound: extraction.testResults.length,
     mappingsGenerated: fieldMappings.length,
   });
 
   return { extraction, fieldMappings };
+}
+
+/**
+ * Validate ICD-10 code format. Valid codes match: A00-Z99 followed by optional .0-9A-Z{1,4}.
+ * Returns an array of warning messages for invalid codes.
+ * Does not reject — just flags for human review.
+ */
+function validateIcd10Codes(codes: string[]): string[] {
+  const warnings: string[] = [];
+  // ICD-10-CM pattern: letter + 2 digits, optionally followed by . and 1-4 alphanumeric chars
+  const icd10Pattern = /^[A-Z]\d{2}(\.[A-Z0-9]{1,4})?$/i;
+
+  for (const codeEntry of codes) {
+    // Extract just the code part (before " - description" if present)
+    const codePart = codeEntry.split(/\s*[-–—]\s*/)[0].trim();
+    if (!codePart) continue;
+
+    if (!icd10Pattern.test(codePart)) {
+      warnings.push(`"${codePart}" does not match ICD-10 format (expected: letter + 2 digits, e.g., J44.1)`);
+    }
+  }
+
+  return warnings;
 }
 
 function parseClinicalResponse(response: string): ClinicalExtraction {

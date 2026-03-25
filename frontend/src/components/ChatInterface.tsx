@@ -26,6 +26,7 @@ export function ChatInterface({ collections }: Props) {
   const [expandedSource, setExpandedSource] = useState<SourceCitation | null>(null);
   const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[]; traceId?: string } | null>(null);
   const [thumbsVoted, setThumbsVoted] = useState<Record<string, 'up' | 'down'>>({});
+  const [failedQuery, setFailedQuery] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -44,6 +45,7 @@ export function ChatInterface({ collections }: Props) {
 
     const userMessage = question.trim();
     setQuestion('');
+    setFailedQuery(null);
     setConversation(prev => [...prev, { role: 'user', content: userMessage }]);
     setLoading(true);
     setStreamingText('');
@@ -95,8 +97,9 @@ export function ChatInterface({ collections }: Props) {
       (error) => {
         setConversation(prev => [
           ...prev,
-          { role: 'assistant', content: `Error: ${error}` },
+          { role: 'assistant', content: `Error: ${error}`, isError: true } as ConversationTurn,
         ]);
+        setFailedQuery(userMessage);
         setStreamingText('');
         setStreamingSources([]);
         setStreamingConfidence(null);
@@ -125,6 +128,19 @@ export function ChatInterface({ collections }: Props) {
       handleSubmit();
     }
   };
+
+  const handleRetry = useCallback(() => {
+    if (!failedQuery) return;
+    // Remove the error message from conversation
+    setConversation(prev => prev.filter((_, i) => i < prev.length - 1 || prev[prev.length - 1].role !== 'assistant'));
+    setQuestion(failedQuery);
+    setFailedQuery(null);
+    // Auto-submit after a tick
+    setTimeout(() => {
+      const form = document.querySelector('form');
+      form?.requestSubmit();
+    }, 50);
+  }, [failedQuery]);
 
   const clearConversation = () => {
     setConversation([]);
@@ -166,6 +182,8 @@ export function ChatInterface({ collections }: Props) {
                     ...styles.filterChip,
                     ...(selectedCollections.includes(col.id) ? styles.filterChipActive : {}),
                   }}
+                  aria-label={`Filter by collection: ${col.name}`}
+                  aria-pressed={selectedCollections.includes(col.id)}
                 >
                   {col.name}
                 </button>
@@ -174,14 +192,14 @@ export function ChatInterface({ collections }: Props) {
           )}
         </div>
         {conversation.length > 0 && (
-          <button onClick={clearConversation} style={styles.clearButton}>
+          <button onClick={clearConversation} style={styles.clearButton} aria-label="Start new chat conversation">
             + New Chat
           </button>
         )}
       </div>
 
       {/* Messages */}
-      <div style={styles.messages} className="hex-pattern">
+      <div style={styles.messages} className="hex-pattern" role="log" aria-label="Chat messages" aria-live="polite">
         {conversation.length === 0 && !loading && (
           <div style={styles.welcome}>
             <div style={styles.welcomeIconBg}>
@@ -352,7 +370,15 @@ export function ChatInterface({ collections }: Props) {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} style={styles.inputArea}>
+      <form onSubmit={handleSubmit} style={styles.inputArea} role="search" aria-label="Ask a question">
+        {failedQuery && (
+          <div style={styles.retryBar} role="alert">
+            <span style={styles.retryText}>Query failed.</span>
+            <button onClick={handleRetry} style={styles.retryButton} aria-label="Retry failed query">
+              &#8635; Retry
+            </button>
+          </div>
+        )}
         <div style={styles.inputWrapper}>
           <textarea
             ref={inputRef}
@@ -363,6 +389,7 @@ export function ChatInterface({ collections }: Props) {
             style={styles.textarea}
             disabled={loading}
             rows={1}
+            aria-label="Question input — do not enter patient names or PHI"
           />
           <button
             type="submit"
@@ -371,6 +398,7 @@ export function ChatInterface({ collections }: Props) {
               ...styles.sendButton,
               opacity: loading || !question.trim() ? 0.4 : 1,
             }}
+            aria-label="Send question"
           >
             &#9654;
           </button>
@@ -453,6 +481,9 @@ const styles: Record<string, React.CSSProperties> = {
   sourcePageBadge: { fontSize: '10px', color: '#6B8299', background: '#E8EFF5', padding: '2px 6px', borderRadius: '4px', fontWeight: 500 },
   sourceScore: { fontSize: '10px', color: '#8DA4B8', fontWeight: 500 },
 
+  retryBar: { display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', marginBottom: '8px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px' },
+  retryText: { fontSize: '13px', color: '#b91c1c', flex: 1 },
+  retryButton: { padding: '6px 14px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 },
   inputArea: { padding: '14px 20px 12px', borderTop: '1px solid #E8EFF5', background: 'linear-gradient(180deg, #F0F7FF, #E8F1FB)' },
   inputWrapper: { display: 'flex', alignItems: 'flex-end', gap: '10px', background: 'rgba(255,255,255,0.95)', border: '1px solid #D6E4F0', borderRadius: '14px', padding: '10px 14px', transition: 'all 0.2s ease', boxShadow: '0 2px 12px rgba(0,0,0,0.04)', backdropFilter: 'blur(8px)' },
   textarea: { flex: 1, padding: '4px 0', border: 'none', background: 'transparent', fontSize: '14px', lineHeight: '1.5', resize: 'none', outline: 'none', fontFamily: 'inherit', minHeight: '24px', maxHeight: '120px', color: '#1A2B3C' },

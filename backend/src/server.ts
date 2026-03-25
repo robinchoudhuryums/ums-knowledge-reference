@@ -17,6 +17,7 @@ import { startReindexScheduler } from './services/reindexer';
 import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
 import { startSourceMonitor } from './services/sourceMonitor';
 import { startJobCleanup } from './services/jobQueue';
+import { startOrphanCleanup } from './services/orphanCleanup';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
@@ -201,9 +202,9 @@ app.get('/api/health', async (_req, res) => {
 
 // Auth routes
 app.post('/api/auth/login', loginLimiter, loginHandler);
-app.post('/api/auth/users', authenticate, requireAdmin, createUserHandler as any);
-app.post('/api/auth/change-password', authenticate, changePasswordHandler as any);
-app.post('/api/auth/logout', authenticate, logoutHandler as any);
+app.post('/api/auth/users', authenticate, requireAdmin, (req, res) => createUserHandler(req as AuthRequest, res));
+app.post('/api/auth/change-password', authenticate, (req, res) => changePasswordHandler(req as AuthRequest, res));
+app.post('/api/auth/logout', authenticate, (req, res) => logoutHandler(req as AuthRequest, res));
 
 // Document routes
 app.use('/api/documents', documentRoutes);
@@ -278,6 +279,9 @@ async function start() {
 
     // Start job queue cleanup (removes old completed/failed jobs every 10 minutes)
     startJobCleanup();
+
+    // Start orphaned document cleanup (marks stuck uploads as error after 24h)
+    startOrphanCleanup();
 
     const server = app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

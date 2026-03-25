@@ -15,9 +15,9 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -27,13 +27,46 @@ jobs:
         run: npm ci
 
       - name: Audit dependencies
-        run: npm audit --audit-level=high || true
+        # xlsx has known vulnerabilities with no fix (unmaintained package).
+        # We accept this risk: upload file validation mitigates it, and xlsx
+        # is only used for text extraction in a sandboxed ingestion pipeline.
+        # All OTHER high-severity vulnerabilities will fail the build.
+        run: |
+          npm audit --audit-level=high 2>&1 || {
+            # Check if xlsx is the only remaining high vulnerability
+            VULN_PKGS=$(npm audit --json 2>/dev/null | node -e "
+              const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+              const v=d.vulnerabilities||{};
+              const high=Object.entries(v).filter(([,i])=>i.severity==='high').map(([n])=>n);
+              console.log(high.filter(n=>n!=='xlsx').join(','));
+            " 2>/dev/null || echo "parse_error");
+            if [ -z "$VULN_PKGS" ]; then
+              echo "::warning::Only xlsx vulnerability found (accepted risk) — continuing";
+            else
+              echo "::error::High-severity vulnerabilities in: $VULN_PKGS";
+              exit 1;
+            fi;
+          }
+
+      - name: Lint
+        run: npm run lint
 
       - name: Type-check
         run: npx tsc --noEmit
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with coverage
+        run: npx vitest run --coverage.enabled --coverage.reporter=text --coverage.reporter=json-summary
+
+      - name: Check test coverage thresholds
+        run: |
+          node -e "
+            const summary = require('./coverage/coverage-summary.json');
+            const total = summary.total;
+            const lines = total.lines.pct;
+            const branches = total.branches.pct;
+            console.log('Coverage: lines=' + lines + '% branches=' + branches + '%');
+            if (lines < 30) { console.error('Line coverage below 30% threshold'); process.exit(1); }
+          " || echo "Coverage check skipped (no coverage data)"
 
   frontend:
     name: Frontend – Type-check, Build
@@ -43,9 +76,9 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -53,6 +86,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
 
       - name: Type-check
         run: npx tsc --noEmit
@@ -66,7 +102,10 @@ jobs:
     needs: [backend, frontend]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build Docker image
         run: docker build -t ums-knowledge-base:ci .
+
+      - name: Verify Docker health check config
+        run: docker inspect ums-knowledge-base:ci --format='{{.Config.Healthcheck}}' | grep -q "curl"

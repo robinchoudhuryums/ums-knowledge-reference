@@ -114,6 +114,25 @@ export async function deleteDocument(id: string): Promise<void> {
   await request(`/documents/${id}`, { method: 'DELETE' });
 }
 
+export async function bulkDeleteDocuments(documentIds: string[]): Promise<{ message: string; results: Array<{ id: string; name: string; status: string }> }> {
+  return request('/documents/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ documentIds }),
+  });
+}
+
+export async function purgeDocument(id: string): Promise<{ message: string; purgedItems: Record<string, number> }> {
+  return request(`/documents/${id}/purge`, { method: 'POST' });
+}
+
+export async function getDocumentVersions(id: string): Promise<{ documentName: string; versions: Array<{ id: string; version: number; status: string; uploadedAt: string }> }> {
+  return request(`/documents/${id}/versions`);
+}
+
+export async function downloadAuditLog(date: string): Promise<{ entries: Array<Record<string, unknown>> }> {
+  return request(`/query-log/audit/${date}/json`);
+}
+
 // Tags
 export async function updateDocumentTags(id: string, tags: string[]): Promise<{ document: Document }> {
   return request(`/documents/${id}/tags`, {

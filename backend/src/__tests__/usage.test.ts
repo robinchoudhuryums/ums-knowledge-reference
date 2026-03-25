@@ -19,7 +19,7 @@ vi.mock('../services/s3Storage', () => {
   };
 });
 
-import { checkAndRecordQuery, checkUsageLimit, recordQuery, getUsageStats, flushUsage } from '../services/usage';
+import { checkAndRecordQuery, checkUsageLimit, recordQuery, getUsageStats } from '../services/usage';
 import * as s3Mock from '../services/s3Storage';
 const { __resetStore } = s3Mock as any;
 

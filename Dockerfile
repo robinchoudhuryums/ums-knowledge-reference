@@ -10,12 +10,17 @@ FROM node:20-slim AS backend-build
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci
-COPY backend/ ./
+COPY backend/tsconfig.json ./
+COPY backend/src ./src
 RUN npm run build
 
 # Production image
 FROM node:20-slim
 WORKDIR /app
+
+# Install tini for proper PID 1 signal handling and curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends tini curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy backend build + production dependencies
 COPY backend/package.json backend/package-lock.json ./backend/
@@ -34,4 +39,10 @@ USER node
 
 EXPOSE 3001
 
+# Health check for container orchestration (ALB, ECS, Docker Compose)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -sf http://localhost:3001/api/health || exit 1
+
+# Use tini as init process for proper signal forwarding (SIGTERM → graceful shutdown)
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "backend/dist/server.js"]

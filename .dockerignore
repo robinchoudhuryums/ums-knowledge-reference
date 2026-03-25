@@ -4,5 +4,11 @@ frontend/node_modules
 backend/dist
 frontend/dist
 .git
+.github
 *.md
 .env
+.env.*
+*.log
+coverage
+.nyc_output
+backend/src/__tests__

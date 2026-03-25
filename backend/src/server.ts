@@ -48,6 +48,12 @@ app.use(cookieParser());
 // Disable X-Powered-By (helmet does this too, belt + suspenders)
 app.disable('x-powered-by');
 
+// Trust first proxy (Render, ALB, etc.) — MUST be set before rate limiters
+// so express-rate-limit can read the correct client IP from X-Forwarded-For.
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // ─── CSRF Protection (double-submit cookie pattern) ──────────────────
 // On every response, set a random CSRF token cookie. State-changing requests
 // (POST/PUT/DELETE) must echo that token back in the X-CSRF-Token header.
@@ -89,7 +95,6 @@ app.use((req, res, next) => {
 // HTTPS enforcement in production — redirects HTTP requests and sets HSTS header.
 // Behind Render/ALB the X-Forwarded-Proto header indicates the original protocol.
 if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
   app.use((req, res, next) => {
     if (req.headers['x-forwarded-proto'] !== 'https') {
       res.redirect(301, `https://${req.headers.host}${req.url}`);

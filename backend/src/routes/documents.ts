@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
+import { authenticate, requireAdmin, AuthRequest, getUserAllowedCollections } from '../middleware/auth';
 import { ingestDocument } from '../services/ingestion';
 import {
   getDocumentsIndex,
@@ -95,16 +95,27 @@ router.post(
   }
 );
 
-// List all documents
+// List all documents (filtered by user's collection ACL)
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const docs = await getDocumentsIndex();
     const collectionId = req.query.collectionId as string | undefined;
 
+    // Enforce collection-level access control
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+
     // Show all non-replaced documents (ready, processing, error) so users see status
-    const filtered = collectionId
-      ? docs.filter(d => d.collectionId === collectionId && !d.errorMessage?.startsWith('Replaced by'))
-      : docs.filter(d => !d.errorMessage?.startsWith('Replaced by'));
+    let filtered = docs.filter(d => !d.errorMessage?.startsWith('Replaced by'));
+
+    // Apply collection filter from query param
+    if (collectionId) {
+      filtered = filtered.filter(d => d.collectionId === collectionId);
+    }
+
+    // Apply user's collection ACL
+    if (allowedCollections) {
+      filtered = filtered.filter(d => allowedCollections.includes(d.collectionId));
+    }
 
     res.json({ documents: filtered });
   } catch (error) {
@@ -160,6 +171,66 @@ router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: 
   } catch (error) {
     logger.error('Delete failed', { error: String(error) });
     res.status(500).json({ error: 'Failed to delete document' });
+  }
+});
+
+// --- HIPAA Data Purge ---
+
+/**
+ * POST /api/documents/:id/purge — Purge all traces of a document from the system.
+ * Deletes: S3 file, vector store chunks, and scrubs references from query logs,
+ * RAG traces, and feedback. Required for HIPAA "right to deletion" compliance.
+ * The document must be deleted first (or this will delete it).
+ */
+router.post('/:id/purge', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const docId = req.params.id;
+    const docs = await getDocumentsIndex();
+    const doc = docs.find(d => d.id === docId);
+    const purgedItems: Record<string, number> = {};
+
+    // 1. Delete from vector store
+    await removeDocumentChunks(docId);
+    purgedItems.vectorChunks = 1;
+
+    // 2. Delete from S3 if document still exists
+    if (doc) {
+      await deleteDocumentFromS3(doc.s3Key);
+      const docIndex = docs.findIndex(d => d.id === docId);
+      if (docIndex !== -1) {
+        docs.splice(docIndex, 1);
+        await saveDocumentsIndex(docs);
+      }
+      purgedItems.s3Document = 1;
+    }
+
+    // 3. Scrub document references from query logs (last 90 days)
+    const { purgeDocumentFromQueryLogs } = await import('../services/queryLog');
+    purgedItems.queryLogEntries = await purgeDocumentFromQueryLogs(docId, doc?.originalName);
+
+    // 4. Scrub document references from RAG traces (last 90 days)
+    const { purgeDocumentFromTraces } = await import('../services/ragTrace');
+    purgedItems.ragTraceEntries = await purgeDocumentFromTraces(docId);
+
+    // 5. Scrub document references from feedback
+    const { purgeDocumentFromFeedback } = await import('../services/feedback');
+    purgedItems.feedbackEntries = await purgeDocumentFromFeedback(docId, doc?.originalName);
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'data_purge', {
+      documentId: docId,
+      documentName: doc?.originalName || 'unknown',
+      purgedItems,
+    });
+
+    logger.info('Document purged (HIPAA)', { documentId: docId, purgedItems, purgedBy: req.user!.username });
+
+    res.json({
+      message: `Document ${docId} and all references purged`,
+      purgedItems,
+    });
+  } catch (error) {
+    logger.error('Data purge failed', { error: String(error), documentId: req.params.id });
+    res.status(500).json({ error: 'Data purge failed' });
   }
 });
 

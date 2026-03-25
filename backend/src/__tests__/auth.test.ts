@@ -24,9 +24,21 @@ vi.mock('../services/s3Storage', () => {
 });
 
 // Must import after mocks are set up
+import bcrypt from 'bcryptjs';
 import { initializeAuth, loginHandler, changePasswordHandler, authenticate, createUserHandler, AuthRequest } from '../middleware/auth';
 import * as s3Mock from '../services/s3Storage';
-const { __resetStore } = s3Mock as any;
+const { __resetStore, __getStore } = s3Mock as any;
+
+/**
+ * Helper: initialize auth and set the admin password to a known value for testing.
+ * Since initializeAuth now generates a random password, tests need a known password.
+ */
+async function initAuthWithKnownPassword(password = 'Admin1234!'): Promise<void> {
+  await initializeAuth();
+  const store = __getStore();
+  const users = store['users.json'] as any[];
+  users[0].passwordHash = await bcrypt.hash(password, 4); // low rounds for speed
+}
 
 function mockRes(): Response {
   const res: Partial<Response> = {
@@ -89,8 +101,8 @@ describe('Auth Flow', () => {
   });
 
   it('succeeds login with correct password', async () => {
-    await initializeAuth();
-    const req = mockReq({ username: 'admin', password: 'admin' });
+    await initAuthWithKnownPassword('Admin1234!');
+    const req = mockReq({ username: 'admin', password: 'Admin1234!' });
     const res = mockRes();
     await loginHandler(req, res);
     expect(res.json).toHaveBeenCalledWith(
@@ -105,14 +117,14 @@ describe('Auth Flow', () => {
   });
 
   it('locks account after 5 failed attempts', async () => {
-    await initializeAuth();
+    await initAuthWithKnownPassword('Admin1234!');
     for (let i = 0; i < 5; i++) {
       const req = mockReq({ username: 'admin', password: 'wrong' });
       const res = mockRes();
       await loginHandler(req, res);
     }
     // 6th attempt should be locked
-    const req = mockReq({ username: 'admin', password: 'admin' });
+    const req = mockReq({ username: 'admin', password: 'Admin1234!' });
     const res = mockRes();
     await loginHandler(req, res);
     expect(res.status).toHaveBeenCalledWith(423);
@@ -127,9 +139,9 @@ describe('Auth Flow', () => {
   });
 
   it('authenticate middleware accepts valid token', async () => {
-    await initializeAuth();
+    await initAuthWithKnownPassword('Admin1234!');
     // Login to get a token
-    const loginReq = mockReq({ username: 'admin', password: 'admin' });
+    const loginReq = mockReq({ username: 'admin', password: 'Admin1234!' });
     const loginRes = mockRes();
     await loginHandler(loginReq, loginRes);
     const token = (loginRes.json as any).mock.calls[0][0].token;
@@ -163,14 +175,10 @@ describe('Auth Flow', () => {
   });
 
   it('change password rejects weak password', async () => {
-    await initializeAuth();
-    // Login first
-    const loginReq = mockReq({ username: 'admin', password: 'admin' });
-    const loginRes = mockRes();
-    await loginHandler(loginReq, loginRes);
+    await initAuthWithKnownPassword('Admin1234!');
 
     const req = {
-      body: { currentPassword: 'admin', newPassword: 'weak' },
+      body: { currentPassword: 'Admin1234!', newPassword: 'weak' },
       user: { id: 'admin-001', username: 'admin', role: 'admin' },
       headers: {},
       cookies: {},
@@ -181,9 +189,9 @@ describe('Auth Flow', () => {
   });
 
   it('change password succeeds with strong password', async () => {
-    await initializeAuth();
+    await initAuthWithKnownPassword('Admin1234!');
     const req = {
-      body: { currentPassword: 'admin', newPassword: 'StrongP4ss!' },
+      body: { currentPassword: 'Admin1234!', newPassword: 'StrongP4ss!' },
       user: { id: 'admin-001', username: 'admin', role: 'admin' },
       headers: {},
       cookies: {},

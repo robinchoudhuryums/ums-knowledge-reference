@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getUserAllowedCollections } from '../middleware/auth';
 import { generateEmbedding } from '../services/embeddings';
 import { searchVectorStore } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
@@ -229,6 +229,16 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     logger.info('Query received', { question, userId: req.user!.id, traceId });
 
+    // Enforce collection-level access control
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+    let effectiveCollectionIds = collectionIds;
+    if (allowedCollections) {
+      // User has collection restrictions — intersect requested with allowed
+      effectiveCollectionIds = collectionIds?.length
+        ? collectionIds.filter(id => allowedCollections.includes(id))
+        : allowedCollections;
+    }
+
     // Reformulate follow-up questions for better retrieval
     const searchQuery = await reformulateQuery(question, conversationHistory || []);
 
@@ -239,7 +249,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const retrievalStart = Date.now();
     const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
       topK: topK || 6,
-      collectionIds,
+      collectionIds: effectiveCollectionIds,
     });
     const retrievalTimeMs = Date.now() - retrievalStart;
 
@@ -311,7 +321,9 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     await logAuditEvent(req.user!.id, req.user!.username, 'query', {
       question: redactPhi(question).text,
       sourcesUsed: sources.length,
-      collectionIds,
+      accessedDocumentIds: [...new Set(sources.map(s => s.documentId))],
+      accessedDocumentNames: [...new Set(sources.map(s => s.documentName))],
+      collectionIds: effectiveCollectionIds,
       confidence,
       traceId,
     });
@@ -366,6 +378,15 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
 
     logger.info('Streaming query received', { question, userId: req.user!.id, traceId });
 
+    // Enforce collection-level access control
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+    let effectiveCollectionIds = collectionIds;
+    if (allowedCollections) {
+      effectiveCollectionIds = collectionIds?.length
+        ? collectionIds.filter(id => allowedCollections.includes(id))
+        : allowedCollections;
+    }
+
     // SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -383,7 +404,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     const retrievalStart = Date.now();
     const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
       topK: topK || 6,
-      collectionIds,
+      collectionIds: effectiveCollectionIds,
     });
     const retrievalTimeMs = Date.now() - retrievalStart;
 
@@ -469,7 +490,9 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     logAuditEvent(req.user!.id, req.user!.username, 'query', {
       question: redactPhi(question).text,
       sourcesUsed: sources.length,
-      collectionIds,
+      accessedDocumentIds: [...new Set(sources.map(s => s.documentId))],
+      accessedDocumentNames: [...new Set(sources.map(s => s.documentName))],
+      collectionIds: effectiveCollectionIds,
       confidence,
       streamed: true,
       traceId,

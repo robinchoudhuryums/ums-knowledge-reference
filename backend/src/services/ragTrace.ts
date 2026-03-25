@@ -172,6 +172,67 @@ export async function flushTraces(): Promise<void> {
 }
 
 /**
+ * Purge references to a document from RAG traces (last 90 days).
+ * Removes the document's chunk IDs from retrievedChunkIds.
+ * Returns the number of trace entries modified.
+ */
+export async function purgeDocumentFromTraces(documentId: string): Promise<number> {
+  let modified = 0;
+  const today = new Date();
+
+  // Flush current buffer first so we can modify S3 files directly
+  await forceFlush();
+
+  for (let i = 0; i < 90; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateKey = d.toISOString().split('T')[0];
+    const key = `${TRACE_PREFIX}${dateKey}-traces.json`;
+
+    try {
+      const traces = await loadMetadata<RagTrace[]>(key);
+      if (!traces || traces.length === 0) continue;
+
+      let changed = false;
+      for (const trace of traces) {
+        // Chunk IDs follow the pattern documentId-chunk-N
+        const beforeLen = trace.retrievedChunkIds.length;
+        trace.retrievedChunkIds = trace.retrievedChunkIds.filter(
+          id => !id.startsWith(`${documentId}-`)
+        );
+        if (trace.retrievedChunkIds.length !== beforeLen) {
+          trace.retrievalScores = trace.retrievalScores.slice(0, trace.retrievedChunkIds.length);
+          trace.chunksPassedToModel = trace.retrievedChunkIds.length;
+          changed = true;
+          modified++;
+        }
+      }
+
+      if (changed) {
+        await saveMetadata(key, traces);
+      }
+    } catch {
+      // Skip dates that don't exist
+    }
+  }
+
+  // Also update today's in-memory buffer
+  for (const trace of todayTraces) {
+    const beforeLen = trace.retrievedChunkIds.length;
+    trace.retrievedChunkIds = trace.retrievedChunkIds.filter(
+      id => !id.startsWith(`${documentId}-`)
+    );
+    if (trace.retrievedChunkIds.length !== beforeLen) {
+      trace.retrievalScores = trace.retrievalScores.slice(0, trace.retrievedChunkIds.length);
+      trace.chunksPassedToModel = trace.retrievedChunkIds.length;
+      modified++;
+    }
+  }
+
+  return modified;
+}
+
+/**
  * Get traces for a given date.
  */
 export async function getTraces(date: string): Promise<RagTrace[]> {

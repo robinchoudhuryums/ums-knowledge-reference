@@ -118,6 +118,63 @@ export async function getQueryLog(date: string): Promise<QueryLogEntry[]> {
 }
 
 /**
+ * Purge references to a document from query logs (last 90 days).
+ * Removes the document name from sourceDocuments fields.
+ * Returns the number of entries modified.
+ */
+export async function purgeDocumentFromQueryLogs(documentId: string, documentName?: string): Promise<number> {
+  let modified = 0;
+  const today = new Date();
+
+  for (let i = 0; i < 90; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateKey = d.toISOString().split('T')[0];
+    const key = `${LOG_PREFIX}${dateKey}.json`;
+
+    try {
+      const entries = await loadMetadata<QueryLogEntry[]>(key);
+      if (!entries || entries.length === 0) continue;
+
+      let changed = false;
+      for (const entry of entries) {
+        if (documentName && entry.sourceDocuments.includes(documentName)) {
+          entry.sourceDocuments = entry.sourceDocuments
+            .split('; ')
+            .filter(name => name !== documentName)
+            .join('; ');
+          entry.sourceCount = Math.max(0, entry.sourceCount - 1);
+          changed = true;
+          modified++;
+        }
+      }
+
+      if (changed) {
+        await saveMetadata(key, entries);
+      }
+    } catch {
+      // Skip dates that don't exist
+    }
+  }
+
+  // Also scrub today's in-memory buffer
+  if (documentName) {
+    for (const entry of todayEntries) {
+      if (entry.sourceDocuments.includes(documentName)) {
+        entry.sourceDocuments = entry.sourceDocuments
+          .split('; ')
+          .filter(name => name !== documentName)
+          .join('; ');
+        entry.sourceCount = Math.max(0, entry.sourceCount - 1);
+        modified++;
+      }
+    }
+  }
+
+  return modified;
+}
+
+/**
  * Convert query log entries to CSV format.
  */
 export function queryLogToCsv(entries: QueryLogEntry[]): string {

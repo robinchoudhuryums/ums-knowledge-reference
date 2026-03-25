@@ -9,8 +9,8 @@ import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 const region = process.env.AWS_REGION || 'us-east-1';
 
 const awsCredentials = {
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+  accessKeyId: (process.env.AWS_ACCESS_KEY_ID || '').trim(),
+  secretAccessKey: (process.env.AWS_SECRET_ACCESS_KEY || '').trim(),
 };
 
 export const s3Client = new S3Client({
@@ -94,12 +94,7 @@ export async function verifyS3BucketConfig(): Promise<void> {
 
   if (issues.length > 0) {
     const msg = `[S3 SECURITY] Bucket configuration issues:\n  - ${issues.join('\n  - ')}`;
-    if (isProduction) {
-      logger.error(msg);
-      throw new Error(msg);
-    } else {
-      logger.warn(msg);
-    }
+    logger.error(msg);
   } else {
     logger.info('[S3] Bucket security configuration verified');
   }

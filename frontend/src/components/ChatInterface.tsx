@@ -26,6 +26,7 @@ export function ChatInterface({ collections }: Props) {
   const [expandedSource, setExpandedSource] = useState<SourceCitation | null>(null);
   const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[]; traceId?: string } | null>(null);
   const [thumbsVoted, setThumbsVoted] = useState<Record<string, 'up' | 'down'>>({});
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [failedQuery, setFailedQuery] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -270,6 +271,19 @@ export function ChatInterface({ collections }: Props) {
               )}
               {turn.role === 'assistant' && (
                 <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(turn.content);
+                    setCopiedIndex(i);
+                    setTimeout(() => setCopiedIndex(prev => prev === i ? null : prev), 2000);
+                  }}
+                  style={styles.copyButton}
+                  title="Copy answer to clipboard"
+                >
+                  {copiedIndex === i ? 'Copied!' : 'Copy'}
+                </button>
+              )}
+              {turn.role === 'assistant' && (
+                <button
                   onClick={() => setFeedbackTarget({
                     question: getQuestionForTurn(i),
                     answer: turn.content,
@@ -344,7 +358,11 @@ export function ChatInterface({ collections }: Props) {
                 <ReactMarkdown>{streamingText}</ReactMarkdown>
               </div>
             ) : (
-              <div style={styles.thinkingText}>Searching documents...</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '4px 0' }}>
+                <div className="skeleton-line" style={{ width: '100%' }} />
+                <div className="skeleton-line" style={{ width: '85%' }} />
+                <div className="skeleton-line" style={{ width: '60%' }} />
+              </div>
             )}
             {streamingSources.length > 0 && (
               <div style={styles.sourcesSection}>
@@ -451,7 +469,7 @@ const styles: Record<string, React.CSSProperties> = {
   welcomeIcon: { fontSize: '36px' },
   welcomeTitle: { margin: '0 0 8px', fontSize: '26px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.5px' },
   welcomeText: { margin: '0 0 4px', fontSize: '15px', color: '#4A6274', lineHeight: '1.5' },
-  welcomeHint: { margin: '0 0 32px', fontSize: '13px', color: '#8DA4B8' },
+  welcomeHint: { margin: '0 0 32px', fontSize: '13px', color: '#5F7A8F' },
   suggestionsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'left' },
   suggestion: { padding: '14px 16px', border: '1px solid #D6E4F0', borderRadius: '12px', background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(4px)', cursor: 'pointer', fontSize: '13px', color: '#4A6274', textAlign: 'left', transition: 'all 0.2s ease', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', lineHeight: '1.4' },
 
@@ -466,20 +484,21 @@ const styles: Record<string, React.CSSProperties> = {
   thumbsRow: { display: 'flex', gap: '2px', marginLeft: 'auto' },
   thumbsButton: { padding: '3px 6px', background: 'none', border: '1px solid #E8EFF5', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', opacity: 0.5, transition: 'all 0.15s' },
   thumbsActive: { padding: '3px 6px', background: '#E3F2FD', border: '1px solid #1B6FC9', borderRadius: '6px', cursor: 'default', fontSize: '14px', opacity: 1 },
-  flagButton: { padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#8DA4B8', transition: 'all 0.15s' },
+  copyButton: { padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#1B6FC9', transition: 'all 0.15s', fontWeight: 500 },
+  flagButton: { padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#5F7A8F', transition: 'all 0.15s' },
   lowConfidenceWarning: { marginTop: '12px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '10px', fontSize: '13px', color: '#92400e', lineHeight: '1.5' },
   streamingDot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#1B6FC9', animation: 'pulse 1.2s ease-in-out infinite' },
   userText: { fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap', color: '#1A2B3C' },
   markdownContent: { fontSize: '14px', lineHeight: '1.7' },
-  thinkingText: { fontSize: '14px', color: '#8DA4B8', fontStyle: 'italic' },
+  thinkingText: { fontSize: '14px', color: '#5F7A8F', fontStyle: 'italic' },
 
   sourcesSection: { marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #E8EFF5' },
-  sourcesLabel: { fontSize: '11px', color: '#8DA4B8', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' },
+  sourcesLabel: { fontSize: '11px', color: '#5F7A8F', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' },
   sourcesRow: { display: 'flex', flexWrap: 'wrap', gap: '6px' },
   sourceChip: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', border: '1px solid #D6E4F0', borderRadius: '8px', background: 'white', cursor: 'pointer', fontSize: '12px', color: '#4A6274', transition: 'all 0.15s', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' },
   sourceIcon: { fontSize: '13px' },
   sourcePageBadge: { fontSize: '10px', color: '#6B8299', background: '#E8EFF5', padding: '2px 6px', borderRadius: '4px', fontWeight: 500 },
-  sourceScore: { fontSize: '10px', color: '#8DA4B8', fontWeight: 500 },
+  sourceScore: { fontSize: '10px', color: '#5F7A8F', fontWeight: 500 },
 
   retryBar: { display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', marginBottom: '8px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px' },
   retryText: { fontSize: '13px', color: '#b91c1c', flex: 1 },

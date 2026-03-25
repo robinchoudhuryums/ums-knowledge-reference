@@ -11,6 +11,7 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -55,10 +56,14 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
               type="password"
               value={currentPassword}
               onChange={e => setCurrentPassword(e.target.value)}
+              onBlur={() => setTouched(prev => ({ ...prev, currentPassword: true }))}
               style={styles.input}
               required
               autoFocus
             />
+            {touched.currentPassword && !currentPassword && (
+              <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>Current password is required</div>
+            )}
           </div>
           <div style={styles.field}>
             <label style={styles.label}>New Password</label>
@@ -66,10 +71,26 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
               type="password"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
+              onBlur={() => setTouched(prev => ({ ...prev, newPassword: true }))}
               style={styles.input}
               required
               minLength={8}
             />
+            {touched.newPassword && (
+              <div style={{ marginTop: '4px' }}>
+                {[
+                  { label: 'At least 8 characters', met: newPassword.length >= 8 },
+                  { label: 'At least one uppercase letter', met: /[A-Z]/.test(newPassword) },
+                  { label: 'At least one lowercase letter', met: /[a-z]/.test(newPassword) },
+                  { label: 'At least one number', met: /[0-9]/.test(newPassword) },
+                ].map(rule => (
+                  <div key={rule.label} style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <span style={{ color: rule.met ? '#16a34a' : '#dc2626' }}>{rule.met ? '\u2713' : '\u2717'}</span>
+                    <span style={{ color: rule.met ? '#16a34a' : '#dc2626' }}>{rule.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div style={styles.field}>
             <label style={styles.label}>Confirm New Password</label>
@@ -77,9 +98,13 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
               type="password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
+              onBlur={() => setTouched(prev => ({ ...prev, confirmPassword: true }))}
               style={styles.input}
               required
             />
+            {touched.confirmPassword && confirmPassword && newPassword !== confirmPassword && (
+              <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>Passwords do not match</div>
+            )}
           </div>
 
           <div style={styles.requirements}>

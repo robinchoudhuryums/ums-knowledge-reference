@@ -144,7 +144,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' },
   title: { margin: 0, fontSize: '18px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.2px' },
-  closeButton: { background: '#F7FAFD', border: '1px solid #E8EFF5', fontSize: '16px', cursor: 'pointer', color: '#8DA4B8', padding: '6px 10px', borderRadius: '8px' },
+  closeButton: { background: '#F7FAFD', border: '1px solid #E8EFF5', fontSize: '16px', cursor: 'pointer', color: '#5F7A8F', padding: '6px 10px', borderRadius: '8px' },
 
   context: { background: '#F7FAFD', borderRadius: '12px', padding: '14px', marginBottom: '20px', fontSize: '13px', border: '1px solid #E8EFF5' },
   contextLabel: { fontWeight: 600, color: '#6B8299', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' },

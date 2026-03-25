@@ -9,6 +9,7 @@ export function LoginForm({ onLogin }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -37,9 +38,13 @@ export function LoginForm({ onLogin }: Props) {
               placeholder="Enter your username"
               value={username}
               onChange={e => setUsername(e.target.value)}
+              onBlur={() => setTouched(prev => ({ ...prev, username: true }))}
               style={styles.input}
               required
             />
+            {touched.username && !username && (
+              <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>Username is required</div>
+            )}
           </div>
           <div style={styles.inputGroup}>
             <label style={styles.label}>Password</label>
@@ -48,9 +53,13 @@ export function LoginForm({ onLogin }: Props) {
               placeholder="Enter your password"
               value={password}
               onChange={e => setPassword(e.target.value)}
+              onBlur={() => setTouched(prev => ({ ...prev, password: true }))}
               style={styles.input}
               required
             />
+            {touched.password && !password && (
+              <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>Password is required</div>
+            )}
           </div>
           {error && <div style={styles.error}>{error}</div>}
           <button type="submit" disabled={loading} style={styles.button}>

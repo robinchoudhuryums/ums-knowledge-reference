@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Document, Collection } from '../types';
 import {
   listDocuments,
@@ -10,12 +10,19 @@ import {
   updateDocumentTags,
   listAllTags,
 } from '../services/api';
+import { useToast } from './Toast';
+import { useConfirm } from './ConfirmDialog';
 
 interface Props {
   isAdmin: boolean;
   collections: Collection[];
   onCollectionsChange: () => void;
 }
+
+type SortField = 'name' | 'status' | 'size' | 'chunks' | 'uploaded' | 'uploadedBy';
+type SortDir = 'asc' | 'desc';
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 export function DocumentManager({ isAdmin, collections, onCollectionsChange }: Props) {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -33,11 +40,22 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  // Sorting state
+  const [sortField, setSortField] = useState<SortField>('uploaded');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const { addToast } = useToast();
+  const { confirm } = useConfirm();
+
   const loadDocuments = async () => {
     try {
       const result = await listDocuments(selectedCollection || undefined);
       setDocuments(result.documents);
-    } catch (err) {
+    } catch {
       setError('Failed to load documents');
     }
   };
@@ -54,6 +72,43 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     loadTags();
   }, [selectedCollection]);
 
+  // Reset page when collection or sort changes
+  useEffect(() => { setPage(1); }, [selectedCollection, sortField, sortDir, pageSize]);
+
+  // Sorted + paginated documents
+  const sortedDocuments = useMemo(() => {
+    const sorted = [...documents].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'name': cmp = a.originalName.localeCompare(b.originalName); break;
+        case 'status': cmp = (a.status || '').localeCompare(b.status || ''); break;
+        case 'size': cmp = a.sizeBytes - b.sizeBytes; break;
+        case 'chunks': cmp = a.chunkCount - b.chunkCount; break;
+        case 'uploaded': cmp = new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime(); break;
+        case 'uploadedBy': cmp = (a.uploadedBy || '').localeCompare(b.uploadedBy || ''); break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [documents, sortField, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedDocuments.length / pageSize));
+  const pagedDocuments = sortedDocuments.slice((page - 1) * pageSize, page * pageSize);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const sortIndicator = (field: SortField) => {
+    if (sortField !== field) return ' \u2195';
+    return sortDir === 'asc' ? ' \u2191' : ' \u2193';
+  };
+
   const [uploadQueue, setUploadQueue] = useState<Array<{ name: string; status: 'pending' | 'uploading' | 'done' | 'error'; error?: string }>>([]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -64,10 +119,10 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     setUploading(true);
     setError('');
 
-    // Initialize upload queue
     const queue = fileList.map(f => ({ name: f.name, status: 'pending' as const }));
     setUploadQueue(queue);
 
+    let successCount = 0;
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
       setUploadQueue(prev => prev.map((item, idx) =>
@@ -80,13 +135,18 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
         setUploadQueue(prev => prev.map((item, idx) =>
           idx === i ? { ...item, status: 'done' } : item
         ));
+        successCount++;
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : 'Unknown error';
         setUploadQueue(prev => prev.map((item, idx) =>
           idx === i ? { ...item, status: 'error', error: errMsg } : item
         ));
-        setError(`Failed to upload ${file.name}: ${errMsg}`);
+        addToast(`Failed to upload ${file.name}: ${errMsg}`, 'error');
       }
+    }
+
+    if (successCount > 0) {
+      addToast(`${successCount} document${successCount > 1 ? 's' : ''} uploaded successfully`, 'success');
     }
 
     setUploading(false);
@@ -94,30 +154,43 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     if (fileInputRef.current) fileInputRef.current.value = '';
     loadDocuments();
 
-    // Clear queue after 5s
     setTimeout(() => setUploadQueue([]), 5000);
   };
 
   const handleDelete = async (doc: Document) => {
-    if (!confirm(`Delete "${doc.originalName}"? This cannot be undone.`)) return;
+    const confirmed = await confirm({
+      title: 'Delete Document',
+      message: `Delete "${doc.originalName}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
     try {
       await deleteDocument(doc.id);
+      addToast(`"${doc.originalName}" deleted`, 'success');
       loadDocuments();
-    } catch (err) {
-      setError('Failed to delete document');
+    } catch {
+      addToast('Failed to delete document', 'error');
     }
   };
 
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`Delete ${selectedIds.size} selected document(s)? This cannot be undone.`)) return;
+    const confirmed = await confirm({
+      title: 'Bulk Delete',
+      message: `Delete ${selectedIds.size} selected document(s)? This cannot be undone.`,
+      confirmLabel: `Delete ${selectedIds.size}`,
+      variant: 'danger',
+    });
+    if (!confirmed) return;
     setBulkDeleting(true);
     try {
       await bulkDeleteDocuments(Array.from(selectedIds));
+      addToast(`${selectedIds.size} document(s) deleted`, 'success');
       setSelectedIds(new Set());
       loadDocuments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulk delete failed');
+      addToast(err instanceof Error ? err.message : 'Bulk delete failed', 'error');
     } finally {
       setBulkDeleting(false);
     }
@@ -144,23 +217,32 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     if (!newColName.trim()) return;
     try {
       await createCollection(newColName.trim(), newColDesc.trim());
+      addToast(`Collection "${newColName.trim()}" created`, 'success');
       setNewColName('');
       setNewColDesc('');
       setShowNewCol(false);
       onCollectionsChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create collection');
+      addToast(err instanceof Error ? err.message : 'Failed to create collection', 'error');
     }
   };
 
   const handleDeleteCollection = async (id: string) => {
-    if (!confirm('Delete this collection? All documents must be removed first.')) return;
+    const col = collections.find(c => c.id === id);
+    const confirmed = await confirm({
+      title: 'Delete Collection',
+      message: `Delete "${col?.name || 'this collection'}"? All documents must be removed first.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
     try {
       await deleteCollection(id);
+      addToast('Collection deleted', 'success');
       if (selectedCollection === id) setSelectedCollection('');
       onCollectionsChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete collection');
+      addToast(err instanceof Error ? err.message : 'Failed to delete collection', 'error');
     }
   };
 
@@ -174,7 +256,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
       loadDocuments();
       loadTags();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update tags');
+      addToast(err instanceof Error ? err.message : 'Failed to update tags', 'error');
     }
   };
 
@@ -185,7 +267,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
       loadDocuments();
       loadTags();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update tags');
+      addToast(err instanceof Error ? err.message : 'Failed to update tags', 'error');
     }
   };
 
@@ -204,8 +286,8 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.sidebar}>
+    <div style={styles.container} className="doc-manager">
+      <div style={styles.sidebar} className="doc-sidebar">
         <h3 style={styles.sidebarTitle}>Collections</h3>
         <button
           onClick={() => setSelectedCollection('')}
@@ -251,7 +333,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
         )}
       </div>
 
-      <div style={styles.main}>
+      <div style={styles.main} className="doc-main">
         <div style={styles.toolbar}>
           <div>
             <h2 style={styles.title}>Documents</h2>
@@ -301,7 +383,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                   ...styles.uploadStatusDot,
                   backgroundColor: item.status === 'done' ? '#16a34a' :
                     item.status === 'error' ? '#dc2626' :
-                    item.status === 'uploading' ? '#1B6FC9' : '#8DA4B8',
+                    item.status === 'uploading' ? '#1B6FC9' : '#5F7A8F',
                 }} />
                 <span style={styles.uploadFileName}>{item.name}</span>
                 <span style={styles.uploadStatus}>
@@ -329,18 +411,18 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                     />
                   </th>
                 )}
-                <th style={styles.th}>Name</th>
-                <th style={styles.th}>Status</th>
-                <th style={styles.th}>Size</th>
-                <th style={styles.th}>Chunks</th>
+                <th style={{ ...styles.th, cursor: 'pointer' }} onClick={() => handleSort('name')}>Name{sortIndicator('name')}</th>
+                <th style={{ ...styles.th, cursor: 'pointer' }} onClick={() => handleSort('status')}>Status{sortIndicator('status')}</th>
+                <th style={{ ...styles.th, cursor: 'pointer' }} onClick={() => handleSort('size')}>Size{sortIndicator('size')}</th>
+                <th style={{ ...styles.th, cursor: 'pointer' }} onClick={() => handleSort('chunks')}>Chunks{sortIndicator('chunks')}</th>
                 <th style={styles.th}>Tags</th>
-                <th style={styles.th}>Uploaded</th>
-                <th style={styles.th}>By</th>
+                <th style={{ ...styles.th, cursor: 'pointer' }} onClick={() => handleSort('uploaded')}>Uploaded{sortIndicator('uploaded')}</th>
+                <th style={{ ...styles.th, cursor: 'pointer' }} onClick={() => handleSort('uploadedBy')}>By{sortIndicator('uploadedBy')}</th>
                 {isAdmin && <th style={styles.th}>Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {documents.map(doc => (
+              {pagedDocuments.map(doc => (
                 <tr key={doc.id} style={styles.tr}>
                   {isAdmin && (
                     <td style={{ ...styles.td, textAlign: 'center' }}>
@@ -369,7 +451,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                       {doc.status}
                     </span>
                   </td>
-                  <td style={{ ...styles.td, color: '#6B8299' }}>{formatSize(doc.sizeBytes)}</td>
+                  <td style={{ ...styles.td, color: '#5F7A8F' }}>{formatSize(doc.sizeBytes)}</td>
                   <td style={styles.td}>
                     <span style={styles.chunkBadge}>{doc.chunkCount}</span>
                   </td>
@@ -414,8 +496,8 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                       ) : null}
                     </div>
                   </td>
-                  <td style={{ ...styles.td, color: '#6B8299' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
-                  <td style={{ ...styles.td, color: '#6B8299' }}>{doc.uploadedBy}</td>
+                  <td style={{ ...styles.td, color: '#5F7A8F' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
+                  <td style={{ ...styles.td, color: '#5F7A8F' }}>{doc.uploadedBy}</td>
                   {isAdmin && (
                     <td style={styles.td}>
                       <button onClick={() => handleDelete(doc)} style={styles.deleteButton} aria-label={`Delete ${doc.originalName}`}>Delete</button>
@@ -425,7 +507,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
               ))}
               {documents.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 9 : 7} style={{ ...styles.td, textAlign: 'center', color: '#8DA4B8', padding: '40px 12px' }}>
+                  <td colSpan={isAdmin ? 9 : 7} style={{ ...styles.td, textAlign: 'center', color: '#5F7A8F', padding: '40px 12px' }}>
                     No documents uploaded yet
                   </td>
                 </tr>
@@ -433,6 +515,32 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
             </tbody>
           </table>
         </div>
+
+        {/* Pagination controls */}
+        {documents.length > 0 && (
+          <div style={styles.pagination}>
+            <div style={styles.pageInfo}>
+              Showing {(page - 1) * pageSize + 1}\u2013{Math.min(page * pageSize, sortedDocuments.length)} of {sortedDocuments.length}
+            </div>
+            <div style={styles.pageControls}>
+              <label style={styles.pageSizeLabel}>
+                Per page:
+                <select
+                  value={pageSize}
+                  onChange={e => setPageSize(Number(e.target.value))}
+                  style={styles.pageSizeSelect}
+                >
+                  {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <button onClick={() => setPage(1)} disabled={page <= 1} style={styles.pageButton} aria-label="First page">&laquo;</button>
+              <button onClick={() => setPage(p => p - 1)} disabled={page <= 1} style={styles.pageButton} aria-label="Previous page">&lsaquo;</button>
+              <span style={styles.pageNum}>Page {page} of {totalPages}</span>
+              <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages} style={styles.pageButton} aria-label="Next page">&rsaquo;</button>
+              <button onClick={() => setPage(totalPages)} disabled={page >= totalPages} style={styles.pageButton} aria-label="Last page">&raquo;</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -440,8 +548,8 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
 
 const styles: Record<string, React.CSSProperties> = {
   container: { display: 'flex', height: '100%', background: '#ffffff' },
-  sidebar: { width: '260px', borderRight: '1px solid #E8EFF5', padding: '20px', overflowY: 'auto', background: '#F0F7FF' },
-  sidebarTitle: { margin: '0 0 14px', fontSize: '13px', fontWeight: 600, color: '#8DA4B8', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  sidebar: { width: '260px', borderRight: '1px solid #E8EFF5', padding: '20px', overflowY: 'auto', background: '#F0F7FF', flexShrink: 0 },
+  sidebarTitle: { margin: '0 0 14px', fontSize: '13px', fontWeight: 600, color: '#5F7A8F', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   colRow: { display: 'flex', alignItems: 'center', gap: '4px' },
   colButton: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', color: '#4A6274', transition: 'all 0.15s' },
   colButtonActive: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'linear-gradient(135deg, #E3F2FD, #BBDEFB)', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#0D47A1' },
@@ -450,17 +558,17 @@ const styles: Record<string, React.CSSProperties> = {
   newColForm: { marginTop: '8px', display: 'flex', flexDirection: 'column' as const, gap: '6px' },
   smallInput: { padding: '8px 10px', border: '1px solid #D6E4F0', borderRadius: '8px', fontSize: '13px', background: '#ffffff' },
   smallButton: { padding: '7px 14px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 },
-  smallButtonGhost: { padding: '7px 14px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: '#6B8299' },
-  main: { flex: 1, padding: '24px', overflowY: 'auto' },
-  toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  smallButtonGhost: { padding: '7px 14px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: '#5F7A8F' },
+  main: { flex: 1, padding: '24px', overflowY: 'auto', minWidth: 0 },
+  toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' as const, gap: '12px' },
   title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
-  subtitle: { margin: '2px 0 0', fontSize: '13px', color: '#8DA4B8' },
+  subtitle: { margin: '2px 0 0', fontSize: '13px', color: '#5F7A8F' },
   uploadButton: { padding: '10px 22px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
   bulkDeleteButton: { padding: '10px 18px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, boxShadow: '0 2px 6px rgba(220, 38, 38, 0.25)' },
   error: { background: '#fef2f2', color: '#dc2626', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', border: '1px solid #fecaca' },
-  tableWrapper: { borderRadius: '12px', border: '1px solid #E8EFF5', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
-  table: { width: '100%', borderCollapse: 'collapse' as const },
-  th: { textAlign: 'left' as const, padding: '12px 16px', background: '#F7FAFD', fontSize: '12px', color: '#6B8299', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid #E8EFF5' },
+  tableWrapper: { borderRadius: '12px', border: '1px solid #E8EFF5', overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  table: { width: '100%', borderCollapse: 'collapse' as const, minWidth: '700px' },
+  th: { textAlign: 'left' as const, padding: '12px 16px', background: '#F7FAFD', fontSize: '12px', color: '#5F7A8F', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid #E8EFF5', whiteSpace: 'nowrap' as const, userSelect: 'none' as const },
   td: { padding: '12px 16px', borderBottom: '1px solid #F7FAFD', fontSize: '14px', color: '#1A2B3C' },
   tr: { transition: 'background 0.1s' },
   fileIcon: { marginRight: '8px', fontSize: '15px' },
@@ -471,8 +579,15 @@ const styles: Record<string, React.CSSProperties> = {
   uploadQueueItem: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', fontSize: '13px' },
   uploadStatusDot: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
   uploadFileName: { flex: 1, color: '#1A2B3C', fontWeight: 500 },
-  uploadStatus: { color: '#6B8299', fontSize: '12px' },
+  uploadStatus: { color: '#5F7A8F', fontSize: '12px' },
   tagChip: { display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 8px', background: '#E3F2FD', color: '#1565C0', borderRadius: '4px', fontSize: '11px', fontWeight: 500 },
   tagRemove: { background: 'none', border: 'none', color: '#90CAF9', cursor: 'pointer', fontSize: '10px', padding: '0 2px', lineHeight: 1 },
   addTagButton: { background: 'none', border: '1px dashed #D6E4F0', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', color: '#1B6FC9', padding: '2px 6px', lineHeight: 1 },
+  pagination: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 4px', flexWrap: 'wrap' as const, gap: '8px' },
+  pageInfo: { fontSize: '13px', color: '#5F7A8F' },
+  pageControls: { display: 'flex', alignItems: 'center', gap: '4px' },
+  pageButton: { padding: '6px 10px', background: '#F7FAFD', border: '1px solid #E8EFF5', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', color: '#4A6274', fontWeight: 500, minWidth: '32px', textAlign: 'center' as const },
+  pageNum: { fontSize: '13px', color: '#4A6274', padding: '0 8px', fontWeight: 500 },
+  pageSizeLabel: { fontSize: '13px', color: '#5F7A8F', display: 'flex', alignItems: 'center', gap: '6px' },
+  pageSizeSelect: { padding: '4px 8px', border: '1px solid #D6E4F0', borderRadius: '6px', fontSize: '13px', background: '#ffffff', color: '#4A6274' },
 };

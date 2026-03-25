@@ -25,6 +25,7 @@ export default [
         TextDecoder: 'readonly',
         TextEncoder: 'readonly',
         URLSearchParams: 'readonly',
+        global: 'readonly',
         performance: 'readonly',
         setImmediate: 'readonly',
         require: 'readonly',

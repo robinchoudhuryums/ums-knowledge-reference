@@ -139,14 +139,14 @@ const styles: Record<string, React.CSSProperties> = {
   searchButton: { padding: '11px 24px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
 
   results: {},
-  noResults: { textAlign: 'center', color: '#8DA4B8', padding: '48px', fontSize: '14px' },
+  noResults: { textAlign: 'center', color: '#5F7A8F', padding: '48px', fontSize: '14px' },
 
   resultCard: { border: '1px solid #E8EFF5', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   resultHeader: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px 18px', border: 'none', background: 'white', cursor: 'pointer', fontSize: '14px', textAlign: 'left' },
   docIcon: { fontSize: '18px', flexShrink: 0 },
   docName: { flex: 1, fontWeight: 500, color: '#0D2137' },
   matchCount: { fontSize: '12px', color: '#1B6FC9', background: '#E3F2FD', padding: '3px 10px', borderRadius: '6px', fontWeight: 500 },
-  expandArrow: { fontSize: '11px', color: '#8DA4B8' },
+  expandArrow: { fontSize: '11px', color: '#5F7A8F' },
 
   matchesList: { borderTop: '1px solid #E8EFF5' },
   matchItem: { padding: '14px 18px', borderBottom: '1px solid #F7FAFD' },

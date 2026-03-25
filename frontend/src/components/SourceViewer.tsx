@@ -17,7 +17,7 @@ export function SourceViewer({ source, onClose }: Props) {
   }, [handleKeyDown]);
 
   const relevancePct = Math.round(source.score * 100);
-  const relevanceColor = relevancePct >= 70 ? '#166534' : relevancePct >= 40 ? '#c2410c' : '#8DA4B8';
+  const relevanceColor = relevancePct >= 70 ? '#166534' : relevancePct >= 40 ? '#c2410c' : '#5F7A8F';
   const relevanceBg = relevancePct >= 70 ? '#dcfce7' : relevancePct >= 40 ? '#fff7ed' : '#F7FAFD';
 
   return (
@@ -89,14 +89,14 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #E8EFF5',
     fontSize: '16px',
     cursor: 'pointer',
-    color: '#8DA4B8',
+    color: '#5F7A8F',
     padding: '6px 10px',
     borderRadius: '8px',
     lineHeight: 1,
     flexShrink: 0,
   },
   divider: { height: '1px', background: '#E8EFF5', margin: '18px 0' },
-  label: { fontSize: '11px', fontWeight: 600, color: '#8DA4B8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' },
+  label: { fontSize: '11px', fontWeight: 600, color: '#5F7A8F', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' },
   textContent: {
     padding: '18px',
     backgroundColor: '#F7FAFD',

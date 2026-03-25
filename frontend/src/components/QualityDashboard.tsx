@@ -103,7 +103,7 @@ export function QualityDashboard() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: '24px 28px' },
-  loading: { padding: '24px', color: '#8DA4B8', textAlign: 'center' },
+  loading: { padding: '24px', color: '#5F7A8F', textAlign: 'center' },
   error: { padding: '24px', color: '#dc2626' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   title: { margin: 0, fontSize: '18px', fontWeight: 700, color: '#0D2137' },
@@ -113,7 +113,7 @@ const styles: Record<string, React.CSSProperties> = {
   cards: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px' },
   card: { padding: '16px', background: '#F7FAFD', borderRadius: '10px', border: '1px solid #E8EFF5', textAlign: 'center' as const },
   cardValue: { fontSize: '24px', fontWeight: 700, color: '#0D2137' },
-  cardLabel: { fontSize: '11px', color: '#8DA4B8', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.3px' },
+  cardLabel: { fontSize: '11px', color: '#5F7A8F', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.3px' },
   section: { marginBottom: '24px' },
   sectionTitle: { margin: '0 0 12px', fontSize: '14px', fontWeight: 600, color: '#0D2137' },
   chart: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
@@ -127,5 +127,5 @@ const styles: Record<string, React.CSSProperties> = {
   gapList: { display: 'flex', flexDirection: 'column' as const, gap: '6px' },
   gapItem: { display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '13px' },
   gapQuestion: { color: '#1A2B3C', flex: 1 },
-  gapDate: { color: '#8DA4B8', fontSize: '11px', marginLeft: '12px' },
+  gapDate: { color: '#5F7A8F', fontSize: '11px', marginLeft: '12px' },
 };

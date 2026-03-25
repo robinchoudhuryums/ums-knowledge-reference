@@ -140,7 +140,7 @@ export function IntakeAutoFill() {
       {/* Intake Tab */}
       {activeTab === 'intake' && (
         <div style={s.formSection}>
-          <div style={s.formGrid}>
+          <div style={s.formGrid} className="intake-grid">
             <FormField label="Patient Name" value={intake.patientName} onChange={v => updateIntake('patientName', v)} />
             <FormField label="Date of Birth" value={intake.patientDob} onChange={v => updateIntake('patientDob', v)} placeholder="YYYY-MM-DD" />
             <FormField label="Medicare ID / MBI" value={intake.medicareId} onChange={v => updateIntake('medicareId', v)} />
@@ -359,7 +359,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   tabInactive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'transparent', color: '#8DA4B8', fontSize: '13px', fontWeight: 500,
+    background: 'transparent', color: '#5F7A8F', fontSize: '13px', fontWeight: 500,
     cursor: 'pointer',
   },
 
@@ -397,7 +397,7 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 8px rgba(124, 58, 237, 0.25)', cursor: 'pointer',
   },
   uploadBtnLoading: {
-    display: 'inline-block', padding: '11px 24px', background: '#8DA4B8',
+    display: 'inline-block', padding: '11px 24px', background: '#5F7A8F',
     color: 'white', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'wait',
   },
   loadingBar: {
@@ -435,7 +435,7 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: '11px', color: '#DC2626', background: '#FEF2F2', padding: '3px 8px',
     borderRadius: '6px', fontWeight: 600, border: '1px solid #FECACA',
   },
-  modelLabel: { fontSize: '11px', color: '#8DA4B8', marginLeft: 'auto' },
+  modelLabel: { fontSize: '11px', color: '#5F7A8F', marginLeft: 'auto' },
   notes: {
     margin: 0, padding: '10px 18px', fontSize: '13px', color: '#6B8299',
     background: '#FFFBEB', borderBottom: '1px solid #FDE68A', lineHeight: '1.5',
@@ -465,7 +465,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   testName: { fontSize: '13px', fontWeight: 600, color: '#0D2137', minWidth: '140px' },
   testVal: { fontSize: '13px', color: '#059669', fontWeight: 600, fontFamily: 'monospace' },
-  testDate: { fontSize: '11px', color: '#8DA4B8', marginLeft: 'auto' },
+  testDate: { fontSize: '11px', color: '#5F7A8F', marginLeft: 'auto' },
   quote: {
     margin: 0, padding: '10px 14px', borderLeft: '3px solid #7C3AED',
     background: '#F5F3FF', fontSize: '13px', color: '#374151', lineHeight: '1.6',

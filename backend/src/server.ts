@@ -17,6 +17,7 @@ import { startReindexScheduler } from './services/reindexer';
 import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
 import { startSourceMonitor } from './services/sourceMonitor';
 import { startJobCleanup } from './services/jobQueue';
+import { startOrphanCleanup } from './services/orphanCleanup';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
@@ -278,6 +279,9 @@ async function start() {
 
     // Start job queue cleanup (removes old completed/failed jobs every 10 minutes)
     startJobCleanup();
+
+    // Start orphaned document cleanup (marks stuck uploads as error after 24h)
+    startOrphanCleanup();
 
     const server = app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

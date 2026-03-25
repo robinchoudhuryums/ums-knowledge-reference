@@ -4,6 +4,7 @@ import {
   listDocuments,
   uploadDocument,
   deleteDocument,
+  bulkDeleteDocuments,
   createCollection,
   deleteCollection,
   updateDocumentTags,
@@ -28,6 +29,8 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
   const [allTags, setAllTags] = useState<string[]>([]);
   const [editingTagsDocId, setEditingTagsDocId] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadDocuments = async () => {
@@ -103,6 +106,38 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     } catch (err) {
       setError('Failed to delete document');
     }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} selected document(s)? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    try {
+      await bulkDeleteDocuments(Array.from(selectedIds));
+      setSelectedIds(new Set());
+      loadDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk delete failed');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === documents.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(documents.map(d => d.id)));
+    }
+  };
+
+  const toggleSelectDoc = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const handleCreateCollection = async () => {
@@ -223,7 +258,17 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
             <p style={styles.subtitle}>{documents.length} document{documents.length !== 1 ? 's' : ''} uploaded</p>
           </div>
           {isAdmin && (
-            <div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  style={styles.bulkDeleteButton}
+                  aria-label={`Delete ${selectedIds.size} selected documents`}
+                >
+                  {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size} Selected`}
+                </button>
+              )}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -231,11 +276,13 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                 accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.md"
                 onChange={handleUpload}
                 style={{ display: 'none' }}
+                aria-label="Select files to upload"
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
                 style={styles.uploadButton}
+                aria-label="Upload new documents"
               >
                 {uploading ? uploadProgress : 'Upload Documents'}
               </button>
@@ -269,9 +316,19 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
         )}
 
         <div style={styles.tableWrapper}>
-          <table style={styles.table}>
+          <table style={styles.table} aria-label="Uploaded documents">
             <thead>
               <tr>
+                {isAdmin && (
+                  <th style={{ ...styles.th, width: '40px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={documents.length > 0 && selectedIds.size === documents.length}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all documents"
+                    />
+                  </th>
+                )}
                 <th style={styles.th}>Name</th>
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}>Size</th>
@@ -285,6 +342,16 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
             <tbody>
               {documents.map(doc => (
                 <tr key={doc.id} style={styles.tr}>
+                  {isAdmin && (
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(doc.id)}
+                        onChange={() => toggleSelectDoc(doc.id)}
+                        aria-label={`Select ${doc.originalName}`}
+                      />
+                    </td>
+                  )}
                   <td style={styles.td}>
                     <span style={styles.fileIcon}>{getFileIcon(doc.originalName)}</span>
                     {doc.originalName}
@@ -351,14 +418,14 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                   <td style={{ ...styles.td, color: '#6B8299' }}>{doc.uploadedBy}</td>
                   {isAdmin && (
                     <td style={styles.td}>
-                      <button onClick={() => handleDelete(doc)} style={styles.deleteButton}>Delete</button>
+                      <button onClick={() => handleDelete(doc)} style={styles.deleteButton} aria-label={`Delete ${doc.originalName}`}>Delete</button>
                     </td>
                   )}
                 </tr>
               ))}
               {documents.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 7} style={{ ...styles.td, textAlign: 'center', color: '#8DA4B8', padding: '40px 12px' }}>
+                  <td colSpan={isAdmin ? 9 : 7} style={{ ...styles.td, textAlign: 'center', color: '#8DA4B8', padding: '40px 12px' }}>
                     No documents uploaded yet
                   </td>
                 </tr>
@@ -389,6 +456,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
   subtitle: { margin: '2px 0 0', fontSize: '13px', color: '#8DA4B8' },
   uploadButton: { padding: '10px 22px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
+  bulkDeleteButton: { padding: '10px 18px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, boxShadow: '0 2px 6px rgba(220, 38, 38, 0.25)' },
   error: { background: '#fef2f2', color: '#dc2626', padding: '12px 14px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', border: '1px solid #fecaca' },
   tableWrapper: { borderRadius: '12px', border: '1px solid #E8EFF5', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   table: { width: '100%', borderCollapse: 'collapse' as const },

@@ -21,6 +21,7 @@ import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { validateFileContent } from '../utils/fileValidation';
+import { scanFileForMalware } from '../utils/malwareScan';
 
 const router = Router();
 
@@ -67,6 +68,18 @@ router.post(
       const validationError = validateFileContent(req.file.buffer, req.file.mimetype, req.file.originalname);
       if (validationError) {
         res.status(400).json({ error: validationError });
+        return;
+      }
+
+      // Malware scan (skipped gracefully if ClamAV is not available)
+      const scanResult = await scanFileForMalware(req.file.buffer, req.file.originalname);
+      if (scanResult.scanned && !scanResult.clean) {
+        logger.error('Upload rejected: malware detected', {
+          filename: req.file.originalname,
+          threat: scanResult.threat,
+          userId: req.user!.id,
+        });
+        res.status(400).json({ error: `File rejected: malware detected (${scanResult.threat})` });
         return;
       }
 
@@ -231,6 +244,110 @@ router.post('/:id/purge', authenticate, requireAdmin, async (req: AuthRequest, r
   } catch (error) {
     logger.error('Data purge failed', { error: String(error), documentId: req.params.id });
     res.status(500).json({ error: 'Data purge failed' });
+  }
+});
+
+// --- Bulk Delete ---
+
+/**
+ * POST /api/documents/bulk-delete — Delete multiple documents at once (admin only).
+ * Body: { documentIds: string[] }
+ */
+router.post('/bulk-delete', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { documentIds } = req.body;
+    if (!Array.isArray(documentIds) || documentIds.length === 0) {
+      res.status(400).json({ error: 'documentIds must be a non-empty array' });
+      return;
+    }
+
+    if (documentIds.length > 50) {
+      res.status(400).json({ error: 'Maximum 50 documents per bulk delete' });
+      return;
+    }
+
+    const docs = await getDocumentsIndex();
+    const results: Array<{ id: string; name: string; status: 'deleted' | 'not_found' | 'error'; error?: string }> = [];
+
+    for (const docId of documentIds) {
+      const docIndex = docs.findIndex(d => d.id === docId);
+      if (docIndex === -1) {
+        results.push({ id: docId, name: 'unknown', status: 'not_found' });
+        continue;
+      }
+
+      const doc = docs[docIndex];
+      try {
+        await removeDocumentChunks(doc.id);
+        await deleteDocumentFromS3(doc.s3Key);
+        docs.splice(docIndex, 1);
+        results.push({ id: docId, name: doc.originalName, status: 'deleted' });
+      } catch (err) {
+        results.push({ id: docId, name: doc.originalName, status: 'error', error: String(err) });
+      }
+    }
+
+    await saveDocumentsIndex(docs);
+
+    const deletedCount = results.filter(r => r.status === 'deleted').length;
+    await logAuditEvent(req.user!.id, req.user!.username, 'delete', {
+      action: 'bulk_delete',
+      requestedCount: documentIds.length,
+      deletedCount,
+      results: results.map(r => ({ id: r.id, name: r.name, status: r.status })),
+    });
+
+    res.json({
+      message: `Deleted ${deletedCount} of ${documentIds.length} documents`,
+      results,
+    });
+  } catch (error) {
+    logger.error('Bulk delete failed', { error: String(error) });
+    res.status(500).json({ error: 'Bulk delete failed' });
+  }
+});
+
+// --- Document Version History ---
+
+/**
+ * GET /api/documents/:id/versions — Return the version history of a document.
+ * Traces back through previousVersionId links to show all versions.
+ */
+router.get('/:id/versions', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const docs = await getDocumentsIndex();
+    const targetDoc = docs.find(d => d.id === req.params.id);
+    if (!targetDoc) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    // Find all versions of this document (same name + collection)
+    const allVersions = docs
+      .filter(d => d.originalName === targetDoc.originalName && d.collectionId === targetDoc.collectionId)
+      .sort((a, b) => b.version - a.version)
+      .map(d => ({
+        id: d.id,
+        version: d.version,
+        status: d.status,
+        uploadedBy: d.uploadedBy,
+        uploadedAt: d.uploadedAt,
+        sizeBytes: d.sizeBytes,
+        chunkCount: d.chunkCount,
+        contentHash: d.contentHash,
+        previousVersionId: d.previousVersionId,
+        errorMessage: d.errorMessage,
+      }));
+
+    res.json({
+      documentName: targetDoc.originalName,
+      collectionId: targetDoc.collectionId,
+      currentVersion: targetDoc.version,
+      versions: allVersions,
+    });
+  } catch (error) {
+    logger.error('Failed to get version history', { error: String(error) });
+    res.status(500).json({ error: 'Failed to get version history' });
   }
 });
 

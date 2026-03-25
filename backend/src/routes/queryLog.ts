@@ -150,4 +150,54 @@ router.get('/:date/csv', authenticate, requireAdmin, async (req: AuthRequest, re
   }
 });
 
+// --- Audit Log Export (admin only) ---
+
+/**
+ * GET /api/query-log/audit/:date/json — Export audit log entries for a date as JSON.
+ * GET /api/query-log/audit/:startDate/:endDate/json — Export audit log range.
+ */
+router.get('/audit/:date/json', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { date } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      res.status(400).json({ error: 'Date must be in YYYY-MM-DD format' });
+      return;
+    }
+
+    const { getAuditLogs } = await import('../services/audit');
+    const entries = await getAuditLogs(date);
+    res.json({ date, count: entries.length, entries });
+  } catch (error) {
+    logger.error('Failed to export audit log', { error: String(error) });
+    res.status(500).json({ error: 'Failed to export audit log' });
+  }
+});
+
+router.get('/audit/:startDate/:endDate/json', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { startDate, endDate } = req.params;
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!datePattern.test(startDate) || !datePattern.test(endDate)) {
+      res.status(400).json({ error: 'Dates must be in YYYY-MM-DD format' });
+      return;
+    }
+
+    const { getAuditLogs } = await import('../services/audit');
+    const allEntries = [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateKey = d.toISOString().split('T')[0];
+      const entries = await getAuditLogs(dateKey);
+      allEntries.push(...entries);
+    }
+
+    res.json({ startDate, endDate, count: allEntries.length, entries: allEntries });
+  } catch (error) {
+    logger.error('Failed to export audit log range', { error: String(error) });
+    res.status(500).json({ error: 'Failed to export audit log range' });
+  }
+});
+
 export default router;

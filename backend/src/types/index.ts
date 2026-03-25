@@ -74,8 +74,10 @@ export interface AuditLogEntry {
   timestamp: string;
   userId: string;
   username: string;
-  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr' | 'user_create' | 'user_update' | 'user_delete' | 'user_reset_password' | 'data_purge';
+  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr' | 'user_create' | 'user_update' | 'user_delete' | 'user_reset_password' | 'data_purge' | 'data_retention';
   details: Record<string, unknown>;
+  previousHash?: string;
+  entryHash?: string;
 }
 
 export interface VectorStoreIndex {

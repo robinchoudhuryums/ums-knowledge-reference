@@ -18,6 +18,7 @@ import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
 import { startSourceMonitor } from './services/sourceMonitor';
 import { startJobCleanup } from './services/jobQueue';
 import { startOrphanCleanup } from './services/orphanCleanup';
+import { startRetentionScheduler } from './services/dataRetention';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
@@ -287,6 +288,9 @@ async function start() {
 
     // Start orphaned document cleanup (marks stuck uploads as error after 24h)
     startOrphanCleanup();
+
+    // Start data retention cleanup scheduler (HIPAA-compliant expiration at ~3 AM daily)
+    startRetentionScheduler();
 
     const server = app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { useIdleTimeout } from './hooks/useIdleTimeout';
 import { LoginForm } from './components/LoginForm';
 import { ChatInterface } from './components/ChatInterface';
 import { DocumentManager } from './components/DocumentManager';
@@ -38,6 +39,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [collections, setCollections] = useState<Collection[]>([]);
 
+  const { showWarning, remainingSeconds } = useIdleTimeout(
+    () => { logout(); },
+    isAuthenticated && !mustChangePassword,
+  );
+
   const loadCollections = useCallback(async () => {
     try {
       const result = await listCollections();
@@ -72,6 +78,11 @@ export default function App() {
               <span style={styles.popoutUser}>{auth.user?.username}</span>
             </div>
           </header>
+          {showWarning && (
+            <div style={styles.idleWarningBanner} role="alert">
+              Session expiring in {remainingSeconds > 60 ? `${Math.ceil(remainingSeconds / 60)} minute${Math.ceil(remainingSeconds / 60) !== 1 ? 's' : ''}` : `${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`} due to inactivity. Move your mouse or press a key to stay logged in.
+            </div>
+          )}
           <main style={styles.main}>
             <ChatInterface collections={collections} />
           </main>
@@ -125,6 +136,12 @@ export default function App() {
           <button onClick={logout} style={styles.logoutButton}>Sign Out</button>
         </div>
       </header>
+
+      {showWarning && (
+        <div style={styles.idleWarningBanner} role="alert">
+          Session expiring in {remainingSeconds > 60 ? `${Math.ceil(remainingSeconds / 60)} minute${Math.ceil(remainingSeconds / 60) !== 1 ? 's' : ''}` : `${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`} due to inactivity. Move your mouse or press a key to stay logged in.
+        </div>
+      )}
 
       <main style={styles.main}>
         <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
@@ -294,4 +311,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'white',
   },
   popoutLogo: { margin: 0, fontSize: '15px', fontWeight: 600 },
+  idleWarningBanner: {
+    padding: '10px 24px',
+    background: '#FFF3CD',
+    color: '#856404',
+    borderBottom: '1px solid #FFEEBA',
+    fontSize: '14px',
+    fontWeight: 500,
+    textAlign: 'center' as const,
+    zIndex: 20,
+    flexShrink: 0,
+  },
 };

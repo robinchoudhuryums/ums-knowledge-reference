@@ -112,6 +112,15 @@ body {
   100% { background-position: 200% 0; }
 }
 
+/* Skeleton loading lines */
+.skeleton-line {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #E8EFF5 25%, #D6E4F0 50%, #E8EFF5 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
 /* Focus styling */
 input:focus, textarea:focus, select:focus {
   outline: none;

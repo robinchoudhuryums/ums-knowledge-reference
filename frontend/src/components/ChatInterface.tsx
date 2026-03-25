@@ -26,6 +26,7 @@ export function ChatInterface({ collections }: Props) {
   const [expandedSource, setExpandedSource] = useState<SourceCitation | null>(null);
   const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[]; traceId?: string } | null>(null);
   const [thumbsVoted, setThumbsVoted] = useState<Record<string, 'up' | 'down'>>({});
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [failedQuery, setFailedQuery] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -270,6 +271,19 @@ export function ChatInterface({ collections }: Props) {
               )}
               {turn.role === 'assistant' && (
                 <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(turn.content);
+                    setCopiedIndex(i);
+                    setTimeout(() => setCopiedIndex(prev => prev === i ? null : prev), 2000);
+                  }}
+                  style={styles.copyButton}
+                  title="Copy answer to clipboard"
+                >
+                  {copiedIndex === i ? 'Copied!' : 'Copy'}
+                </button>
+              )}
+              {turn.role === 'assistant' && (
+                <button
                   onClick={() => setFeedbackTarget({
                     question: getQuestionForTurn(i),
                     answer: turn.content,
@@ -344,7 +358,11 @@ export function ChatInterface({ collections }: Props) {
                 <ReactMarkdown>{streamingText}</ReactMarkdown>
               </div>
             ) : (
-              <div style={styles.thinkingText}>Searching documents...</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '4px 0' }}>
+                <div className="skeleton-line" style={{ width: '100%' }} />
+                <div className="skeleton-line" style={{ width: '85%' }} />
+                <div className="skeleton-line" style={{ width: '60%' }} />
+              </div>
             )}
             {streamingSources.length > 0 && (
               <div style={styles.sourcesSection}>
@@ -466,6 +484,7 @@ const styles: Record<string, React.CSSProperties> = {
   thumbsRow: { display: 'flex', gap: '2px', marginLeft: 'auto' },
   thumbsButton: { padding: '3px 6px', background: 'none', border: '1px solid #E8EFF5', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', opacity: 0.5, transition: 'all 0.15s' },
   thumbsActive: { padding: '3px 6px', background: '#E3F2FD', border: '1px solid #1B6FC9', borderRadius: '6px', cursor: 'default', fontSize: '14px', opacity: 1 },
+  copyButton: { padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#1B6FC9', transition: 'all 0.15s', fontWeight: 500 },
   flagButton: { padding: '3px 10px', background: 'none', border: '1px solid #D6E4F0', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', color: '#5F7A8F', transition: 'all 0.15s' },
   lowConfidenceWarning: { marginTop: '12px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '10px', fontSize: '13px', color: '#92400e', lineHeight: '1.5' },
   streamingDot: { width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#1B6FC9', animation: 'pulse 1.2s ease-in-out infinite' },

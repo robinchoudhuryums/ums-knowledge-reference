@@ -60,9 +60,9 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
     });
 
     res.status(201).json({ source });
-  } catch (error: any) {
-    if (error.message?.includes('already being monitored')) {
-      res.status(409).json({ error: error.message });
+  } catch (error: unknown) {
+    if ((error as Error).message?.includes('already being monitored')) {
+      res.status(409).json({ error: (error as Error).message });
       return;
     }
     logger.error('Failed to add monitored source', { error: String(error) });
@@ -92,9 +92,9 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     });
 
     res.json({ source });
-  } catch (error: any) {
-    if (error.message?.includes('not found')) {
-      res.status(404).json({ error: error.message });
+  } catch (error: unknown) {
+    if ((error as Error).message?.includes('not found')) {
+      res.status(404).json({ error: (error as Error).message });
       return;
     }
     logger.error('Failed to update monitored source', { error: String(error) });
@@ -113,9 +113,9 @@ router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: 
     });
 
     res.json({ message: 'Monitored source removed' });
-  } catch (error: any) {
-    if (error.message?.includes('not found')) {
-      res.status(404).json({ error: error.message });
+  } catch (error: unknown) {
+    if ((error as Error).message?.includes('not found')) {
+      res.status(404).json({ error: (error as Error).message });
       return;
     }
     logger.error('Failed to remove monitored source', { error: String(error) });
@@ -136,9 +136,9 @@ router.post('/:id/check', authenticate, requireAdmin, async (req: AuthRequest, r
     });
 
     res.json(result);
-  } catch (error: any) {
-    if (error.message?.includes('not found')) {
-      res.status(404).json({ error: error.message });
+  } catch (error: unknown) {
+    if ((error as Error).message?.includes('not found')) {
+      res.status(404).json({ error: (error as Error).message });
       return;
     }
     logger.error('Force check failed', { error: String(error) });
@@ -188,7 +188,7 @@ router.post('/seed-lcds', authenticate, requireAdmin, async (req: AuthRequest, r
     const { v4: uuidv4 } = await import('uuid');
 
     // 1. Find or create "LCD Policies" collection
-    let collections = await getCollectionsIndex();
+    const collections = await getCollectionsIndex();
     let lcdCollection = collections.find(c => c.name === 'LCD Policies');
     if (!lcdCollection) {
       lcdCollection = {
@@ -230,9 +230,9 @@ router.post('/seed-lcds', authenticate, requireAdmin, async (req: AuthRequest, r
           createdBy: req.user!.username,
         });
         added.push(lcd.name);
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Skip duplicates silently, log other errors
-        if (!err.message?.includes('already being monitored')) {
+        if (!(err as Error).message?.includes('already being monitored')) {
           logger.error('Failed to add LCD source', { name: lcd.name, error: String(err) });
         }
         skipped.push(lcd.name);

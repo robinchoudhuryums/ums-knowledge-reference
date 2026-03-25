@@ -275,14 +275,14 @@ export async function checkSource(source: MonitoredSource): Promise<{
     const result = await downloadFile(source.url);
     buffer = result.buffer;
     contentType = result.contentType;
-  } catch (error: any) {
-    const msg = `Download failed: ${error.message}`;
+  } catch (error: unknown) {
+    const msg = `Download failed: ${(error as Error).message}`;
     logger.warn('Source check failed', { sourceId: source.id, error: msg });
     // Update source metadata with error
     await updateSourceCheckResult(source.id, {
       lastCheckedAt: new Date().toISOString(),
       lastError: msg,
-      lastHttpStatus: extractHttpStatus(error.message),
+      lastHttpStatus: extractHttpStatus((error as Error).message),
     });
     return { changed: false, ingested: false, message: msg };
   }
@@ -362,8 +362,8 @@ export async function checkSource(source: MonitoredSource): Promise<{
       ingested: true,
       message: `Ingested ${result.chunkCount} chunks from updated ${source.name}`,
     };
-  } catch (error: any) {
-    const msg = `Ingestion failed: ${error.message}`;
+  } catch (error: unknown) {
+    const msg = `Ingestion failed: ${(error as Error).message}`;
     await updateSourceCheckResult(source.id, {
       lastCheckedAt: new Date().toISOString(),
       lastError: msg,

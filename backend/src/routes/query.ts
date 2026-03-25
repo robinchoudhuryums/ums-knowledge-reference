@@ -3,7 +3,7 @@ import { authenticate, AuthRequest, getUserAllowedCollections } from '../middlew
 import { generateEmbedding } from '../services/embeddings';
 import { searchVectorStore } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
-import { checkAndRecordQuery, recordQuery } from '../services/usage';
+import { checkAndRecordQuery } from '../services/usage';
 import { logQuery } from '../services/queryLog';
 import { generateTraceId, logRagTrace } from '../services/ragTrace';
 import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';

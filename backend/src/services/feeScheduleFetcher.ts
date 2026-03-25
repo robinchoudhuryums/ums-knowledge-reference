@@ -17,7 +17,6 @@ import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { logger } from '../utils/logger';
 import { ingestDocument } from './ingestion';
-import { v4 as uuidv4 } from 'uuid';
 import { validateUrl, MAX_DOWNLOAD_SIZE } from '../utils/urlValidation';
 import https from 'https';
 import http from 'http';
@@ -161,7 +160,7 @@ function processFeeScheduleCsv(csvContent: string): { text: string; recordCount:
     recordCount++;
     const code = hcpcsIdx >= 0 ? fields[hcpcsIdx]?.trim() : '';
     const desc = descIdx >= 0 ? fields[descIdx]?.trim() : '';
-    const fee = feeIdx >= 0 ? fields[feeIdx]?.trim() : '';
+    const _fee = feeIdx >= 0 ? fields[feeIdx]?.trim() : '';
     const mod = modIdx >= 0 ? fields[modIdx]?.trim() : '';
 
     // Group by HCPCS code for better chunking
@@ -246,9 +245,10 @@ export async function fetchAndIngestFeeSchedule(forceRefresh: boolean = false): 
   try {
     fileBuffer = await downloadFile(CMS_FEE_SCHEDULE_URL);
     logger.info('Downloaded fee schedule', { sizeBytes: fileBuffer.length });
-  } catch (error: any) {
-    logger.error('Failed to download fee schedule', { error: error.message });
-    return { ingested: false, message: `Download failed: ${error.message}` };
+  } catch (error: unknown) {
+    const message = (error as Error).message;
+    logger.error('Failed to download fee schedule', { error: message });
+    return { ingested: false, message: `Download failed: ${message}` };
   }
 
   // Check if content has changed
@@ -311,9 +311,10 @@ export async function fetchAndIngestFeeSchedule(forceRefresh: boolean = false): 
       message: `Successfully ingested ${recordCount} fee schedule records.`,
       recordCount,
     };
-  } catch (error: any) {
-    logger.error('Fee schedule ingestion failed', { error: error.message });
-    return { ingested: false, message: `Ingestion failed: ${error.message}` };
+  } catch (error: unknown) {
+    const message = (error as Error).message;
+    logger.error('Fee schedule ingestion failed', { error: message });
+    return { ingested: false, message: `Ingestion failed: ${message}` };
   }
 }
 

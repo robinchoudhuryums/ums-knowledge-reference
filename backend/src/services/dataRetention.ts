@@ -174,8 +174,8 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
   return summary;
 }
 
-let retentionTimer: ReturnType<typeof setTimeout> | null = null;
-let retentionInterval: ReturnType<typeof setInterval> | null = null;
+let _retentionTimer: ReturnType<typeof setTimeout> | null = null;
+let _retentionInterval: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Start the retention cleanup scheduler. Runs daily at approximately 3 AM.
@@ -202,9 +202,9 @@ export function startRetentionScheduler(): void {
   };
 
   // Schedule first run at ~3 AM, then repeat every 24 hours
-  retentionTimer = setTimeout(() => {
+  _retentionTimer = setTimeout(() => {
     runCleanup();
-    retentionInterval = setInterval(runCleanup, TWENTY_FOUR_HOURS_MS);
+    _retentionInterval = setInterval(runCleanup, TWENTY_FOUR_HOURS_MS);
   }, initialDelayMs);
 
   logger.info('Data retention scheduler started', {

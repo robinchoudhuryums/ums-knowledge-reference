@@ -45,7 +45,7 @@ router.get('/templates/:id', authenticate, (req, res) => {
     return res.status(404).json({ error: 'Template not found' });
   }
   // Return template info without the system prompt (internal)
-  const { systemPrompt, ...publicTemplate } = template;
+  const { systemPrompt: _systemPrompt, ...publicTemplate } = template;
   res.json({ template: publicTemplate });
 });
 
@@ -118,13 +118,14 @@ router.post('/extract', authenticate, upload.single('file'), async (req, res) =>
     );
 
     res.json({ result });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     logger.error('Extraction failed', {
-      error: error.message,
+      error: errMsg,
       filename: file.originalname,
       templateId,
     });
-    res.status(500).json({ error: error.message || 'Extraction failed' });
+    res.status(500).json({ error: errMsg || 'Extraction failed' });
   }
 });
 
@@ -230,10 +231,11 @@ router.post('/extract/async', authenticate, upload.single('file'), async (req, r
       });
 
       logger.info('Async extraction completed', { jobId: job.id, filename, templateId });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       logger.error('Async extraction failed', {
         jobId: job.id,
-        error: error.message,
+        error: errMsg,
         filename,
         templateId,
       });
@@ -241,7 +243,7 @@ router.post('/extract/async', authenticate, upload.single('file'), async (req, r
       updateJob(job.id, {
         status: 'failed',
         completedAt: new Date().toISOString(),
-        error: error.message || 'Extraction failed',
+        error: errMsg || 'Extraction failed',
         progress: undefined,
       });
     }

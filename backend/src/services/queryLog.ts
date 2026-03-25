@@ -1,6 +1,6 @@
 import { QueryLogEntry, SourceCitation } from '../types';
 import { loadMetadata, saveMetadata } from './s3Storage';
-import { logger } from '../utils/logger';
+
 import { redactPhi } from '../utils/phiRedactor';
 
 const LOG_PREFIX = 'query-logs/';

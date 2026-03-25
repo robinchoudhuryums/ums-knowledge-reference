@@ -181,9 +181,10 @@ export async function extractDocumentData(
     );
     const body = JSON.parse(new TextDecoder().decode(response.body));
     responseText = body.content?.[0]?.text || '';
-  } catch (error: any) {
-    logger.error('Bedrock extraction call failed', { error: error.message, templateId });
-    throw new Error(`Extraction model call failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = (error as Error).message;
+    logger.error('Bedrock extraction call failed', { error: message, templateId });
+    throw new Error(`Extraction model call failed: ${message}`);
   }
 
   // Step 4: Parse response

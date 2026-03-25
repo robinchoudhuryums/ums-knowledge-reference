@@ -218,6 +218,7 @@ function detectMimeType(url: string, contentType?: string, fileType?: MonitoredS
       pdf: 'application/pdf',
       csv: 'text/csv',
       txt: 'text/plain',
+      html: 'text/html',
     };
     return mimeMap[fileType] || 'application/octet-stream';
   }
@@ -227,6 +228,7 @@ function detectMimeType(url: string, contentType?: string, fileType?: MonitoredS
     const ct = contentType.toLowerCase().split(';')[0].trim();
     if (ct === 'application/pdf') return 'application/pdf';
     if (ct === 'text/csv') return 'text/csv';
+    if (ct === 'text/html') return 'text/html';
     if (ct.startsWith('text/')) return 'text/plain';
   }
 
@@ -251,6 +253,7 @@ function detectFilename(source: MonitoredSource, contentType?: string): string {
     'application/pdf': '.pdf',
     'text/csv': '.csv',
     'text/plain': '.txt',
+    'text/html': '.html',
   };
   const ext = extMap[mimeType] || '.pdf';
   return `${safeName}${ext}`;

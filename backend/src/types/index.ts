@@ -175,8 +175,8 @@ export interface MonitoredSource {
   collectionId: string;
   /** How often to check for updates (hours) */
   checkIntervalHours: number;
-  /** File type hint: 'auto' | 'pdf' | 'csv' | 'txt' */
-  fileType: 'auto' | 'pdf' | 'csv' | 'txt';
+  /** File type hint: 'auto' | 'pdf' | 'csv' | 'txt' | 'html' */
+  fileType: 'auto' | 'pdf' | 'csv' | 'txt' | 'html';
   /** Whether this source is actively monitored */
   enabled: boolean;
   /** Category for grouping in the UI */

@@ -27,6 +27,9 @@ export async function extractText(buffer: Buffer, mimeType: string, filename: st
     case 'text/csv':
       return extractCsv(buffer);
 
+    case 'text/html':
+      return extractHtml(buffer);
+
     case 'text/plain':
       return { text: buffer.toString('utf-8') };
 
@@ -124,6 +127,51 @@ function extractXlsx(buffer: Buffer): ExtractedText {
   }
 
   return { text: textParts.join('\n') };
+}
+
+/**
+ * Extract text from HTML by stripping tags, scripts, styles, and normalizing whitespace.
+ * Preserves semantic structure (headings, paragraphs, list items) as line breaks.
+ */
+function extractHtml(buffer: Buffer): ExtractedText {
+  let html = buffer.toString('utf-8');
+
+  // Remove script and style blocks entirely
+  html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+  html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+  html = html.replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
+
+  // Remove HTML comments
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+
+  // Convert block-level elements to newlines for readability
+  html = html.replace(/<\/(p|div|h[1-6]|li|tr|br|hr|blockquote|section|article|header|footer|nav|main)>/gi, '\n');
+  html = html.replace(/<br\s*\/?>/gi, '\n');
+  html = html.replace(/<hr\s*\/?>/gi, '\n---\n');
+
+  // Strip all remaining HTML tags
+  html = html.replace(/<[^>]+>/g, ' ');
+
+  // Decode common HTML entities
+  html = html
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#\d+;/g, ' ')
+    .replace(/&\w+;/g, ' ');
+
+  // Normalize whitespace: collapse multiple spaces/tabs, trim lines, collapse blank lines
+  const lines = html.split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .filter(line => line.length > 0);
+
+  // Collapse runs of 3+ empty lines into 2
+  const text = lines.join('\n').replace(/\n{3,}/g, '\n\n');
+
+  return { text };
 }
 
 function extractCsv(buffer: Buffer): ExtractedText {

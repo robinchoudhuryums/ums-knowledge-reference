@@ -717,7 +717,7 @@ const viewerStyles: Record<string, React.CSSProperties> = {
   },
   exportBtnDisabled: {
     padding: '6px 16px', border: 'none', borderRadius: '8px',
-    background: '#8DA4B8', color: 'white',
+    background: '#5F7A8F', color: 'white',
     fontSize: '12px', fontWeight: 600, cursor: 'wait',
   },
 
@@ -733,7 +733,7 @@ const viewerStyles: Record<string, React.CSSProperties> = {
     background: 'none', border: 'none', color: '#DC2626', fontSize: '11px',
     cursor: 'pointer', textDecoration: 'underline', padding: 0,
   },
-  toolHint: { fontStyle: 'italic', color: '#8DA4B8' },
+  toolHint: { fontStyle: 'italic', color: '#5F7A8F' },
 
   // Canvas area
   canvasContainer: {
@@ -782,6 +782,6 @@ const viewerStyles: Record<string, React.CSSProperties> = {
     background: '#FEF2F2', color: '#DC2626', fontSize: '10px', cursor: 'pointer',
   },
   annEmpty: {
-    margin: 0, fontSize: '12px', color: '#8DA4B8', fontStyle: 'italic',
+    margin: 0, fontSize: '12px', color: '#5F7A8F', fontStyle: 'italic',
   },
 };

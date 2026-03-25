@@ -241,7 +241,7 @@ const styles: Record<string, React.CSSProperties> = {
   container: { padding: '28px', maxWidth: '920px', overflowY: 'auto', height: '100%' },
   headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   title: { margin: 0, fontSize: '20px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
-  subtitle: { margin: '4px 0 24px', fontSize: '13px', color: '#8DA4B8' },
+  subtitle: { margin: '4px 0 24px', fontSize: '13px', color: '#5F7A8F' },
   periodSelector: { display: 'flex', gap: '4px' },
   periodButton: {
     padding: '6px 14px',
@@ -264,7 +264,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     boxShadow: '0 2px 6px rgba(27, 111, 201, 0.25)',
   },
-  loading: { color: '#8DA4B8', fontSize: '14px' },
+  loading: { color: '#5F7A8F', fontSize: '14px' },
   error: { color: '#dc2626', fontSize: '14px', padding: '14px', background: '#fef2f2', borderRadius: '10px', border: '1px solid #fecaca' },
   cardRow: { display: 'flex', gap: '12px', flexWrap: 'wrap' as const, marginBottom: '28px' },
   card: {
@@ -277,10 +277,10 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
   },
   cardValue: { fontSize: '28px', fontWeight: 700, color: '#0D2137' },
-  cardLabel: { fontSize: '11px', color: '#8DA4B8', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.5px', fontWeight: 500 },
+  cardLabel: { fontSize: '11px', color: '#5F7A8F', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.5px', fontWeight: 500 },
   section: { marginBottom: '32px' },
   sectionTitle: { margin: '0 0 4px', fontSize: '16px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.2px' },
-  sectionHint: { margin: '0 0 14px', fontSize: '13px', color: '#8DA4B8', lineHeight: '1.4' },
+  sectionHint: { margin: '0 0 14px', fontSize: '13px', color: '#5F7A8F', lineHeight: '1.4' },
   tableWrapper: { borderRadius: '12px', border: '1px solid #E8EFF5', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '13px' },
   th: {
@@ -309,5 +309,5 @@ const styles: Record<string, React.CSSProperties> = {
   barTrack: { flex: 1, height: '20px', background: '#E8EFF5', borderRadius: '6px', overflow: 'hidden' },
   barFill: { height: '100%', background: 'linear-gradient(90deg, #1B6FC9, #64B5F6)', borderRadius: '6px', transition: 'width 0.3s' },
   barCount: { width: '30px', fontSize: '12px', color: '#6B8299', fontWeight: 600 },
-  empty: { color: '#8DA4B8', fontSize: '14px', textAlign: 'center' as const, padding: '48px 0' },
+  empty: { color: '#5F7A8F', fontSize: '14px', textAlign: 'center' as const, padding: '48px 0' },
 };

@@ -488,7 +488,7 @@ const styles: Record<string, React.CSSProperties> = {
   templateCategory: {
     fontSize: '10px',
     textTransform: 'uppercase' as const,
-    color: '#8DA4B8',
+    color: '#5F7A8F',
     fontWeight: 600,
     letterSpacing: '0.5px',
   },
@@ -506,7 +506,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   templateMeta: {
     fontSize: '11px',
-    color: '#8DA4B8',
+    color: '#5F7A8F',
   },
   uploadRow: {
     display: 'flex',
@@ -528,7 +528,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   fileMeta: {
     fontSize: '12px',
-    color: '#8DA4B8',
+    color: '#5F7A8F',
   },
   extractButton: {
     padding: '12px 28px',
@@ -543,7 +543,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   extractButtonDisabled: {
     padding: '12px 28px',
-    background: '#8DA4B8',
+    background: '#5F7A8F',
     color: 'white',
     border: 'none',
     borderRadius: '10px',
@@ -568,7 +568,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   extractingHint: {
     fontSize: '12px',
-    color: '#8DA4B8',
+    color: '#5F7A8F',
     marginTop: '8px',
   },
   error: {
@@ -605,7 +605,7 @@ const styles: Record<string, React.CSSProperties> = {
   resultSubtitle: {
     margin: 0,
     fontSize: '12px',
-    color: '#8DA4B8',
+    color: '#5F7A8F',
   },
   resultActions: {
     display: 'flex',
@@ -697,7 +697,7 @@ const styles: Record<string, React.CSSProperties> = {
   fieldDescription: {
     margin: '0 0 4px',
     fontSize: '11px',
-    color: '#8DA4B8',
+    color: '#5F7A8F',
     lineHeight: '1.3',
   },
   input: {

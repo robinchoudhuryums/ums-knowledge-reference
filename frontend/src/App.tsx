@@ -14,6 +14,8 @@ import { ObservabilityDashboard } from './components/ObservabilityDashboard';
 import { ChangePasswordForm } from './components/ChangePasswordForm';
 import { IntakeAutoFill } from './components/IntakeAutoFill';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ToastProvider } from './components/Toast';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
@@ -52,27 +54,29 @@ export default function App() {
   }, [isAuthenticated, loadCollections]);
 
   if (!isAuthenticated) {
-    return <LoginForm onLogin={login} />;
+    return <ToastProvider><LoginForm onLogin={login} /></ToastProvider>;
   }
 
   if (mustChangePassword) {
-    return <ChangePasswordForm onPasswordChanged={handlePasswordChanged} />;
+    return <ToastProvider><ChangePasswordForm onPasswordChanged={handlePasswordChanged} /></ToastProvider>;
   }
 
   // Pop-out mode: compact chat-only window
   if (isPopout) {
     return (
-      <div style={styles.app} className="hex-pattern">
-        <header style={styles.popoutHeader}>
-          <h1 style={styles.popoutLogo}>UMS Chat</h1>
-          <div style={styles.headerRight}>
-            <span style={styles.popoutUser}>{auth.user?.username}</span>
-          </div>
-        </header>
-        <main style={styles.main}>
-          <ChatInterface collections={collections} />
-        </main>
-      </div>
+      <ToastProvider>
+        <div style={styles.app} className="hex-pattern">
+          <header style={styles.popoutHeader}>
+            <h1 style={styles.popoutLogo}>UMS Chat</h1>
+            <div style={styles.headerRight}>
+              <span style={styles.popoutUser}>{auth.user?.username}</span>
+            </div>
+          </header>
+          <main style={styles.main}>
+            <ChatInterface collections={collections} />
+          </main>
+        </div>
+      </ToastProvider>
     );
   }
 
@@ -87,6 +91,8 @@ export default function App() {
   ];
 
   return (
+    <ToastProvider>
+    <ConfirmProvider>
     <div style={styles.app} className="hex-pattern">
       <header style={styles.header}>
         <div style={styles.headerLeft}>
@@ -140,7 +146,7 @@ export default function App() {
                 <h2 style={styles.adminTitle}>Admin Dashboard</h2>
                 <p style={styles.adminSubtitle}>Analytics, query logs, and knowledge base insights</p>
               </div>
-              <div style={styles.adminGrid}>
+              <div style={styles.adminGrid} className="admin-grid">
                 <div style={styles.adminSection}>
                   <ObservabilityDashboard />
                 </div>
@@ -159,6 +165,8 @@ export default function App() {
         </ErrorBoundary>
       </main>
     </div>
+    </ConfirmProvider>
+    </ToastProvider>
   );
 }
 
@@ -273,7 +281,7 @@ const styles: Record<string, React.CSSProperties> = {
   adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px', background: '#ffffff' },
   adminHeader: { padding: '28px 28px 0' },
   adminTitle: { margin: '0 0 4px', fontSize: '24px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
-  adminSubtitle: { margin: '0 0 24px', fontSize: '14px', color: '#8DA4B8' },
+  adminSubtitle: { margin: '0 0 24px', fontSize: '14px', color: '#5F7A8F' },
   adminGrid: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
   adminSection: { background: '#ffffff' },
   popoutHeader: {

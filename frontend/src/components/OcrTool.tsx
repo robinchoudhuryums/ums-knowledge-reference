@@ -653,7 +653,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   toggleInactive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'transparent', color: '#8DA4B8', fontSize: '13px', fontWeight: 500,
+    background: 'transparent', color: '#5F7A8F', fontSize: '13px', fontWeight: 500,
     cursor: 'pointer',
   },
 
@@ -672,7 +672,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 8px rgba(230, 81, 0, 0.25)', cursor: 'pointer',
   },
   uploadButtonLoading: {
-    display: 'inline-block', padding: '11px 24px', background: '#8DA4B8',
+    display: 'inline-block', padding: '11px 24px', background: '#5F7A8F',
     color: 'white', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'wait',
   },
 
@@ -691,7 +691,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'linear-gradient(90deg, #E65100, #FF8F00, #E65100)',
     backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite',
   },
-  hint: { fontSize: '12px', color: '#8DA4B8', marginTop: '8px' },
+  hint: { fontSize: '12px', color: '#5F7A8F', marginTop: '8px' },
   error: {
     marginTop: '16px', padding: '12px 16px', background: '#fef2f2',
     color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca',
@@ -813,11 +813,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   downloadBtnDisabled: {
     padding: '10px 20px', border: 'none', borderRadius: '10px',
-    background: '#8DA4B8', color: 'white',
+    background: '#5F7A8F', color: 'white',
     fontSize: '13px', fontWeight: 600, cursor: 'wait',
   },
   downloadHint: {
-    margin: '10px 0 0', fontSize: '12px', color: '#8DA4B8', lineHeight: '1.5',
+    margin: '10px 0 0', fontSize: '12px', color: '#5F7A8F', lineHeight: '1.5',
     fontStyle: 'italic',
   },
 
@@ -924,7 +924,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px', color: '#6B8299', maxWidth: '200px',
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
-  fieldPage: { fontSize: '11px', color: '#8DA4B8' },
+  fieldPage: { fontSize: '11px', color: '#5F7A8F' },
   checkboxTag: {
     fontSize: '10px', background: '#E5E7EB', color: '#6B7280', padding: '1px 5px',
     borderRadius: '3px', fontWeight: 500,
@@ -934,7 +934,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%', padding: '0 0 10px', border: 'none', background: 'none',
     cursor: 'pointer',
   },
-  expandArrow: { fontSize: '11px', color: '#8DA4B8' },
+  expandArrow: { fontSize: '11px', color: '#5F7A8F' },
 
   // New review
   newReviewRow: { padding: '16px 20px', textAlign: 'center' as const },

@@ -166,6 +166,16 @@ const COVERAGE_MAPPINGS: CoverageMapping[] = [
   { icd10Code: 'G80.9', hcpcsCode: 'K0823', hcpcsDescription: 'PWC Group 2 heavy duty, captain seat', documentationRequired: 'Face-to-face mobility exam, MAE evaluation' },
   { icd10Code: 'G80.9', hcpcsCode: 'E0260', hcpcsDescription: 'Hospital bed, semi-electric', documentationRequired: 'Physician order' },
 
+  // Neuromuscular/Spinal → Group 3+ Power Wheelchairs (multiple power options, tilt/recline)
+  { icd10Code: 'G12.21', hcpcsCode: 'K0861', hcpcsDescription: 'PWC Group 3 std, multiple power, captain', coverageNotes: 'ALS — Group 3 when tilt/recline/seat elevation needed', documentationRequired: 'Face-to-face mobility exam, MAE evaluation, 7-element order, justification for Group 3 features' },
+  { icd10Code: 'G12.21', hcpcsCode: 'K0860', hcpcsDescription: 'PWC Group 3 std, multiple power, sling', coverageNotes: 'ALS — Group 3 when multiple power options required', documentationRequired: 'Face-to-face mobility exam, MAE evaluation, 7-element order' },
+  { icd10Code: 'G71.0', hcpcsCode: 'K0861', hcpcsDescription: 'PWC Group 3 std, multiple power, captain', coverageNotes: 'Muscular dystrophy — Group 3 for tilt/recline', documentationRequired: 'Face-to-face mobility exam, MAE evaluation, 7-element order' },
+  { icd10Code: 'G82.50', hcpcsCode: 'K0861', hcpcsDescription: 'PWC Group 3 std, multiple power, captain', coverageNotes: 'Quadriplegia — Group 3 for pressure relief and positioning', documentationRequired: 'Face-to-face mobility exam, MAE evaluation, 7-element order' },
+  { icd10Code: 'G82.50', hcpcsCode: 'K0868', hcpcsDescription: 'PWC Group 4 std, sling seat', coverageNotes: 'Quadriplegia — Group 4 when specialty controls needed', documentationRequired: 'Face-to-face mobility exam, MAE evaluation, specialty eval, 7-element order' },
+  { icd10Code: 'G82.20', hcpcsCode: 'K0861', hcpcsDescription: 'PWC Group 3 std, multiple power, captain', coverageNotes: 'Paraplegia — Group 3 when tilt/recline needed for pressure management', documentationRequired: 'Face-to-face mobility exam, MAE evaluation, 7-element order' },
+  { icd10Code: 'G80.9', hcpcsCode: 'K0861', hcpcsDescription: 'PWC Group 3 std, multiple power, captain', coverageNotes: 'Cerebral palsy — Group 3 for positioning', documentationRequired: 'Face-to-face mobility exam, MAE evaluation, 7-element order' },
+  { icd10Code: 'G35', hcpcsCode: 'K0861', hcpcsDescription: 'PWC Group 3 std, multiple power, captain', coverageNotes: 'MS — Group 3 when progressive weakness requires tilt/recline', documentationRequired: 'Face-to-face mobility exam, MAE evaluation, 7-element order' },
+
   // Spinal / Mobility → Wheelchairs, Walkers, Beds
   { icd10Code: 'G82.20', hcpcsCode: 'K0005', hcpcsDescription: 'Ultralightweight wheelchair', coverageNotes: 'Paraplegia — upper body strength for self-propulsion', documentationRequired: 'Face-to-face mobility exam' },
   { icd10Code: 'G82.20', hcpcsCode: 'E0260', hcpcsDescription: 'Hospital bed, semi-electric', documentationRequired: 'Physician order, positioning needs' },

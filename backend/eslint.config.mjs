@@ -23,6 +23,7 @@ export default [
         __dirname: 'readonly',
         URL: 'readonly',
         TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
         URLSearchParams: 'readonly',
         performance: 'readonly',
         setImmediate: 'readonly',

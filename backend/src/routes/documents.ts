@@ -147,7 +147,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       return;
     }
     res.json({ document: doc });
-  } catch (error) {
+  } catch (_err) {
     res.status(500).json({ error: 'Failed to get document' });
   }
 });

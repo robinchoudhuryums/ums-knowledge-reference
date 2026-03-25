@@ -7,7 +7,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Response } from 'express';
 import bcrypt from 'bcryptjs';
 
 // ---------------------------------------------------------------------------
@@ -40,7 +39,7 @@ vi.mock('../utils/logger', () => ({
 // ---------------------------------------------------------------------------
 // Imports (must come after vi.mock calls)
 // ---------------------------------------------------------------------------
-import { getUsers, saveUsers } from '../middleware/auth';
+import { getUsers } from '../middleware/auth';
 import { User } from '../types';
 import * as s3Mock from '../services/s3Storage';
 
@@ -64,16 +63,6 @@ async function makeUser(overrides: Partial<User> & { id: string; username: strin
     createdAt: new Date().toISOString(),
     ...overrides,
   } as User;
-}
-
-function mockRes(): Response {
-  const res: Partial<Response> = {
-    status: vi.fn().mockReturnThis() as any,
-    json: vi.fn().mockReturnThis() as any,
-    cookie: vi.fn().mockReturnThis() as any,
-    clearCookie: vi.fn().mockReturnThis() as any,
-  };
-  return res as Response;
 }
 
 /**
@@ -147,16 +136,6 @@ vi.mock('../middleware/auth', async (importOriginal) => {
 // ---------------------------------------------------------------------------
 async function request(app: express.Express, method: string, path: string, body?: any, userOverride?: any) {
   return new Promise<{ status: number; body: any }>((resolve) => {
-    const req = {
-      method: method.toUpperCase(),
-      url: path,
-      headers: {
-        'content-type': 'application/json',
-        ...(userOverride ? { 'x-test-user': JSON.stringify(userOverride) } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    };
-
     // Use a real HTTP request via the app's handler
     const http = require('http');
     const server = http.createServer(app);

@@ -5,8 +5,7 @@
  * Vector store search tests use real in-memory data with mocked S3.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Request, Response } from 'express';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Mocks — must be declared before importing any application code
@@ -107,8 +106,7 @@ import { checkAndRecordQuery } from '../services/usage';
 import { logAuditEvent } from '../services/audit';
 import { getUserAllowedCollections } from '../middleware/auth';
 import { searchVectorStore } from '../services/vectorStore';
-import { SearchResult, Document, DocumentChunk, StoredChunk } from '../types';
-import { getDocumentsIndex } from '../services/s3Storage';
+import { SearchResult, Document, StoredChunk } from '../types';
 
 const mockSearchVectorStore = searchVectorStore as any;
 

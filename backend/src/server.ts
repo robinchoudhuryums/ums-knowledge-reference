@@ -28,6 +28,9 @@ import extractionRoutes from './routes/extraction';
 import sourceMonitorRoutes from './routes/sourceMonitor';
 import errorRoutes from './routes/errors';
 import userRoutes from './routes/users';
+import hcpcsRoutes from './routes/hcpcs';
+import icd10Routes from './routes/icd10';
+import coverageRoutes from './routes/coverage';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -238,6 +241,11 @@ app.use('/api/users', userRoutes);
 
 // Client error reporting routes
 app.use('/api/errors', errorRoutes);
+
+// DME reference data routes (structured lookups)
+app.use('/api/hcpcs', hcpcsRoutes);
+app.use('/api/icd10', icd10Routes);
+app.use('/api/coverage', coverageRoutes);
 
 // In production, serve the frontend static files from the same server.
 // The built frontend is expected at ../frontend/dist relative to the backend root.

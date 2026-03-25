@@ -243,11 +243,8 @@ function detectMimeType(url: string, contentType?: string, fileType?: MonitoredS
 }
 
 function detectFilename(source: MonitoredSource, contentType?: string): string {
-  const urlPath = source.url.split('?')[0].split('/').pop() || '';
-  if (urlPath && urlPath.includes('.')) return urlPath;
-
-  // Build a filename from the source name
-  const safeName = source.name.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-');
+  // Build a filename from the source name (preferred — unique per source)
+  const safeName = source.name.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   const mimeType = detectMimeType(source.url, contentType, source.fileType);
   const extMap: Record<string, string> = {
     'application/pdf': '.pdf',

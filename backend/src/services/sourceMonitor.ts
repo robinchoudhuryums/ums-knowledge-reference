@@ -174,7 +174,15 @@ function downloadFile(url: string, timeoutMs = 60000, redirectCount = 0): Promis
     const request = client.get(url, { timeout: timeoutMs }, (response) => {
       // Follow redirects — re-validate each redirect target
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        downloadFile(response.headers.location, timeoutMs, redirectCount + 1).then(resolve).catch(reject);
+        // Resolve relative redirect URLs against the original URL
+        let redirectUrl: string;
+        try {
+          redirectUrl = new URL(response.headers.location, url).href;
+        } catch {
+          reject(new Error(`Invalid redirect URL: ${response.headers.location}`));
+          return;
+        }
+        downloadFile(redirectUrl, timeoutMs, redirectCount + 1).then(resolve).catch(reject);
         return;
       }
 

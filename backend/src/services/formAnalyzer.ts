@@ -23,7 +23,7 @@ import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sd
 import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import { logger } from '../utils/logger';
-import { detectFormType, matchRequiredField, type FormTypeRule } from '../config/formRules';
+import { detectFormType, matchRequiredField } from '../config/formRules';
 
 const region = process.env.AWS_REGION || 'us-east-1';
 
@@ -358,7 +358,7 @@ function parseFormBlocks(blocks: Block[]): FormAnalysisResult {
     const valueBlock = blockMap.get(valueBlockId);
     if (!valueBlock) continue;
 
-    const { text: valueText, hasCheckbox, isCheckboxSelected } = getBlockTextWithMeta(valueBlock, blockMap);
+    const { text: valueText, hasCheckbox, isCheckboxSelected: _isCheckboxSelected } = getBlockTextWithMeta(valueBlock, blockMap);
     const valueBBox = valueBlock.Geometry?.BoundingBox;
 
     if (!keyBBox || !valueBBox) continue;

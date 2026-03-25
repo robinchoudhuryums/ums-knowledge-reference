@@ -11,7 +11,7 @@ import { logger } from '../utils/logger';
 const ORPHAN_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // every 1 hour
 
-let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+let _cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Check for and clean up orphaned documents.
@@ -69,7 +69,7 @@ export function startOrphanCleanup(): void {
   }, 30_000);
 
   // Then run every hour
-  cleanupTimer = setInterval(() => {
+  _cleanupTimer = setInterval(() => {
     cleanupOrphanedDocuments().catch(err =>
       logger.error('Orphan cleanup failed', { error: String(err) })
     );

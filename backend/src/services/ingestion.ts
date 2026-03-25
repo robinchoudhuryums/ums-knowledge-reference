@@ -4,7 +4,6 @@ import { Document } from '../types';
 import { S3_PREFIXES } from '../config/aws';
 import {
   uploadDocumentToS3,
-  getDocumentFromS3,
   getDocumentsIndex,
   saveDocumentsIndex,
 } from './s3Storage';

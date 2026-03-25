@@ -218,6 +218,7 @@ function detectMimeType(url: string, contentType?: string, fileType?: MonitoredS
       pdf: 'application/pdf',
       csv: 'text/csv',
       txt: 'text/plain',
+      html: 'text/html',
     };
     return mimeMap[fileType] || 'application/octet-stream';
   }
@@ -227,6 +228,7 @@ function detectMimeType(url: string, contentType?: string, fileType?: MonitoredS
     const ct = contentType.toLowerCase().split(';')[0].trim();
     if (ct === 'application/pdf') return 'application/pdf';
     if (ct === 'text/csv') return 'text/csv';
+    if (ct === 'text/html') return 'text/html';
     if (ct.startsWith('text/')) return 'text/plain';
   }
 
@@ -251,6 +253,7 @@ function detectFilename(source: MonitoredSource, contentType?: string): string {
     'application/pdf': '.pdf',
     'text/csv': '.csv',
     'text/plain': '.txt',
+    'text/html': '.html',
   };
   const ext = extMap[mimeType] || '.pdf';
   return `${safeName}${ext}`;
@@ -272,14 +275,14 @@ export async function checkSource(source: MonitoredSource): Promise<{
     const result = await downloadFile(source.url);
     buffer = result.buffer;
     contentType = result.contentType;
-  } catch (error: any) {
-    const msg = `Download failed: ${error.message}`;
+  } catch (error: unknown) {
+    const msg = `Download failed: ${(error as Error).message}`;
     logger.warn('Source check failed', { sourceId: source.id, error: msg });
     // Update source metadata with error
     await updateSourceCheckResult(source.id, {
       lastCheckedAt: new Date().toISOString(),
       lastError: msg,
-      lastHttpStatus: extractHttpStatus(error.message),
+      lastHttpStatus: extractHttpStatus((error as Error).message),
     });
     return { changed: false, ingested: false, message: msg };
   }
@@ -359,8 +362,8 @@ export async function checkSource(source: MonitoredSource): Promise<{
       ingested: true,
       message: `Ingested ${result.chunkCount} chunks from updated ${source.name}`,
     };
-  } catch (error: any) {
-    const msg = `Ingestion failed: ${error.message}`;
+  } catch (error: unknown) {
+    const msg = `Ingestion failed: ${(error as Error).message}`;
     await updateSourceCheckResult(source.id, {
       lastCheckedAt: new Date().toISOString(),
       lastError: msg,

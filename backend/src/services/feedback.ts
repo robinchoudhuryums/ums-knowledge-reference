@@ -55,7 +55,7 @@ export async function saveFeedback(
  * List all feedback entries for a given date.
  */
 export async function getFeedbackByDate(date: string): Promise<FeedbackEntry[]> {
-  const key = `${FEEDBACK_PREFIX}${date}/index.json`;
+  const _key = `${FEEDBACK_PREFIX}${date}/index.json`;
   // We store individual files, so we need to list them.
   // For simplicity, we also maintain a daily index.
   const index = await loadMetadata<FeedbackEntry[]>(`${FEEDBACK_PREFIX}${date}-index.json`);

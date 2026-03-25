@@ -200,4 +200,26 @@ router.get('/audit/:startDate/:endDate/json', authenticate, requireAdmin, async 
   }
 });
 
+// --- Audit Chain Integrity Verification (admin only) ---
+
+/**
+ * GET /api/query-log/audit/:date/verify — Verify audit log hash chain integrity for a date.
+ */
+router.get('/audit/:date/verify', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { date } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      res.status(400).json({ error: 'Date must be in YYYY-MM-DD format' });
+      return;
+    }
+
+    const { verifyAuditChain } = await import('../services/audit');
+    const result = await verifyAuditChain(date);
+    res.json({ date, ...result });
+  } catch (error) {
+    logger.error('Failed to verify audit chain', { error: String(error) });
+    res.status(500).json({ error: 'Failed to verify audit chain' });
+  }
+});
+
 export default router;

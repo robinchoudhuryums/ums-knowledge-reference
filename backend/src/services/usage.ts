@@ -1,6 +1,5 @@
 import { UsageRecord, UsageLimits } from '../types';
 import { loadMetadata, saveMetadata } from './s3Storage';
-import { logger } from '../utils/logger';
 
 const USAGE_PREFIX = 'usage/';
 const LIMITS_KEY = 'usage-limits.json';
@@ -23,11 +22,6 @@ let ensurePromise: Promise<UsageRecord> | null = null;
 
 function getTodayKey(): string {
   return new Date().toISOString().split('T')[0];
-}
-
-function getMonthKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 async function ensureTodayRecord(): Promise<UsageRecord> {

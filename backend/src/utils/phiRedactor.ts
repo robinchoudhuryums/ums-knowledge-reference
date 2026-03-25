@@ -52,7 +52,7 @@ const NAME_PREFIX_PATTERN = /(?:patient|pt|member|beneficiary|claimant|insured|s
 // "Mr./Mrs./Ms./Dr. Firstname Lastname"
 const TITLE_NAME_PATTERN = /(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})/g;
 
-const REDACTION_MARKER = '[REDACTED]';
+const _REDACTION_MARKER = '[REDACTED]';
 
 interface RedactionResult {
   text: string;

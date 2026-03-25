@@ -4,7 +4,7 @@ import {
   getTemplateById,
   listTemplates,
 } from '../services/extractionTemplates';
-import type { ExtractionTemplate, TemplateField } from '../services/extractionTemplates';
+import type { TemplateField } from '../services/extractionTemplates';
 
 describe('extractionTemplates', () => {
   it('EXTRACTION_TEMPLATES has exactly 4 templates', () => {

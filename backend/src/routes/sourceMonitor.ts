@@ -60,9 +60,9 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
     });
 
     res.status(201).json({ source });
-  } catch (error: any) {
-    if (error.message?.includes('already being monitored')) {
-      res.status(409).json({ error: error.message });
+  } catch (error: unknown) {
+    if ((error as Error).message?.includes('already being monitored')) {
+      res.status(409).json({ error: (error as Error).message });
       return;
     }
     logger.error('Failed to add monitored source', { error: String(error) });
@@ -92,9 +92,9 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     });
 
     res.json({ source });
-  } catch (error: any) {
-    if (error.message?.includes('not found')) {
-      res.status(404).json({ error: error.message });
+  } catch (error: unknown) {
+    if ((error as Error).message?.includes('not found')) {
+      res.status(404).json({ error: (error as Error).message });
       return;
     }
     logger.error('Failed to update monitored source', { error: String(error) });
@@ -113,9 +113,9 @@ router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: 
     });
 
     res.json({ message: 'Monitored source removed' });
-  } catch (error: any) {
-    if (error.message?.includes('not found')) {
-      res.status(404).json({ error: error.message });
+  } catch (error: unknown) {
+    if ((error as Error).message?.includes('not found')) {
+      res.status(404).json({ error: (error as Error).message });
       return;
     }
     logger.error('Failed to remove monitored source', { error: String(error) });
@@ -136,9 +136,9 @@ router.post('/:id/check', authenticate, requireAdmin, async (req: AuthRequest, r
     });
 
     res.json(result);
-  } catch (error: any) {
-    if (error.message?.includes('not found')) {
-      res.status(404).json({ error: error.message });
+  } catch (error: unknown) {
+    if ((error as Error).message?.includes('not found')) {
+      res.status(404).json({ error: (error as Error).message });
       return;
     }
     logger.error('Force check failed', { error: String(error) });
@@ -163,6 +163,99 @@ router.post('/check-all', authenticate, requireAdmin, async (req: AuthRequest, r
   } catch (error) {
     logger.error('Check all sources failed', { error: String(error) });
     res.status(500).json({ error: 'Source check failed' });
+  }
+});
+
+// ─── Seed LCD Sources ─────────────────────────────────────────────────
+// Pre-configured list of CMS LCD URLs for DME coverage policies.
+// POST /api/sources/seed-lcds creates an "LCD Policies" collection (if needed)
+// and registers all LCD sources for automated monitoring.
+
+const LCD_SOURCES = [
+  { name: 'LCD L33797 — Oxygen & Oxygen Equipment', lcdId: '33797' },
+  { name: 'LCD L33718 — CPAP/RAD', lcdId: '33718' },
+  { name: 'LCD L33895 — Hospital Beds', lcdId: '33895' },
+  { name: 'LCD L33693 — Support Surfaces', lcdId: '33693' },
+  { name: 'LCD L33789 — Power Mobility Devices', lcdId: '33789' },
+  { name: 'LCD L33831 — Enteral Nutrition', lcdId: '33831' },
+  { name: 'LCD L33829 — Pneumatic Compression', lcdId: '33829' },
+  { name: 'LCD L33791 — Walking Devices & Accessories', lcdId: '33791' },
+];
+
+router.post('/seed-lcds', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { getCollectionsIndex, saveCollectionsIndex } = await import('../services/s3Storage');
+    const { v4: uuidv4 } = await import('uuid');
+
+    // 1. Find or create "LCD Policies" collection
+    const collections = await getCollectionsIndex();
+    let lcdCollection = collections.find(c => c.name === 'LCD Policies');
+    if (!lcdCollection) {
+      lcdCollection = {
+        id: uuidv4(),
+        name: 'LCD Policies',
+        description: 'CMS Local Coverage Determinations for DME — auto-monitored for changes',
+        createdBy: req.user!.username,
+        createdAt: new Date().toISOString(),
+        documentCount: 0,
+      };
+      collections.push(lcdCollection);
+      await saveCollectionsIndex(collections);
+      logger.info('Created LCD Policies collection', { id: lcdCollection.id });
+    }
+
+    // 2. Get existing sources to avoid duplicates
+    const existingSources = await getMonitoredSources();
+    const existingUrls = new Set(existingSources.map(s => s.url));
+
+    // 3. Add each LCD source
+    const added: string[] = [];
+    const skipped: string[] = [];
+
+    for (const lcd of LCD_SOURCES) {
+      const url = `https://www.cms.gov/medicare-coverage-database/view/lcd.aspx?lcdid=${lcd.lcdId}`;
+      if (existingUrls.has(url)) {
+        skipped.push(lcd.name);
+        continue;
+      }
+
+      try {
+        await addMonitoredSource({
+          name: lcd.name,
+          url,
+          collectionId: lcdCollection.id,
+          checkIntervalHours: 168, // Weekly
+          fileType: 'html',
+          category: 'LCD',
+          createdBy: req.user!.username,
+        });
+        added.push(lcd.name);
+      } catch (err: unknown) {
+        // Skip duplicates silently, log other errors
+        if (!(err as Error).message?.includes('already being monitored')) {
+          logger.error('Failed to add LCD source', { name: lcd.name, error: String(err) });
+        }
+        skipped.push(lcd.name);
+      }
+    }
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
+      action: 'seed_lcd_sources',
+      added: added.length,
+      skipped: skipped.length,
+      collectionId: lcdCollection.id,
+    });
+
+    res.json({
+      message: `Seeded ${added.length} LCD sources (${skipped.length} already existed)`,
+      collectionId: lcdCollection.id,
+      collectionName: 'LCD Policies',
+      added,
+      skipped,
+    });
+  } catch (error) {
+    logger.error('Failed to seed LCD sources', { error: String(error) });
+    res.status(500).json({ error: 'Failed to seed LCD sources' });
   }
 });
 

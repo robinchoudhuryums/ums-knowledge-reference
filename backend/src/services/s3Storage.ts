@@ -2,7 +2,6 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
-  ListObjectsV2Command,
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';

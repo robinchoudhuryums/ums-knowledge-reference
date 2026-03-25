@@ -147,7 +147,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       return;
     }
     res.json({ document: doc });
-  } catch (_err) {
+  } catch {
     res.status(500).json({ error: 'Failed to get document' });
   }
 });
@@ -358,7 +358,7 @@ router.get('/collections/list', authenticate, async (_req: AuthRequest, res: Res
   try {
     const collections = await getCollectionsIndex();
     res.json({ collections });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: 'Failed to list collections' });
   }
 });
@@ -396,7 +396,7 @@ router.post('/collections', authenticate, requireAdmin, async (req: AuthRequest,
     });
 
     res.status(201).json({ collection });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: 'Failed to create collection' });
   }
 });
@@ -433,7 +433,7 @@ router.delete('/collections/:id', authenticate, requireAdmin, async (req: AuthRe
     });
 
     res.json({ message: 'Collection deleted' });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: 'Failed to delete collection' });
   }
 });
@@ -482,7 +482,7 @@ router.get('/tags/list', authenticate, async (_req: AuthRequest, res: Response) 
       if (doc.tags) doc.tags.forEach(t => tagSet.add(t));
     }
     res.json({ tags: Array.from(tagSet).sort() });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: 'Failed to list tags' });
   }
 });

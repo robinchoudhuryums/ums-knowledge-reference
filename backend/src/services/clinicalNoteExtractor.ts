@@ -177,9 +177,10 @@ export async function extractClinicalNotes(
     );
     const body = JSON.parse(new TextDecoder().decode(response.body));
     responseText = body.content?.[0]?.text || '';
-  } catch (error: any) {
-    logger.error('Bedrock clinical extraction failed', { error: error.message });
-    throw new Error(`Clinical extraction model call failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = (error as Error).message;
+    logger.error('Bedrock clinical extraction failed', { error: message });
+    throw new Error(`Clinical extraction model call failed: ${message}`);
   }
 
   // Step 3: Parse response
@@ -250,7 +251,7 @@ function parseClinicalResponse(response: string): ClinicalExtraction {
   // Strip markdown fences
   jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
-  let data: Record<string, any>;
+  let data: Record<string, unknown>;
   try {
     data = JSON.parse(jsonStr);
   } catch {
@@ -271,27 +272,29 @@ function parseClinicalResponse(response: string): ClinicalExtraction {
     }
   }
 
+  const str = (val: unknown): string | null => (typeof val === 'string' && val) ? val : null;
+
   return {
-    patientName: data.patientName || null,
-    patientDob: data.patientDob || null,
-    patientAddress: data.patientAddress || null,
-    patientPhone: data.patientPhone || null,
-    memberId: data.memberId || null,
-    primaryDiagnosis: data.primaryDiagnosis || null,
+    patientName: str(data.patientName),
+    patientDob: str(data.patientDob),
+    patientAddress: str(data.patientAddress),
+    patientPhone: str(data.patientPhone),
+    memberId: str(data.memberId),
+    primaryDiagnosis: str(data.primaryDiagnosis),
     icdCodes: Array.isArray(data.icdCodes) ? data.icdCodes : [],
     secondaryDiagnoses: Array.isArray(data.secondaryDiagnoses) ? data.secondaryDiagnoses : [],
     testResults: Array.isArray(data.testResults) ? data.testResults : [],
-    vitalSigns: data.vitalSigns && typeof data.vitalSigns === 'object' ? data.vitalSigns : {},
-    medicalNecessityLanguage: data.medicalNecessityLanguage || null,
+    vitalSigns: data.vitalSigns && typeof data.vitalSigns === 'object' ? data.vitalSigns as Record<string, string> : {},
+    medicalNecessityLanguage: str(data.medicalNecessityLanguage),
     previousTreatments: Array.isArray(data.previousTreatments) ? data.previousTreatments : [],
     functionalLimitations: Array.isArray(data.functionalLimitations) ? data.functionalLimitations : [],
-    prognosis: data.prognosis || null,
-    equipmentRecommended: data.equipmentRecommended || null,
+    prognosis: str(data.prognosis),
+    equipmentRecommended: str(data.equipmentRecommended),
     hcpcsCodes: Array.isArray(data.hcpcsCodes) ? data.hcpcsCodes : [],
-    lengthOfNeed: data.lengthOfNeed || null,
-    physicianName: data.physicianName || null,
-    physicianNpi: data.physicianNpi || null,
-    encounterDate: data.encounterDate || null,
+    lengthOfNeed: str(data.lengthOfNeed),
+    physicianName: str(data.physicianName),
+    physicianNpi: str(data.physicianNpi),
+    encounterDate: str(data.encounterDate),
     confidence,
     extractionNotes: notes,
     modelUsed: BEDROCK_EXTRACTION_MODEL,

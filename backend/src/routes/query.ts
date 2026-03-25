@@ -11,6 +11,7 @@ import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-s
 import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
+import { enrichQueryWithStructuredData } from '../services/referenceEnrichment';
 
 const router = Router();
 
@@ -78,6 +79,7 @@ Guidelines:
 - For procedural questions, provide step-by-step answers when the source material supports it.
 - Use clear, professional language appropriate for a healthcare/medical supply workplace.
 - Format responses with markdown: use **bold** for key terms, bullet lists for steps/items, and headers for multi-part answers.
+- You may receive "Structured Reference" blocks containing HCPCS codes, ICD-10 crosswalks, or LCD coverage checklists from verified CMS data. Treat these as authoritative reference data and cite them as [Structured Reference] when used. Integrate them naturally with document-based answers.
 - At the end of your response, on a new line, output a confidence tag in exactly this format: [CONFIDENCE: HIGH], [CONFIDENCE: PARTIAL], or [CONFIDENCE: LOW] based on how well the source documents cover the question. HIGH means the documents directly address the question. PARTIAL means some relevant information exists but the answer may be incomplete. LOW means little or no relevant information was found in the documents.`;
 
 /**
@@ -151,14 +153,26 @@ function buildMessages(
   return messages;
 }
 
-function buildContext(searchResults: SearchResult[]): string {
-  return searchResults
-    .map((result, i) => {
-      const pageInfo = result.chunk.pageNumber ? ` | Page ${result.chunk.pageNumber}` : '';
-      const section = result.chunk.sectionHeader ? ` | Section: ${result.chunk.sectionHeader}` : '';
-      return `[Source ${i + 1}: ${result.document.originalName}${pageInfo}${section}]\n${result.chunk.text}`;
-    })
-    .join('\n\n---\n\n');
+function buildContext(searchResults: SearchResult[], enrichments?: Array<{ contextBlock: string; sourceLabel: string }>): string {
+  const parts: string[] = [];
+
+  // Prepend structured reference data if available
+  if (enrichments && enrichments.length > 0) {
+    for (const e of enrichments) {
+      parts.push(`[Structured Reference: ${e.sourceLabel}]\n${e.contextBlock}`);
+    }
+    parts.push('--- Document Sources Below ---');
+  }
+
+  // Standard RAG document chunks
+  for (let i = 0; i < searchResults.length; i++) {
+    const result = searchResults[i];
+    const pageInfo = result.chunk.pageNumber ? ` | Page ${result.chunk.pageNumber}` : '';
+    const section = result.chunk.sectionHeader ? ` | Section: ${result.chunk.sectionHeader}` : '';
+    parts.push(`[Source ${i + 1}: ${result.document.originalName}${pageInfo}${section}]\n${result.chunk.text}`);
+  }
+
+  return parts.join('\n\n---\n\n');
 }
 
 function buildSourceCitations(searchResults: SearchResult[]): SourceCitation[] {
@@ -278,7 +292,10 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const context = buildContext(searchResults);
+    // Enrich with structured reference data (HCPCS, ICD-10, checklists)
+    const enrichments = enrichQueryWithStructuredData(question);
+
+    const context = buildContext(searchResults, enrichments);
     const messages = buildMessages(question, context, conversationHistory);
 
     const generationStart = Date.now();
@@ -437,7 +454,10 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       return;
     }
 
-    const context = buildContext(searchResults);
+    // Enrich with structured reference data (HCPCS, ICD-10, checklists)
+    const enrichments = enrichQueryWithStructuredData(question);
+
+    const context = buildContext(searchResults, enrichments);
     const messages = buildMessages(question, context, conversationHistory);
 
     const generationStart = Date.now();

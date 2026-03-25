@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User } from '../types';
@@ -127,6 +128,20 @@ export interface AuthRequest extends Request {
   user?: { id: string; username: string; role: 'admin' | 'user'; jti?: string };
 }
 
+/**
+ * Get the list of collection IDs a user is allowed to access.
+ * Admins can access all collections (returns null = no restriction).
+ * Regular users with allowedCollections set are restricted to those collections.
+ * Regular users with no allowedCollections set can access all collections (backwards-compatible).
+ */
+export async function getUserAllowedCollections(userId: string, role: string): Promise<string[] | null> {
+  if (role === 'admin') return null; // admins bypass collection ACL
+  const users = await getUsers();
+  const user = users.find(u => u.id === userId);
+  if (!user?.allowedCollections || user.allowedCollections.length === 0) return null;
+  return user.allowedCollections;
+}
+
 export async function getUsers(): Promise<User[]> {
   const users = await loadMetadata<User[]>(USERS_KEY);
   return users || [];
@@ -143,7 +158,9 @@ export async function saveUsers(users: User[]): Promise<void> {
 export async function initializeAuth(): Promise<void> {
   const users = await getUsers();
   if (users.length === 0) {
-    const passwordHash = await bcrypt.hash('admin', 12);
+    // Generate a random initial admin password instead of hardcoded 'admin'
+    const initialPassword = crypto.randomBytes(16).toString('base64url').slice(0, 20);
+    const passwordHash = await bcrypt.hash(initialPassword, 12);
     const adminUser: User = {
       id: 'admin-001',
       username: 'admin',
@@ -153,7 +170,12 @@ export async function initializeAuth(): Promise<void> {
       mustChangePassword: true,
     };
     await saveUsers([adminUser]);
-    logger.info('Default admin user created (username: admin) — password change required on first login');
+    // Log the temporary password once — admin must change on first login
+    logger.warn('Default admin user created (username: admin) — INITIAL PASSWORD (change immediately):', { initialPassword });
+    logger.warn('╔══════════════════════════════════════════════════════════════╗');
+    logger.warn(`║  Admin initial password: ${initialPassword.padEnd(34)} ║`);
+    logger.warn('║  This password MUST be changed on first login.             ║');
+    logger.warn('╚══════════════════════════════════════════════════════════════╝');
   }
 }
 

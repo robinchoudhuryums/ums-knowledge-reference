@@ -179,4 +179,46 @@ router.post('/:id/reset-password', async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * PUT /api/users/:id/collections — Update a user's allowed collections (admin only).
+ * Body: { allowedCollections: string[] }
+ * Pass an empty array to grant access to all collections.
+ */
+router.put('/:id/collections', async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { allowedCollections } = req.body;
+
+    if (!Array.isArray(allowedCollections) || allowedCollections.some((c: unknown) => typeof c !== 'string')) {
+      res.status(400).json({ error: 'allowedCollections must be an array of collection ID strings' });
+      return;
+    }
+
+    const users = await getUsers();
+    const user = users.find(u => u.id === id);
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    user.allowedCollections = allowedCollections.length > 0 ? allowedCollections : undefined;
+    await saveUsers(users);
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'user_update', {
+      targetUserId: id,
+      targetUsername: user.username,
+      action: 'collections_updated',
+      allowedCollections: user.allowedCollections || 'all',
+    });
+
+    logger.info('User collections updated', { targetUserId: id, targetUsername: user.username, allowedCollections: user.allowedCollections || 'all', updatedBy: req.user!.username });
+
+    res.json({ user: { id: user.id, username: user.username, allowedCollections: user.allowedCollections || [] } });
+  } catch (error) {
+    logger.error('Failed to update user collections', { error: String(error) });
+    res.status(500).json({ error: 'Failed to update user collections' });
+  }
+});
+
 export default router;

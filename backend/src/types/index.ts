@@ -59,6 +59,8 @@ export interface User {
   lockedUntil?: string;
   /** ISO timestamp of last successful login */
   lastLogin?: string;
+  /** Collection IDs this user can access. Admins bypass this. Empty/undefined = all collections. */
+  allowedCollections?: string[];
 }
 
 export interface SearchResult {
@@ -72,7 +74,7 @@ export interface AuditLogEntry {
   timestamp: string;
   userId: string;
   username: string;
-  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr' | 'user_create' | 'user_update' | 'user_delete' | 'user_reset_password';
+  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr' | 'user_create' | 'user_update' | 'user_delete' | 'user_reset_password' | 'data_purge';
   details: Record<string, unknown>;
 }
 

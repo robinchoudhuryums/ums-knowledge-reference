@@ -63,6 +63,50 @@ export async function getFeedbackByDate(date: string): Promise<FeedbackEntry[]> 
 }
 
 /**
+ * Purge references to a document from feedback entries (last 90 days).
+ * Removes matching source citations from feedback.
+ * Returns the number of entries modified.
+ */
+export async function purgeDocumentFromFeedback(documentId: string, documentName?: string): Promise<number> {
+  let modified = 0;
+  const today = new Date();
+
+  for (let i = 0; i < 90; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateKey = d.toISOString().split('T')[0];
+    const indexKey = `${FEEDBACK_PREFIX}${dateKey}-index.json`;
+
+    try {
+      const entries = await loadMetadata<FeedbackEntry[]>(indexKey);
+      if (!entries || entries.length === 0) continue;
+
+      let changed = false;
+      for (const entry of entries) {
+        const beforeLen = entry.sources.length;
+        entry.sources = entry.sources.filter(s => {
+          if (s.documentId === documentId) return false;
+          if (documentName && s.documentName === documentName) return false;
+          return true;
+        });
+        if (entry.sources.length !== beforeLen) {
+          changed = true;
+          modified++;
+        }
+      }
+
+      if (changed) {
+        await saveMetadata(indexKey, entries);
+      }
+    } catch {
+      // Skip dates that don't exist
+    }
+  }
+
+  return modified;
+}
+
+/**
  * Append to the daily feedback index for easier listing.
  */
 export async function appendToFeedbackIndex(entry: FeedbackEntry): Promise<void> {

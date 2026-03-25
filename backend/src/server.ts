@@ -131,17 +131,72 @@ const loginLimiter = rateLimit({
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,  // 1 minute
-  max: 60,               // 60 requests per minute
+  max: 120,              // 120 requests per minute globally (safety net)
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-app.use('/api/', apiLimiter);
+// Per-user rate limiting — keyed by JWT user ID to prevent one user from exhausting
+// capacity for others. Falls back to IP for unauthenticated requests (login, health).
+const perUserLimiter = rateLimit({
+  windowMs: 60 * 1000,  // 1 minute
+  max: 60,               // 60 requests per user per minute
+  message: { error: 'Too many requests from your account. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Extract user ID from JWT cookie or Authorization header without full verification
+    // (rate limiting runs before auth middleware, so we best-effort extract the key)
+    try {
+      const cookieToken = req.cookies?.['ums_auth_token'];
+      const authHeader = req.headers.authorization;
+      const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+      if (token) {
+        // Decode without verification (just for keying — auth middleware does real verification)
+        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+        if (payload.id) return `user:${payload.id}`;
+      }
+    } catch {
+      // Fall through to IP-based key
+    }
+    return `ip:${req.ip}`;
+  },
+});
 
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'ums-knowledge-base' });
+app.use('/api/', apiLimiter);
+app.use('/api/', perUserLimiter);
+
+// Health check — reports service status + dependency connectivity for ALB probes
+app.get('/api/health', async (_req, res) => {
+  const checks: Record<string, 'ok' | 'error'> = {};
+  let healthy = true;
+
+  // S3 connectivity check (lightweight HeadBucket)
+  try {
+    const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
+    const { s3Client, S3_BUCKET } = await import('./config/aws');
+    await s3Client.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
+    checks.s3 = 'ok';
+  } catch {
+    checks.s3 = 'error';
+    healthy = false;
+  }
+
+  // Vector store loaded check
+  const { getVectorStoreStats } = await import('./services/vectorStore');
+  const vsStats = getVectorStoreStats();
+  checks.vectorStore = vsStats.lastUpdated ? 'ok' : 'error';
+  if (checks.vectorStore === 'error') healthy = false;
+
+  const status = healthy ? 'ok' : 'degraded';
+  res.status(healthy ? 200 : 503).json({
+    status,
+    service: 'ums-knowledge-base',
+    uptime: Math.round(process.uptime()),
+    checks,
+    vectorStoreChunks: vsStats.totalChunks,
+  });
 });
 
 // Auth routes
@@ -202,6 +257,10 @@ async function start() {
     // Validate required environment variables
     validateEnv();
 
+    // Verify S3 bucket security configuration (encryption, public access, versioning)
+    const { verifyS3BucketConfig } = await import('./config/aws');
+    await verifyS3BucketConfig();
+
     // Initialize auth (create default admin if needed)
     await initializeAuth();
 
@@ -220,9 +279,36 @@ async function start() {
     // Start job queue cleanup (removes old completed/failed jobs every 10 minutes)
     startJobCleanup();
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);
     });
+
+    // ─── Graceful shutdown ──────────────────────────────────────────────
+    // Flush all in-memory buffers to S3 before exiting so no data is lost.
+    let shuttingDown = false;
+    const shutdown = async (signal: string) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      logger.info(`${signal} received — starting graceful shutdown`);
+
+      // Stop accepting new connections
+      server.close(() => logger.info('HTTP server closed'));
+
+      try {
+        const { flushQueryLog } = await import('./services/queryLog');
+        const { flushTraces } = await import('./services/ragTrace');
+        const { flushUsage } = await import('./services/usage');
+        await Promise.allSettled([flushQueryLog(), flushTraces(), flushUsage()]);
+        logger.info('All in-memory buffers flushed to S3');
+      } catch (err) {
+        logger.error('Error during shutdown flush', { error: String(err) });
+      }
+
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     logger.error('Failed to start server', { error: String(error) });
     process.exit(1);

@@ -1,0 +1,1582 @@
+openapi: 3.0.3
+info:
+  title: UMS Knowledge Base API
+  version: 1.0.0
+  description: HIPAA-aware knowledge base RAG tool for Universal Medical Supply. Employees upload documents and query them via chat; the system retrieves relevant chunks, sends them to Claude via AWS Bedrock, and returns cited answers.
+  contact:
+    name: UMS Engineering
+servers:
+  - url: /api
+    description: Relative API path (same-origin)
+
+tags:
+  - name: health
+    description: Service health check
+  - name: auth
+    description: Authentication and user creation
+  - name: query
+    description: RAG query (non-streaming and streaming SSE)
+  - name: documents
+    description: Document upload, listing, deletion, OCR, form review, clinical extraction
+  - name: extraction
+    description: Structured document extraction with templates
+  - name: feedback
+    description: User feedback and response flagging
+  - name: query-log
+    description: Query log viewing, CSV export, observability metrics
+  - name: users
+    description: Admin user management CRUD
+  - name: sources
+    description: Automated external document source monitoring
+  - name: usage
+    description: Usage stats and rate limits
+  - name: errors
+    description: Frontend error reporting
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: ums_auth_token
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+        createdAt:
+          type: string
+          format: date-time
+        lastLogin:
+          type: string
+          format: date-time
+        mustChangePassword:
+          type: boolean
+        allowedCollections:
+          type: array
+          items:
+            type: string
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        originalName:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        s3Key:
+          type: string
+        collectionId:
+          type: string
+        uploadedBy:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [uploading, processing, ready, error]
+        chunkCount:
+          type: integer
+        version:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+    Collection:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        documentCount:
+          type: integer
+    SourceCitation:
+      type: object
+      properties:
+        documentId:
+          type: string
+        documentName:
+          type: string
+        chunkId:
+          type: string
+        text:
+          type: string
+        pageNumber:
+          type: integer
+        sectionHeader:
+          type: string
+        score:
+          type: number
+    ConversationTurn:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [extraction, clinical-extraction]
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        userId:
+          type: string
+        progress:
+          type: integer
+        result:
+          type: object
+        error:
+          type: string
+    MonitoredSource:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+        collectionId:
+          type: string
+        checkIntervalHours:
+          type: integer
+        fileType:
+          type: string
+        category:
+          type: string
+        enabled:
+          type: boolean
+        lastChecked:
+          type: string
+          format: date-time
+        lastHash:
+          type: string
+        documentId:
+          type: string
+    ExtractionTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        fieldCount:
+          type: integer
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [health]
+      summary: Service health check
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  service:
+                    type: string
+                  uptime:
+                    type: integer
+                  checks:
+                    type: object
+                    properties:
+                      s3:
+                        type: string
+                      vectorStore:
+                        type: string
+                  vectorStoreChunks:
+                    type: integer
+        '503':
+          description: Degraded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [degraded]
+
+  # ── Auth ────────────────────────────────────────────────────────────────
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Authenticate user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Too many login attempts
+        '503':
+          description: Account locked
+
+  /auth/users:
+    post:
+      tags: [auth]
+      summary: Create new user (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                role:
+                  type: string
+                  enum: [admin, user]
+                  default: user
+      responses:
+        '200':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '409':
+          description: Username already exists
+
+  /auth/change-password:
+    post:
+      tags: [auth]
+      summary: Change current user password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout (revoke JWT)
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  # ── Query ───────────────────────────────────────────────────────────────
+  /query:
+    post:
+      tags: [query]
+      summary: RAG query (non-streaming)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  maxLength: 2000
+                collectionIds:
+                  type: array
+                  items:
+                    type: string
+                conversationHistory:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ConversationTurn'
+                topK:
+                  type: integer
+                  default: 6
+      responses:
+        '200':
+          description: Answer with sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    type: string
+                  sources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SourceCitation'
+                  confidence:
+                    type: string
+                    enum: [high, partial, low]
+                  traceId:
+                    type: string
+        '429':
+          description: Usage limit exceeded
+
+  /query/stream:
+    post:
+      tags: [query]
+      summary: RAG query (streaming SSE)
+      description: Returns Server-Sent Events with types text, sources, confidence, traceId, done, error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  maxLength: 2000
+                collectionIds:
+                  type: array
+                  items:
+                    type: string
+                conversationHistory:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ConversationTurn'
+                topK:
+                  type: integer
+                  default: 6
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  # ── Documents ───────────────────────────────────────────────────────────
+  /documents:
+    get:
+      tags: [documents]
+      summary: List documents
+      parameters:
+        - name: collectionId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Document'
+
+  /documents/upload:
+    post:
+      tags: [documents]
+      summary: Upload document for ingestion (admin)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                collectionId:
+                  type: string
+      responses:
+        '200':
+          description: Document uploaded and ingested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/Document'
+                  chunkCount:
+                    type: integer
+
+  /documents/{id}:
+    get:
+      tags: [documents]
+      summary: Get document by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/Document'
+        '404':
+          description: Not found
+    delete:
+      tags: [documents]
+      summary: Delete document (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /documents/{id}/purge:
+    post:
+      tags: [documents]
+      summary: HIPAA purge — remove all references to a document (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Purge complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  purgedItems:
+                    type: object
+
+  /documents/bulk-delete:
+    post:
+      tags: [documents]
+      summary: Bulk delete documents (admin, max 50)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [documentIds]
+              properties:
+                documentIds:
+                  type: array
+                  items:
+                    type: string
+                  maxItems: 50
+      responses:
+        '200':
+          description: Bulk delete results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        status:
+                          type: string
+                        error:
+                          type: string
+
+  /documents/{id}/tags:
+    put:
+      tags: [documents]
+      summary: Update document tags (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tags]
+              properties:
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Tags updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/Document'
+
+  /documents/collections/list:
+    get:
+      tags: [documents]
+      summary: List collections
+      responses:
+        '200':
+          description: Collection list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Collection'
+
+  /documents/collections:
+    post:
+      tags: [documents]
+      summary: Create collection (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Collection created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collection:
+                    $ref: '#/components/schemas/Collection'
+
+  /documents/collections/{id}:
+    delete:
+      tags: [documents]
+      summary: Delete collection (admin, must be empty)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+        '400':
+          description: Collection not empty
+
+  /documents/tags/list:
+    get:
+      tags: [documents]
+      summary: List all tags
+      responses:
+        '200':
+          description: Tag list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tags:
+                    type: array
+                    items:
+                      type: string
+
+  /documents/search/text:
+    get:
+      tags: [documents]
+      summary: Search documents by text
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: collectionId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Search results
+
+  /documents/reindex:
+    post:
+      tags: [documents]
+      summary: Trigger document reindex (admin)
+      responses:
+        '200':
+          description: Reindex results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  checked:
+                    type: integer
+                  reindexed:
+                    type: array
+                    items:
+                      type: string
+
+  /documents/ocr:
+    post:
+      tags: [documents]
+      summary: OCR text extraction
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Extracted text
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text:
+                    type: string
+                  pageCount:
+                    type: integer
+                  confidence:
+                    type: number
+                  filename:
+                    type: string
+
+  /documents/form-review:
+    post:
+      tags: [documents]
+      summary: CMN form field analysis
+      parameters:
+        - name: output
+          in: query
+          schema:
+            type: string
+            enum: [json, annotated, original]
+            default: json
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Form analysis result
+
+  /documents/form-review/batch:
+    post:
+      tags: [documents]
+      summary: Batch form review (up to 10 files)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  maxItems: 10
+      responses:
+        '200':
+          description: Batch results
+
+  /documents/clinical-extract:
+    post:
+      tags: [documents]
+      summary: AI-assisted clinical note extraction
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Clinical extraction result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  extraction:
+                    type: object
+                  fieldMappings:
+                    type: array
+                    items:
+                      type: object
+
+  /documents/fee-schedule/fetch:
+    post:
+      tags: [documents]
+      summary: Trigger CMS fee schedule fetch (admin)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                forceRefresh:
+                  type: boolean
+      responses:
+        '200':
+          description: Fetch result
+
+  # ── Extraction ──────────────────────────────────────────────────────────
+  /extraction/templates:
+    get:
+      tags: [extraction]
+      summary: List extraction templates
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExtractionTemplate'
+
+  /extraction/templates/{id}:
+    get:
+      tags: [extraction]
+      summary: Get extraction template by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Template details
+        '404':
+          description: Not found
+
+  /extraction/extract:
+    post:
+      tags: [extraction]
+      summary: Extract structured data from document (sync)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, templateId]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                templateId:
+                  type: string
+      responses:
+        '200':
+          description: Extraction result
+
+  /extraction/extract/async:
+    post:
+      tags: [extraction]
+      summary: Start async extraction job
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, templateId]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                templateId:
+                  type: string
+      responses:
+        '202':
+          description: Job created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+
+  /extraction/jobs/{id}:
+    get:
+      tags: [extraction]
+      summary: Get async job status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job:
+                    $ref: '#/components/schemas/Job'
+        '404':
+          description: Job not found
+
+  /extraction/jobs:
+    get:
+      tags: [extraction]
+      summary: List user's async jobs
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [extraction, clinical-extraction]
+      responses:
+        '200':
+          description: Job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+
+  /extraction/model:
+    get:
+      tags: [extraction]
+      summary: Get extraction model info
+      responses:
+        '200':
+          description: Model ID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model:
+                    type: string
+
+  # ── Feedback ────────────────────────────────────────────────────────────
+  /feedback:
+    post:
+      tags: [feedback]
+      summary: Submit feedback on a response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question, answer, sources]
+              properties:
+                question:
+                  type: string
+                answer:
+                  type: string
+                patientName:
+                  type: string
+                transactionNumber:
+                  type: string
+                notes:
+                  type: string
+                sources:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/SourceCitation'
+                traceId:
+                  type: string
+                feedbackType:
+                  type: string
+      responses:
+        '201':
+          description: Feedback submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+
+  /feedback/trace:
+    post:
+      tags: [feedback]
+      summary: Submit thumbs up/down feedback for a trace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [traceId, feedbackType]
+              properties:
+                traceId:
+                  type: string
+                feedbackType:
+                  type: string
+                  enum: [thumbs_up, thumbs_down]
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Feedback recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  feedbackId:
+                    type: string
+
+  /feedback/{date}:
+    get:
+      tags: [feedback]
+      summary: Get feedback entries by date (admin)
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Feedback entries
+        '403':
+          description: Admin only
+
+  # ── Query Log ───────────────────────────────────────────────────────────
+  /query-log/observability/metrics:
+    get:
+      tags: [query-log]
+      summary: RAG observability metrics (admin)
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 7
+      responses:
+        '200':
+          description: Observability metrics
+
+  /query-log/quality/metrics:
+    get:
+      tags: [query-log]
+      summary: Query quality metrics (admin)
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 7
+      responses:
+        '200':
+          description: Quality metrics
+
+  /query-log/faq/dashboard:
+    get:
+      tags: [query-log]
+      summary: FAQ analytics dashboard (admin)
+      parameters:
+        - name: start
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: FAQ data
+
+  /query-log/{date}:
+    get:
+      tags: [query-log]
+      summary: View query log for a date (admin)
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Query log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date:
+                    type: string
+                  count:
+                    type: integer
+                  entries:
+                    type: array
+                    items:
+                      type: object
+
+  /query-log/{date}/csv:
+    get:
+      tags: [query-log]
+      summary: Export query log as CSV (admin)
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /query-log/audit/{date}/json:
+    get:
+      tags: [query-log]
+      summary: Audit log entries for a date (admin)
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Audit log entries
+
+  /query-log/audit/{startDate}/{endDate}/json:
+    get:
+      tags: [query-log]
+      summary: Audit log entries for a date range (admin)
+      parameters:
+        - name: startDate
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Audit log entries
+
+  # ── Users ───────────────────────────────────────────────────────────────
+  /users:
+    get:
+      tags: [users]
+      summary: List all users (admin)
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+
+  /users/{id}/role:
+    put:
+      tags: [users]
+      summary: Update user role (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [admin, user]
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+
+  /users/{id}:
+    delete:
+      tags: [users]
+      summary: Delete user (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User deleted
+        '400':
+          description: Cannot delete self or last admin
+
+  /users/{id}/reset-password:
+    post:
+      tags: [users]
+      summary: Force-reset user password (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  temporaryPassword:
+                    type: string
+                  message:
+                    type: string
+
+  /users/{id}/collections:
+    put:
+      tags: [users]
+      summary: Update user allowed collections (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allowedCollections]
+              properties:
+                allowedCollections:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Collections updated
+
+  # ── Source Monitor ──────────────────────────────────────────────────────
+  /sources:
+    get:
+      tags: [sources]
+      summary: List monitored sources (admin)
+      responses:
+        '200':
+          description: Source list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MonitoredSource'
+    post:
+      tags: [sources]
+      summary: Add monitored source (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url, collectionId]
+              properties:
+                name:
+                  type: string
+                url:
+                  type: string
+                  format: uri
+                collectionId:
+                  type: string
+                checkIntervalHours:
+                  type: integer
+                fileType:
+                  type: string
+                category:
+                  type: string
+      responses:
+        '201':
+          description: Source added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source:
+                    $ref: '#/components/schemas/MonitoredSource'
+
+  /sources/{id}:
+    put:
+      tags: [sources]
+      summary: Update monitored source (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                url:
+                  type: string
+                collectionId:
+                  type: string
+                checkIntervalHours:
+                  type: integer
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Source updated
+    delete:
+      tags: [sources]
+      summary: Delete monitored source (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Source deleted
+
+  /sources/{id}/check:
+    post:
+      tags: [sources]
+      summary: Force-check a source for changes (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changed:
+                    type: boolean
+                  ingested:
+                    type: boolean
+                  previousHash:
+                    type: string
+                  newHash:
+                    type: string
+
+  /sources/check-all:
+    post:
+      tags: [sources]
+      summary: Force-check all sources (admin)
+      responses:
+        '200':
+          description: Batch check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checked:
+                    type: integer
+                  changed:
+                    type: integer
+                  ingested:
+                    type: integer
+                  errors:
+                    type: integer
+
+  # ── Usage ───────────────────────────────────────────────────────────────
+  /usage/stats:
+    get:
+      tags: [usage]
+      summary: View usage stats
+      responses:
+        '200':
+          description: Usage statistics
+
+  /usage/limits:
+    put:
+      tags: [usage]
+      summary: Update usage limits (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dailyPerUser:
+                  type: integer
+                dailyTotal:
+                  type: integer
+                monthlyTotal:
+                  type: integer
+      responses:
+        '200':
+          description: Limits updated
+
+  # ── Error Reporting ─────────────────────────────────────────────────────
+  /errors/report:
+    post:
+      tags: [errors]
+      summary: Report frontend error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  maxLength: 5000
+                stack:
+                  type: string
+                  maxLength: 10000
+                componentName:
+                  type: string
+                url:
+                  type: string
+                userAgent:
+                  type: string
+      responses:
+        '201':
+          description: Error reported
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean

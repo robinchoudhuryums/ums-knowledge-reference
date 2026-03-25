@@ -202,9 +202,9 @@ app.get('/api/health', async (_req, res) => {
 
 // Auth routes
 app.post('/api/auth/login', loginLimiter, loginHandler);
-app.post('/api/auth/users', authenticate, requireAdmin, createUserHandler as any);
-app.post('/api/auth/change-password', authenticate, changePasswordHandler as any);
-app.post('/api/auth/logout', authenticate, logoutHandler as any);
+app.post('/api/auth/users', authenticate, requireAdmin, (req, res) => createUserHandler(req as AuthRequest, res));
+app.post('/api/auth/change-password', authenticate, (req, res) => changePasswordHandler(req as AuthRequest, res));
+app.post('/api/auth/logout', authenticate, (req, res) => logoutHandler(req as AuthRequest, res));
 
 // Document routes
 app.use('/api/documents', documentRoutes);

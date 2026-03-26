@@ -8,6 +8,8 @@ import {
 } from '../services/ppdQuestionnaire';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
+import { submitPpd, getPpdSubmission, listPpdSubmissions, updatePpdStatus, deletePpdSubmission, PpdStatus } from '../services/ppdQueue';
+import { requireAdmin } from '../middleware/auth';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -77,6 +79,133 @@ router.post('/recommend', authenticate, async (req: AuthRequest, res: Response) 
   } catch (error) {
     logger.error('PPD recommendation failed', { error: String(error) });
     res.status(500).json({ error: 'Failed to generate PMD recommendations' });
+  }
+});
+
+// ─── PPD Submission Queue ─────────────────────────────────────────────
+
+// Submit a completed PPD to the queue for Pre-Appointment Kit team review
+router.post('/submit', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { patientInfo, responses, recommendations, productSelections, language } = req.body;
+
+    if (!patientInfo || !responses || !Array.isArray(responses)) {
+      res.status(400).json({ error: 'patientInfo and responses[] are required' });
+      return;
+    }
+
+    const record = await submitPpd({
+      patientInfo,
+      language: language || 'english',
+      responses,
+      recommendations: recommendations || [],
+      productSelections: productSelections || {},
+      submittedBy: req.user!.username,
+    });
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'query', {
+      action: 'ppd_submitted',
+      submissionId: record.id,
+      patientInfo,
+    });
+
+    res.status(201).json({ submission: record });
+  } catch (error) {
+    logger.error('PPD submission failed', { error: String(error) });
+    res.status(500).json({ error: 'Failed to submit PPD' });
+  }
+});
+
+// List PPD submissions (agents see their own, admins see all)
+router.get('/submissions', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const status = req.query.status as PpdStatus | undefined;
+    const isAdmin = req.user!.role === 'admin';
+
+    const submissions = await listPpdSubmissions({
+      status,
+      submittedBy: isAdmin ? undefined : req.user!.username,
+    });
+
+    res.json({ submissions, total: submissions.length });
+  } catch (error) {
+    logger.error('Failed to list PPD submissions', { error: String(error) });
+    res.status(500).json({ error: 'Failed to list submissions' });
+  }
+});
+
+// Get a single PPD submission detail
+router.get('/submissions/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const record = await getPpdSubmission(req.params.id);
+    if (!record) {
+      res.status(404).json({ error: 'PPD submission not found' });
+      return;
+    }
+    res.json({ submission: record });
+  } catch (error) {
+    logger.error('Failed to get PPD submission', { error: String(error) });
+    res.status(500).json({ error: 'Failed to get submission' });
+  }
+});
+
+// Update PPD submission status (admin/reviewer)
+router.put('/submissions/:id/status', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { status, reviewNotes, returnReason } = req.body as {
+      status: PpdStatus;
+      reviewNotes?: string;
+      returnReason?: string;
+    };
+
+    if (!status || !['pending', 'in_review', 'completed', 'returned'].includes(status)) {
+      res.status(400).json({ error: 'Valid status is required (pending, in_review, completed, returned)' });
+      return;
+    }
+
+    const record = await updatePpdStatus(req.params.id, {
+      status,
+      reviewedBy: req.user!.username,
+      reviewNotes,
+      returnReason,
+    });
+
+    if (!record) {
+      res.status(404).json({ error: 'PPD submission not found' });
+      return;
+    }
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'query', {
+      action: 'ppd_status_updated',
+      submissionId: req.params.id,
+      newStatus: status,
+    });
+
+    res.json({ submission: record });
+  } catch (error) {
+    logger.error('PPD status update failed', { error: String(error) });
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// Delete a PPD submission (admin only)
+router.delete('/submissions/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const deleted = await deletePpdSubmission(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ error: 'PPD submission not found' });
+      return;
+    }
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'delete', {
+      action: 'ppd_deleted',
+      submissionId: req.params.id,
+    });
+
+    res.json({ message: 'PPD submission deleted' });
+  } catch (error) {
+    logger.error('PPD deletion failed', { error: String(error) });
+    res.status(500).json({ error: 'Failed to delete submission' });
   }
 });
 

@@ -5,10 +5,12 @@ import {
   getPpdQuestionGroups,
   determinePmdRecommendations,
   PpdResponse,
+  PmdRecommendation,
 } from '../services/ppdQuestionnaire';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
 import { submitPpd, getPpdSubmission, listPpdSubmissions, updatePpdStatus, deletePpdSubmission, PpdStatus } from '../services/ppdQueue';
+import { generateSeatingEvaluation, renderSeatingEvalHtml } from '../services/seatingEvaluation';
 import { requireAdmin } from '../middleware/auth';
 import { logger } from '../utils/logger';
 
@@ -79,6 +81,35 @@ router.post('/recommend', authenticate, async (req: AuthRequest, res: Response) 
   } catch (error) {
     logger.error('PPD recommendation failed', { error: String(error) });
     res.status(500).json({ error: 'Failed to generate PMD recommendations' });
+  }
+});
+
+// Generate a pre-filled Seating Evaluation from PPD responses
+router.post('/seating-eval', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { patientInfo, responses, recommendations } = req.body as {
+      patientInfo: string;
+      responses: PpdResponse[];
+      recommendations: PmdRecommendation[];
+    };
+
+    if (!patientInfo || !responses || !Array.isArray(responses)) {
+      res.status(400).json({ error: 'patientInfo and responses[] are required' });
+      return;
+    }
+
+    const evaluation = generateSeatingEvaluation(responses, recommendations || [], patientInfo);
+    const html = renderSeatingEvalHtml(evaluation);
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'query', {
+      action: 'seating_eval_generated',
+      patientInfo,
+    });
+
+    res.json({ evaluation, html });
+  } catch (error) {
+    logger.error('Seating evaluation generation failed', { error: String(error) });
+    res.status(500).json({ error: 'Failed to generate seating evaluation' });
   }
 });
 

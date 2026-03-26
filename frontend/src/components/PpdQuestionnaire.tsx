@@ -1,151 +1,49 @@
 /**
  * PpdQuestionnaire — PPD (Patient Provided Data) questionnaire for DME agents
  * conducting phone interviews with patients for Power Mobility Device orders.
+ *
+ * Questions are fetched from the API (GET /api/ppd/questions) rather than hardcoded.
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type QuestionType = 'yes-no' | 'text' | 'number' | 'select';
 type Lang = 'en' | 'es';
 
-interface Question {
+interface ApiQuestion {
   id: string;
-  type: QuestionType;
-  en: string;
-  es: string;
-  required?: boolean;
-  options?: { value: string; labelEn: string; labelEs: string }[];
-  showWhen?: { questionId: string; value: string };
-  long?: boolean;
-}
-
-interface QuestionSection {
-  id: string;
-  titleEn: string;
-  titleEs: string;
-  questions: Question[];
+  number: string;
+  text: string;
+  spanishText: string;
+  type: 'yes-no' | 'text' | 'select' | 'number' | 'multi-select';
+  group: string;
+  required: boolean;
+  subQuestionOf?: string;
+  showWhen?: string;
+  options?: string[];
 }
 
 interface RecommendationProduct {
   hcpcsCode: string;
   description: string;
   justification: string;
-  category: 'complex_rehab' | 'standard';
+  category: 'complex-rehab' | 'standard';
   imageUrl?: string;
   brochureUrl?: string;
   seatDimensions?: string;
   colors?: string;
   leadTime?: string;
   notes?: string;
+  portable?: boolean;
 }
 
-interface RecommendationResponse {
-  complexRehab: RecommendationProduct[];
-  standard: RecommendationProduct[];
+interface RecommendApiResponse {
+  patientInfo: string;
+  recommendations: RecommendationProduct[];
+  submittedAt: string;
+  agentName: string;
 }
-
-// ── Question definitions ───────────────────────────────────────────────────
-
-const sections: QuestionSection[] = [
-  {
-    id: 'mobility',
-    titleEn: 'Current Mobility',
-    titleEs: 'Movilidad Actual',
-    questions: [
-      { id: 'q1', type: 'select', en: 'How do you currently move around your home?', es: '\u00bfC\u00f3mo se mueve actualmente dentro de su hogar?', required: true, options: [
-        { value: 'walk', labelEn: 'Walk independently', labelEs: 'Camino independientemente' },
-        { value: 'walker', labelEn: 'Walker / Rollator', labelEs: 'Andador / Rollator' },
-        { value: 'cane', labelEn: 'Cane', labelEs: 'Bast\u00f3n' },
-        { value: 'wheelchair', labelEn: 'Manual wheelchair', labelEs: 'Silla de ruedas manual' },
-        { value: 'power', labelEn: 'Power wheelchair / Scooter', labelEs: 'Silla de ruedas el\u00e9ctrica / Scooter' },
-        { value: 'bedbound', labelEn: 'Mostly bedbound', labelEs: 'Principalmente en cama' },
-      ]},
-      { id: 'q2', type: 'text', en: 'How far can you walk without stopping?', es: '\u00bfQu\u00e9 distancia puede caminar sin detenerse?', required: true },
-      { id: 'q3', type: 'yes-no', en: 'Do you use any assistive device right now?', es: '\u00bfUsa alg\u00fan dispositivo de asistencia actualmente?', required: true },
-      { id: 'q4', type: 'text', en: 'Describe your home layout (stairs, doorway widths, flooring).', es: 'Describa la distribuci\u00f3n de su hogar (escaleras, ancho de puertas, pisos).', long: true },
-    ],
-  },
-  {
-    id: 'mradls',
-    titleEn: 'Mobility-Related Activities of Daily Living (MRADLs)',
-    titleEs: 'Actividades de la Vida Diaria Relacionadas con la Movilidad (MRADLs)',
-    questions: [
-      { id: 'q10', type: 'yes-no', en: 'Can you dress yourself independently?', es: '\u00bfPuede vestirse solo/a?', required: true },
-      { id: 'q11', type: 'yes-no', en: 'Can you bathe/shower independently?', es: '\u00bfPuede ba\u00f1arse/ducharse solo/a?', required: true },
-      { id: 'q12', type: 'yes-no', en: 'Can you use the toilet independently?', es: '\u00bfPuede usar el ba\u00f1o solo/a?', required: true },
-      { id: 'q13', type: 'yes-no', en: 'Can you prepare meals independently?', es: '\u00bfPuede preparar comidas solo/a?', required: true },
-      { id: 'q14', type: 'yes-no', en: 'Can you move between bed, chair, and wheelchair safely?', es: '\u00bfPuede trasladarse entre cama, silla y silla de ruedas de forma segura?', required: true },
-    ],
-  },
-  {
-    id: 'strength',
-    titleEn: 'Extremity Strength',
-    titleEs: 'Fuerza de Extremidades',
-    questions: [
-      { id: 'q20', type: 'select', en: 'Rate your upper body strength:', es: 'Califique su fuerza del tren superior:', required: true, options: [
-        { value: 'normal', labelEn: 'Normal', labelEs: 'Normal' },
-        { value: 'mild', labelEn: 'Mild weakness', labelEs: 'Debilidad leve' },
-        { value: 'moderate', labelEn: 'Moderate weakness', labelEs: 'Debilidad moderada' },
-        { value: 'severe', labelEn: 'Severe weakness', labelEs: 'Debilidad severa' },
-      ]},
-      { id: 'q21', type: 'select', en: 'Rate your lower body strength:', es: 'Califique su fuerza del tren inferior:', required: true, options: [
-        { value: 'normal', labelEn: 'Normal', labelEs: 'Normal' },
-        { value: 'mild', labelEn: 'Mild weakness', labelEs: 'Debilidad leve' },
-        { value: 'moderate', labelEn: 'Moderate weakness', labelEs: 'Debilidad moderada' },
-        { value: 'severe', labelEn: 'Severe weakness', labelEs: 'Debilidad severa' },
-      ]},
-      { id: 'q22', type: 'yes-no', en: 'Can you propel a manual wheelchair by yourself?', es: '\u00bfPuede impulsar una silla de ruedas manual por s\u00ed mismo/a?', required: true },
-    ],
-  },
-  {
-    id: 'falls',
-    titleEn: 'Falls & Safety',
-    titleEs: 'Ca\u00eddas y Seguridad',
-    questions: [
-      { id: 'q30', type: 'number', en: 'How many falls have you had in the last 6 months?', es: '\u00bfCu\u00e1ntas ca\u00eddas ha tenido en los \u00faltimos 6 meses?', required: true },
-      { id: 'q31', type: 'yes-no', en: 'Have any falls resulted in injury?', es: '\u00bfAlguna ca\u00edda result\u00f3 en lesi\u00f3n?', required: true },
-      { id: 'q31a', type: 'text', en: 'Describe the injuries from falls.', es: 'Describa las lesiones por ca\u00eddas.', showWhen: { questionId: 'q31', value: 'yes' }, long: true },
-      { id: 'q32', type: 'yes-no', en: 'Do you feel safe moving around your home?', es: '\u00bfSe siente seguro/a movi\u00e9ndose por su hogar?', required: true },
-      { id: 'q33', type: 'yes-no', en: 'Have you been hospitalized due to a fall?', es: '\u00bfHa sido hospitalizado/a debido a una ca\u00edda?', required: true },
-      { id: 'q33a', type: 'text', en: 'When and how long was the hospitalization?', es: '\u00bfCu\u00e1ndo y cu\u00e1nto dur\u00f3 la hospitalizaci\u00f3n?', showWhen: { questionId: 'q33', value: 'yes' } },
-    ],
-  },
-  {
-    id: 'pain',
-    titleEn: 'Consistent Pain',
-    titleEs: 'Dolor Constante',
-    questions: [
-      { id: 'q40', type: 'yes-no', en: 'Do you experience consistent pain that limits mobility?', es: '\u00bfExperimenta dolor constante que limita su movilidad?', required: true },
-      { id: 'q41', type: 'number', en: 'Rate your average pain level (0-10):', es: 'Califique su nivel promedio de dolor (0-10):', required: true },
-      { id: 'q42', type: 'text', en: 'Where is the pain located?', es: '\u00bfD\u00f3nde se localiza el dolor?', required: true },
-    ],
-  },
-  {
-    id: 'additional',
-    titleEn: 'Additional Information',
-    titleEs: 'Informaci\u00f3n Adicional',
-    questions: [
-      { id: 'q50', type: 'number', en: 'Patient weight (lbs):', es: 'Peso del paciente (libras):', required: true },
-      { id: 'q51', type: 'number', en: 'Patient height (inches):', es: 'Estatura del paciente (pulgadas):', required: true },
-      { id: 'q52', type: 'text', en: 'Any other comments or concerns?', es: '\u00bfAlg\u00fan otro comentario o preocupaci\u00f3n?', long: true },
-    ],
-  },
-  {
-    id: 'diagnoses',
-    titleEn: 'Diagnoses',
-    titleEs: 'Diagn\u00f3sticos',
-    questions: [
-      { id: 'q60', type: 'text', en: 'Primary diagnosis / ICD-10 code:', es: 'Diagn\u00f3stico primario / c\u00f3digo ICD-10:', required: true },
-      { id: 'q61', type: 'text', en: 'Secondary diagnoses:', es: 'Diagn\u00f3sticos secundarios:', long: true },
-      { id: 'q62', type: 'text', en: 'Current medications affecting mobility:', es: 'Medicamentos actuales que afectan la movilidad:', long: true },
-    ],
-  },
-];
-
-const allQuestions = sections.flatMap(s => s.questions);
-const requiredQuestions = allQuestions.filter(q => q.required && !q.showWhen);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -193,6 +91,10 @@ const sty = {
   statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 } as React.CSSProperties,
   copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid #1976d2', background: '#e3f2fd', color: '#1565c0', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
   actionBar: { display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' as const } as React.CSSProperties,
+  loadingContainer: { padding: 60, textAlign: 'center' as const, color: '#666', fontSize: 16 } as React.CSSProperties,
+  badge: { display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, marginLeft: 8 } as React.CSSProperties,
+  painGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 } as React.CSSProperties,
+  clearBtn: { background: '#fff', color: '#dc3545', border: '1px solid #dc3545', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
 };
 
 function langBtn(active: boolean): React.CSSProperties {
@@ -211,6 +113,30 @@ function progressFill(pct: number): React.CSSProperties {
   return { background: '#1976d2', height: '100%', width: `${pct}%`, transition: 'width 0.3s', borderRadius: 8 };
 }
 
+function painToggle(active: boolean): React.CSSProperties {
+  return {
+    padding: '10px 14px',
+    borderRadius: 8,
+    cursor: 'pointer',
+    border: active ? '2px solid #dc3545' : '1px solid #ccc',
+    background: active ? '#f8d7da' : '#fff',
+    color: active ? '#721c24' : '#333',
+    fontWeight: active ? 700 : 400,
+    fontSize: 14,
+    textAlign: 'center' as const,
+    transition: 'all 0.15s',
+  };
+}
+
+function badgeStyle(answered: number, total: number): React.CSSProperties {
+  const pct = total > 0 ? answered / total : 0;
+  let bg = '#e9ecef';
+  let color = '#666';
+  if (pct === 1) { bg = '#d4edda'; color = '#155724'; }
+  else if (pct > 0) { bg = '#fff3cd'; color = '#856404'; }
+  return { ...sty.badge, background: bg, color };
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function PpdQuestionnaire() {
@@ -220,7 +146,7 @@ export function PpdQuestionnaire() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [recommendations, setRecommendations] = useState<RecommendationResponse | null>(null);
+  const [recommendations, setRecommendations] = useState<{ complexRehab: RecommendationProduct[]; standard: RecommendationProduct[] } | null>(null);
   const [preferred, setPreferred] = useState('');
   const [productStatus, setProductStatus] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState('');
@@ -228,6 +154,51 @@ export function PpdQuestionnaire() {
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState('');
   const [evalLoading, setEvalLoading] = useState(false);
+
+  // Questions fetched from API
+  const [questions, setQuestions] = useState<ApiQuestion[]>([]);
+  const [groups, setGroups] = useState<string[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(true);
+  const [questionsError, setQuestionsError] = useState('');
+
+  // Fetch questions on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/ppd/questions', { credentials: 'same-origin' });
+        if (!res.ok) throw new Error(`Failed to load questions (${res.status})`);
+        const data = await res.json();
+        if (!cancelled) {
+          setQuestions(data.questions || []);
+          setGroups(data.groups || []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setQuestionsError(err instanceof Error ? err.message : 'Failed to load questions');
+        }
+      } finally {
+        if (!cancelled) setQuestionsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Group questions by group field
+  const groupedQuestions = useMemo(() => {
+    const map = new Map<string, ApiQuestion[]>();
+    for (const q of questions) {
+      const list = map.get(q.group) || [];
+      list.push(q);
+      map.set(q.group, list);
+    }
+    return map;
+  }, [questions]);
+
+  // Required questions (top-level, no subQuestionOf)
+  const requiredQuestions = useMemo(() => {
+    return questions.filter(q => q.required && !q.subQuestionOf);
+  }, [questions]);
 
   // Load from sessionStorage on patient change
   useEffect(() => {
@@ -252,9 +223,10 @@ export function PpdQuestionnaire() {
     setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  const isVisible = useCallback((q: Question): boolean => {
-    if (!q.showWhen) return true;
-    return responses[q.showWhen.questionId] === q.showWhen.value;
+  const isVisible = useCallback((q: ApiQuestion): boolean => {
+    if (!q.subQuestionOf || !q.showWhen) return true;
+    const parentVal = responses[q.subQuestionOf] ?? '';
+    return parentVal.toLowerCase() === q.showWhen.toLowerCase() || parentVal.toLowerCase() === 'yes' && q.showWhen === 'Yes';
   }, [responses]);
 
   // Progress calculation
@@ -263,30 +235,72 @@ export function PpdQuestionnaire() {
       const val = responses[q.id];
       return val !== undefined && val !== '';
     }).length;
-  }, [responses]);
+  }, [responses, requiredQuestions]);
 
   const totalRequired = requiredQuestions.length;
   const progressPct = totalRequired > 0 ? Math.round((answeredCount / totalRequired) * 100) : 0;
 
-  // Submit to API
+  // Section completion counts
+  const sectionCounts = useMemo(() => {
+    const counts: Record<string, { answered: number; total: number }> = {};
+    for (const group of groups) {
+      const qs = groupedQuestions.get(group) || [];
+      const visibleQs = qs.filter(q => !q.subQuestionOf || isVisible(q));
+      const answered = visibleQs.filter(q => {
+        const val = responses[q.id];
+        return val !== undefined && val !== '';
+      }).length;
+      counts[group] = { answered, total: visibleQs.length };
+    }
+    return counts;
+  }, [groups, groupedQuestions, responses, isVisible]);
+
+  // Clear form
+  const handleClearForm = useCallback(() => {
+    if (!window.confirm(lang === 'en'
+      ? 'Are you sure you want to clear all responses? This cannot be undone.'
+      : 'Esta seguro de que desea borrar todas las respuestas? Esto no se puede deshacer.')) {
+      return;
+    }
+    setResponses({});
+    setRecommendations(null);
+    setSeatingEvalHtml('');
+    setSubmitSuccess('');
+    setError('');
+    setPreferred('');
+    setProductStatus({});
+    if (patientInfo.trim()) {
+      sessionStorage.removeItem(storageKey(patientInfo));
+    }
+  }, [lang, patientInfo]);
+
+  // Format responses for API calls
+  const formatApiResponses = useCallback(() => {
+    return Object.entries(responses).map(([questionId, answer]) => ({ questionId, answer }));
+  }, [responses]);
+
+  // Submit to API for recommendations
   const handleSubmit = async () => {
     setLoading(true);
     setError('');
     setRecommendations(null);
     try {
       const csrf = getCsrf();
+      const apiResponses = formatApiResponses();
       const res = await fetch('/api/ppd/recommend', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
-        body: JSON.stringify({ patientInfo, responses, language: lang }),
+        body: JSON.stringify({ patientInfo, responses: apiResponses, language: lang === 'en' ? 'english' : 'spanish' }),
       });
       if (!res.ok) {
         const msg = await res.text();
         throw new Error(msg || `Request failed (${res.status})`);
       }
-      const data: RecommendationResponse = await res.json();
-      setRecommendations(data);
+      const data: RecommendApiResponse = await res.json();
+      const complexRehab = data.recommendations.filter(r => r.category === 'complex-rehab');
+      const standard = data.recommendations.filter(r => r.category === 'standard');
+      setRecommendations({ complexRehab, standard });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get recommendations');
     } finally {
@@ -296,35 +310,31 @@ export function PpdQuestionnaire() {
 
   // ── Render helpers ─────────────────────────────────────────────────────
 
-  const renderQuestion = (q: Question) => {
+  const renderQuestion = (q: ApiQuestion) => {
     if (!isVisible(q)) return null;
-    const label = lang === 'en' ? q.en : q.es;
+    const label = lang === 'en' ? q.text : q.spanishText;
     const val = responses[q.id] ?? '';
 
     return (
       <div key={q.id} style={sty.questionRow}>
         <label style={sty.questionLabel}>
-          {label}
+          {q.number}. {label}
           {q.required && <span style={{ color: '#dc3545', marginLeft: 3 }}>*</span>}
         </label>
 
         {q.type === 'yes-no' && (
           <div style={sty.yesNoGroup}>
-            <button type="button" style={yesBtn(val === 'yes')} onClick={() => setResponse(q.id, 'yes')}>
-              {lang === 'en' ? 'Yes' : 'S\u00ed'}
+            <button type="button" style={yesBtn(val === 'Yes')} onClick={() => setResponse(q.id, 'Yes')}>
+              {lang === 'en' ? 'Yes' : 'Si'}
             </button>
-            <button type="button" style={noBtn(val === 'no')} onClick={() => setResponse(q.id, 'no')}>
+            <button type="button" style={noBtn(val === 'No')} onClick={() => setResponse(q.id, 'No')}>
               No
             </button>
           </div>
         )}
 
-        {q.type === 'text' && !q.long && (
+        {q.type === 'text' && (
           <input style={sty.textInput} value={val} onChange={e => setResponse(q.id, e.target.value)} />
-        )}
-
-        {q.type === 'text' && q.long && (
-          <textarea style={sty.textarea} value={val} onChange={e => setResponse(q.id, e.target.value)} />
         )}
 
         {q.type === 'number' && (
@@ -335,10 +345,60 @@ export function PpdQuestionnaire() {
           <select style={sty.selectInput} value={val} onChange={e => setResponse(q.id, e.target.value)}>
             <option value="">{lang === 'en' ? '-- Select --' : '-- Seleccionar --'}</option>
             {q.options.map(o => (
-              <option key={o.value} value={o.value}>{lang === 'en' ? o.labelEn : o.labelEs}</option>
+              <option key={o} value={o}>{o}</option>
             ))}
           </select>
         )}
+
+        {q.type === 'multi-select' && q.options && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {q.options.map(o => {
+              const selected = (val || '').split(',').filter(Boolean).includes(o);
+              return (
+                <button
+                  key={o}
+                  type="button"
+                  style={{
+                    padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                    border: selected ? '2px solid #1976d2' : '1px solid #ccc',
+                    background: selected ? '#e3f2fd' : '#fff',
+                    color: selected ? '#1565c0' : '#333',
+                    fontWeight: selected ? 700 : 400, fontSize: 13,
+                  }}
+                  onClick={() => {
+                    const current = (val || '').split(',').filter(Boolean);
+                    const next = selected ? current.filter(v => v !== o) : [...current, o];
+                    setResponse(q.id, next.join(','));
+                  }}
+                >
+                  {o}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderPainGroup = (qs: ApiQuestion[]) => {
+    return (
+      <div style={sty.painGrid}>
+        {qs.map(q => {
+          const label = lang === 'en' ? q.text.replace('?', '') : q.spanishText.replace('?', '').replace('\u00bf', '');
+          const val = responses[q.id] ?? '';
+          const active = val === 'Yes';
+          return (
+            <button
+              key={q.id}
+              type="button"
+              style={painToggle(active)}
+              onClick={() => setResponse(q.id, active ? 'No' : 'Yes')}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
     );
   };
@@ -407,6 +467,24 @@ export function PpdQuestionnaire() {
 
   // ── Main render ────────────────────────────────────────────────────────
 
+  if (questionsLoading) {
+    return (
+      <div style={sty.container}>
+        <div style={sty.loadingContainer}>
+          {lang === 'en' ? 'Loading questionnaire...' : 'Cargando cuestionario...'}
+        </div>
+      </div>
+    );
+  }
+
+  if (questionsError) {
+    return (
+      <div style={sty.container}>
+        <div style={sty.error}>{questionsError}</div>
+      </div>
+    );
+  }
+
   return (
     <div style={sty.container}>
       {/* Header */}
@@ -436,36 +514,60 @@ export function PpdQuestionnaire() {
         </div>
       </div>
 
-      {/* Question sections */}
-      {sections.map(section => {
-        const isCollapsed = collapsed[section.id] ?? false;
-        const title = lang === 'en' ? section.titleEn : section.titleEs;
+      {/* Question sections — grouped dynamically by API groups */}
+      {groups.map(group => {
+        const qs = groupedQuestions.get(group) || [];
+        if (qs.length === 0) return null;
+        const isCollapsed = collapsed[group] ?? false;
+        const counts = sectionCounts[group] || { answered: 0, total: 0 };
+        const isPainGroup = group === 'Consistent Pain';
+
         return (
-          <div key={section.id} style={sty.section}>
-            <div style={sty.sectionHeader} onClick={() => toggleSection(section.id)}>
-              <h3 style={sty.sectionTitle}>{title}</h3>
+          <div key={group} style={sty.section}>
+            <div style={sty.sectionHeader} onClick={() => toggleSection(group)}>
+              <h3 style={sty.sectionTitle}>
+                {group}
+                <span style={badgeStyle(counts.answered, counts.total)}>
+                  {counts.answered}/{counts.total}
+                </span>
+              </h3>
               <span style={{ fontSize: 14, color: '#666' }}>{isCollapsed ? '\u25B6' : '\u25BC'}</span>
             </div>
             {!isCollapsed && (
               <div style={sty.sectionBody}>
-                {section.questions.map(renderQuestion)}
+                {isPainGroup
+                  ? renderPainGroup(qs)
+                  : qs.map(renderQuestion)
+                }
               </div>
             )}
           </div>
         );
       })}
 
-      {/* Submit button */}
-      <button
-        type="button"
-        style={loading ? sty.submitBtnDisabled : sty.submitBtn}
-        disabled={loading}
-        onClick={handleSubmit}
-      >
-        {loading
-          ? (lang === 'en' ? 'Getting Recommendations...' : 'Obteniendo Recomendaciones...')
-          : (lang === 'en' ? 'Get Recommendations' : 'Obtener Recomendaciones')}
-      </button>
+      {/* Action buttons row */}
+      <div style={sty.actionBar}>
+        {/* Get Recommendations */}
+        <button
+          type="button"
+          style={loading ? sty.submitBtnDisabled : sty.submitBtn}
+          disabled={loading}
+          onClick={handleSubmit}
+        >
+          {loading
+            ? (lang === 'en' ? 'Getting Recommendations...' : 'Obteniendo Recomendaciones...')
+            : (lang === 'en' ? 'Get Recommendations' : 'Obtener Recomendaciones')}
+        </button>
+
+        {/* Clear Form */}
+        <button
+          type="button"
+          style={sty.clearBtn}
+          onClick={handleClearForm}
+        >
+          {lang === 'en' ? 'Clear Form' : 'Borrar Formulario'}
+        </button>
+      </div>
 
       {/* Error display */}
       {error && <div style={sty.error}>{error}</div>}
@@ -507,7 +609,7 @@ export function PpdQuestionnaire() {
                 try {
                   const csrf = getCsrf();
                   const allRecs = [...recommendations.complexRehab, ...recommendations.standard];
-                  const apiResponses = Object.entries(responses).map(([questionId, answer]) => ({ questionId, answer }));
+                  const apiResponses = formatApiResponses();
                   const res = await fetch('/api/ppd/seating-eval', {
                     method: 'POST',
                     credentials: 'same-origin',
@@ -526,7 +628,7 @@ export function PpdQuestionnaire() {
             >
               {evalLoading
                 ? (lang === 'en' ? 'Generating...' : 'Generando...')
-                : (lang === 'en' ? 'Generate Seating Evaluation' : 'Generar Evaluación de Asiento')}
+                : (lang === 'en' ? 'Generate Seating Evaluation' : 'Generar Evaluaci\u00f3n de Asiento')}
             </button>
 
             <button
@@ -539,7 +641,7 @@ export function PpdQuestionnaire() {
                 try {
                   const csrf = getCsrf();
                   const allRecs = [...recommendations.complexRehab, ...recommendations.standard];
-                  const apiResponses = Object.entries(responses).map(([questionId, answer]) => ({ questionId, answer }));
+                  const apiResponses = formatApiResponses();
                   const res = await fetch('/api/ppd/submit', {
                     method: 'POST',
                     credentials: 'same-origin',
@@ -582,7 +684,7 @@ export function PpdQuestionnaire() {
         <div style={sty.recSection}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h3 style={sty.recHeading}>
-              {lang === 'en' ? 'Seating Evaluation Preview' : 'Vista Previa de Evaluación de Asiento'}
+              {lang === 'en' ? 'Seating Evaluation Preview' : 'Vista Previa de Evaluaci\u00f3n de Asiento'}
             </h3>
             <div style={{ display: 'flex', gap: 8 }}>
               <button

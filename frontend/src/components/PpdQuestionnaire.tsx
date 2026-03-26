@@ -191,6 +191,7 @@ const sty = {
   recControls: { display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' as const } as React.CSSProperties,
   starLabel: { cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties,
   statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 } as React.CSSProperties,
+  copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid #1976d2', background: '#e3f2fd', color: '#1565c0', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
 };
 
 function langBtn(active: boolean): React.CSSProperties {
@@ -221,6 +222,7 @@ export function PpdQuestionnaire() {
   const [recommendations, setRecommendations] = useState<RecommendationResponse | null>(null);
   const [preferred, setPreferred] = useState('');
   const [productStatus, setProductStatus] = useState<Record<string, string>>({});
+  const [copiedId, setCopiedId] = useState('');
 
   // Load from sessionStorage on patient change
   useEffect(() => {
@@ -355,6 +357,28 @@ export function PpdQuestionnaire() {
           {product.colors && <div style={sty.recDetail}><strong>Colors:</strong> {product.colors}</div>}
           {product.leadTime && <div style={sty.recDetail}><strong>Lead time:</strong> {product.leadTime}</div>}
           {product.notes && <div style={sty.recDetail}><strong>Notes:</strong> {product.notes}</div>}
+
+          {/* Copy buttons for 8x8 / patient communication */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' as const }}>
+            {product.imageUrl && (
+              <button
+                type="button"
+                style={sty.copyBtn}
+                onClick={() => { navigator.clipboard.writeText(product.imageUrl!); setCopiedId(`img_${key}`); setTimeout(() => setCopiedId(''), 2000); }}
+              >
+                {copiedId === `img_${key}` ? 'Copied!' : 'Copy Image URL'}
+              </button>
+            )}
+            {product.brochureUrl && (
+              <button
+                type="button"
+                style={sty.copyBtn}
+                onClick={() => { navigator.clipboard.writeText(product.brochureUrl!); setCopiedId(`pdf_${key}`); setTimeout(() => setCopiedId(''), 2000); }}
+              >
+                {copiedId === `pdf_${key}` ? 'Copied!' : 'Copy Brochure Link'}
+              </button>
+            )}
+          </div>
 
           <div style={sty.recControls}>
             <label style={sty.starLabel}>

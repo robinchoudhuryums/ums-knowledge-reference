@@ -84,13 +84,17 @@ export function enrichQueryWithStructuredData(question: string): EnrichmentResul
         }
       }
 
-      // Include ICD-10 mappings if diagnosis keywords present
-      if (ICD10_KEYWORDS.some(kw => questionLower.includes(kw))) {
+      // Include ICD-10 mappings when asking about diagnoses, qualifications, or coverage
+      const wantsDiagnoses = ICD10_KEYWORDS.some(kw => questionLower.includes(kw)) ||
+        /qualif|justify|covered|eligible|what.*codes?/i.test(questionLower);
+      if (wantsDiagnoses) {
         const mappings = getDiagnosesForHcpcs(code);
         if (mappings.length > 0) {
           lines.push(`\nICD-10 codes that justify ${code}:`);
           for (const m of mappings.slice(0, 15)) {
-            lines.push(`  ${m.icd10Code}: ${m.coverageNotes || 'Covered'}`);
+            let line = `  ${m.icd10Code}: ${m.coverageNotes || 'Covered'}`;
+            if (m.documentationRequired) line += ` [Docs: ${m.documentationRequired}]`;
+            lines.push(line);
           }
         }
       }

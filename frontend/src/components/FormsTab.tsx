@@ -1,19 +1,21 @@
 /**
  * FormsTab — Container for form-based tools with sub-navigation.
- * Currently includes PPD Questionnaire and PPD Queue viewer.
+ * Includes PPD Questionnaire, PPD Queue, and PMD Account Creation.
  */
 
 import { useState } from 'react';
 import { PpdQuestionnaire } from './PpdQuestionnaire';
 import { PpdQueueViewer } from './PpdQueueViewer';
+import { AccountCreationForm } from './AccountCreationForm';
 
-type SubTab = 'ppd-questionnaire' | 'ppd-queue';
+type SubTab = 'ppd-questionnaire' | 'ppd-queue' | 'account-creation';
 
 export function FormsTab() {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('ppd-questionnaire');
 
   const subTabs: { key: SubTab; label: string }[] = [
     { key: 'ppd-questionnaire', label: 'PPD Questionnaire' },
+    { key: 'account-creation', label: 'PMD Account Creation' },
     { key: 'ppd-queue', label: 'PPD Queue' },
   ];
 
@@ -31,6 +33,7 @@ export function FormsTab() {
         ))}
       </div>
       {activeSubTab === 'ppd-questionnaire' && <PpdQuestionnaire />}
+      {activeSubTab === 'account-creation' && <AccountCreationForm />}
       {activeSubTab === 'ppd-queue' && <PpdQueueViewer />}
     </div>
   );

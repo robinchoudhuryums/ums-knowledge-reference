@@ -34,51 +34,92 @@ export interface ExtractionTemplate {
 
 const PPD_TEMPLATE: ExtractionTemplate = {
   id: 'ppd',
-  name: 'Proof of Prior Delivery (PPD)',
-  description: 'Extract PPD data from clinical notes, delivery tickets, or signed documentation to verify prior equipment delivery.',
+  name: 'Patient Provided Data (PPD) — Seating Evaluation',
+  description: 'Extract Patient Provided Data from clinical notes to pre-fill a Seating Evaluation for Power Mobility Device orders. The PPD is a phone questionnaire covering MRADLs, extremity strength, pain, and medical history.',
   category: 'clinical',
   fields: [
     // Patient Information
-    { key: 'patientName', label: 'Patient Name', type: 'text', required: true, group: 'Patient Information' },
+    { key: 'patientName', label: 'Patient Name & Trx#', type: 'text', required: true, group: 'Patient Information' },
     { key: 'patientDob', label: 'Date of Birth', type: 'date', required: false, group: 'Patient Information' },
-    { key: 'patientId', label: 'Patient ID / MRN', type: 'text', required: false, group: 'Patient Information' },
-    { key: 'patientAddress', label: 'Patient Address', type: 'text', required: false, group: 'Patient Information' },
     { key: 'patientPhone', label: 'Patient Phone', type: 'text', required: false, group: 'Patient Information' },
-    // Equipment / Supply
-    { key: 'equipmentDescription', label: 'Equipment / Supply Description', type: 'textarea', required: true, group: 'Equipment / Supply' },
-    { key: 'hcpcsCode', label: 'HCPCS Code(s)', type: 'text', required: false, group: 'Equipment / Supply' },
-    { key: 'serialNumber', label: 'Serial Number', type: 'text', required: false, group: 'Equipment / Supply' },
-    { key: 'quantity', label: 'Quantity', type: 'number', required: false, group: 'Equipment / Supply' },
-    // Delivery Details
-    { key: 'deliveryDate', label: 'Date of Delivery', type: 'date', required: true, group: 'Delivery Details' },
-    { key: 'deliveryMethod', label: 'Delivery Method', type: 'select', required: false, options: ['In-person delivery', 'Shipping', 'Pick-up', 'Not specified'], group: 'Delivery Details' },
-    { key: 'deliveredBy', label: 'Delivered By', type: 'text', required: false, group: 'Delivery Details' },
-    { key: 'receivedBy', label: 'Received By (Signature)', type: 'text', required: false, group: 'Delivery Details' },
-    { key: 'deliveryAddress', label: 'Delivery Address', type: 'text', required: false, group: 'Delivery Details' },
-    // Provider / Prescriber
-    { key: 'orderingPhysician', label: 'Ordering Physician', type: 'text', required: false, group: 'Provider Information' },
-    { key: 'npi', label: 'NPI', type: 'text', required: false, group: 'Provider Information' },
-    { key: 'referringProvider', label: 'Referring Provider', type: 'text', required: false, group: 'Provider Information' },
-    // Insurance / Billing
-    { key: 'insuranceName', label: 'Insurance / Payer', type: 'text', required: false, group: 'Insurance / Billing' },
-    { key: 'policyNumber', label: 'Policy Number', type: 'text', required: false, group: 'Insurance / Billing' },
-    { key: 'authorizationNumber', label: 'Authorization Number', type: 'text', required: false, group: 'Insurance / Billing' },
+    { key: 'heightInches', label: 'Height (inches)', type: 'number', required: false, group: 'Patient Information' },
+    { key: 'weightLbs', label: 'Weight (lbs)', type: 'number', required: false, group: 'Patient Information' },
+    { key: 'livingSituation', label: 'Living Situation', type: 'select', required: false, options: ['Lives alone', 'Lives with family/friends', 'Assisted living', 'Not specified'], group: 'Patient Information' },
+    { key: 'homeHealthAttendant', label: 'Home Health Attendant?', type: 'boolean', required: false, group: 'Patient Information' },
+    // Current Mobility
+    { key: 'currentMobilityDevice', label: 'Current Mobility Device(s)', type: 'textarea', required: false, group: 'Current Mobility', description: 'Cane, walker, manual wheelchair, scooter, PWC, etc.' },
+    // MRADLs
+    { key: 'mradlToileting', label: 'Toileting ability', type: 'textarea', required: false, group: 'MRADLs (Mobility-Related ADLs)' },
+    { key: 'mradlMealPrep', label: 'Meal preparation ability', type: 'textarea', required: false, group: 'MRADLs (Mobility-Related ADLs)' },
+    { key: 'mradlDressing', label: 'Dressing ability', type: 'textarea', required: false, group: 'MRADLs (Mobility-Related ADLs)' },
+    { key: 'mradlGrooming', label: 'Grooming ability', type: 'textarea', required: false, group: 'MRADLs (Mobility-Related ADLs)' },
+    { key: 'mradlBathing', label: 'Bathing ability', type: 'textarea', required: false, group: 'MRADLs (Mobility-Related ADLs)' },
+    // Extremity Strength
+    { key: 'armMovement', label: 'Can move both arms?', type: 'select', required: false, options: ['Yes', 'No', 'Limited', 'Not specified'], group: 'Extremity Strength' },
+    { key: 'armRaiseFront', label: 'Can raise arms straight out front (pointing)?', type: 'select', required: false, options: ['Yes', 'No', 'Limited', 'Not specified'], group: 'Extremity Strength' },
+    { key: 'armRaiseAbove', label: 'Can raise hands above head?', type: 'select', required: false, options: ['Yes', 'No', 'Limited', 'Not specified'], group: 'Extremity Strength' },
+    { key: 'legMovement', label: 'Can move legs?', type: 'select', required: false, options: ['Yes', 'No', 'Limited', 'Not specified'], group: 'Extremity Strength' },
+    { key: 'legExtension', label: 'Can extend legs straight while sitting?', type: 'select', required: false, options: ['Yes', 'No', 'Limited', 'Not specified'], group: 'Extremity Strength' },
+    { key: 'footStrength', label: 'Can push door open with feet?', type: 'select', required: false, options: ['Yes', 'No', 'Not specified'], group: 'Extremity Strength' },
+    // Falls / Dizziness
+    { key: 'fallHistory', label: 'Falls/near-falls/dizziness in past 6 months?', type: 'textarea', required: false, group: 'Falls & Safety' },
+    // Pain
+    { key: 'painNeck', label: 'Neck pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painShoulder', label: 'Shoulder pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painElbows', label: 'Elbow pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painArms', label: 'Arm pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painHands', label: 'Hand pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painBack', label: 'Back pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painHips', label: 'Hip pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painKnees', label: 'Knee pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painLegs', label: 'Leg pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    { key: 'painAnkles', label: 'Ankle pain?', type: 'boolean', required: false, group: 'Consistent Pain' },
+    // Additional Medical Info
+    { key: 'painMedications', label: 'Takes pain medications?', type: 'textarea', required: false, group: 'Additional Medical Info' },
+    { key: 'numbnessTingling', label: 'Numbness/tingling in hands, feet, or legs?', type: 'textarea', required: false, group: 'Additional Medical Info' },
+    { key: 'nutritionalSupplements', label: 'Uses Ensure/Boost/supplements?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'incontinenceSupplies', label: 'Needs incontinence supplies?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'diabetes', label: 'Has diabetes?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'peripheralVascularDisease', label: 'Peripheral vascular disease?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'intermittentCatheters', label: 'Uses intermittent catheters?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'strokeHistory', label: 'History of stroke?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'strokeWeaknessParalysis', label: 'Stroke resulted in weakness/paralysis?', type: 'textarea', required: false, group: 'Additional Medical Info', description: 'If yes, which side and type' },
+    { key: 'spasticity', label: 'Has spasticity?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'pressureUlcerHistory', label: 'History of pressure ulcers?', type: 'textarea', required: false, group: 'Additional Medical Info', description: 'Location and sensation status' },
+    { key: 'amputations', label: 'Any amputations?', type: 'textarea', required: false, group: 'Additional Medical Info', description: 'Location, above or below knee' },
+    { key: 'spinalCurvature', label: 'Spinal curvature (scoliosis, kyphosis)?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'swellingEdema', label: 'Swelling in feet/ankles/legs?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'oxygenUse', label: 'On oxygen?', type: 'boolean', required: false, group: 'Additional Medical Info' },
+    { key: 'arthritis', label: 'Arthritis?', type: 'textarea', required: false, group: 'Additional Medical Info', description: 'Type (Rheumatoid, Osteo, Psoriatic) and location' },
+    // Diagnoses
+    { key: 'qualifyingDiagnoses', label: 'Qualifying diagnoses for PWC', type: 'textarea', required: false, group: 'Diagnoses' },
+    { key: 'heartLungConditions', label: 'Heart or lung conditions', type: 'textarea', required: false, group: 'Diagnoses' },
+    { key: 'neurologicalConditions', label: 'Neurological conditions', type: 'textarea', required: false, group: 'Diagnoses' },
     // Notes
     { key: 'notes', label: 'Additional Notes', type: 'textarea', required: false, group: 'Notes' },
-    { key: 'discrepancies', label: 'Discrepancies / Missing Info', type: 'textarea', required: false, group: 'Notes', description: 'Any information that appears incomplete, inconsistent, or missing from the source document.' },
   ],
   systemPrompt: `You are a medical document data extraction specialist for a Durable Medical Equipment (DME) supplier.
 
-Your task: extract Proof of Prior Delivery (PPD) data from the uploaded document. PPD proves that a specific piece of equipment or supply was previously delivered to a patient.
+Your task: extract Patient Provided Data (PPD) from uploaded clinical notes, physician evaluations, or patient interview records. PPD is used to pre-fill a Seating Evaluation for Power Mobility Device (PMD/PWC) orders.
+
+The PPD questionnaire covers:
+1. MRADLs (Mobility-Related Activities of Daily Living): toileting, meal prep, dressing, grooming, bathing
+2. Extremity Strength: arm movement/raising, leg movement/extension, foot strength
+3. Falls/dizziness history
+4. Consistent pain by body area (neck, shoulders, elbows, arms, hands, back, hips, knees, legs, ankles)
+5. Medical history: pain medications, numbness/tingling, diabetes, PVD, catheter use, stroke history, spasticity, pressure ulcers, amputations, spinal curvature, edema, oxygen use, arthritis
+6. Qualifying diagnoses, heart/lung conditions, neurological conditions
+7. Physical measurements: height, weight
 
 Rules:
 - Extract ONLY information explicitly stated in the document. Never guess or fabricate data.
 - If a field is not present in the document, return null for that field.
 - For dates, use YYYY-MM-DD format.
-- For HCPCS codes, include all codes found (comma-separated if multiple).
-- In the "discrepancies" field, note any missing required information or inconsistencies you observe.
-- Be precise with patient names, addresses, and ID numbers — copy them exactly as written.
-- If the document contains multiple deliveries, extract data for the PRIMARY or most recent delivery.`,
+- For yes/no boolean fields, return true, false, or null (if not mentioned).
+- For pain areas, set to true only if the document explicitly mentions pain in that area.
+- For MRADLs, describe the patient's ability level based on what the notes say.
+- Include all ICD-10 codes found in the qualifying diagnoses field.
+- Be precise with clinical details — copy diagnoses and measurements exactly as stated.`,
 };
 
 const GENERAL_ANALYSIS_TEMPLATE: ExtractionTemplate = {

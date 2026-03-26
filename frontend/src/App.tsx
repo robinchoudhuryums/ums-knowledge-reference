@@ -14,13 +14,14 @@ import { DocumentExtractor } from './components/DocumentExtractor';
 import { ObservabilityDashboard } from './components/ObservabilityDashboard';
 import { ChangePasswordForm } from './components/ChangePasswordForm';
 import { IntakeAutoFill } from './components/IntakeAutoFill';
+import { PpdQuestionnaire } from './components/PpdQuestionnaire';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import { Collection } from './types';
 import { listCollections } from './services/api';
 
-type Tab = 'chat' | 'search' | 'extract' | 'intake' | 'documents' | 'ocr' | 'admin';
+type Tab = 'chat' | 'search' | 'extract' | 'intake' | 'ppd' | 'documents' | 'ocr' | 'admin';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
@@ -29,6 +30,7 @@ const tabIcons: Record<Tab, string> = {
   search: '\uD83D\uDD0D',
   extract: '\uD83D\uDCDD',
   intake: '\uD83D\uDCCB',
+  ppd: '\uD83E\uDDBD',
   ocr: '\uD83D\uDCF7',
   documents: '\uD83D\uDCC1',
   admin: '\u2699\uFE0F',
@@ -96,6 +98,7 @@ export default function App() {
     { key: 'search', label: 'Search' },
     { key: 'extract', label: 'Extract' },
     { key: 'intake', label: 'Intake / Clinical' },
+    { key: 'ppd', label: 'PPD' },
     { key: 'ocr', label: 'OCR Scan' },
     { key: 'documents', label: 'Documents' },
     { key: 'admin', label: 'Admin', adminOnly: true },
@@ -149,6 +152,7 @@ export default function App() {
           {activeTab === 'search' && <DocumentSearch collections={collections} />}
           {activeTab === 'extract' && <DocumentExtractor />}
           {activeTab === 'intake' && <IntakeAutoFill />}
+          {activeTab === 'ppd' && <PpdQuestionnaire />}
           {activeTab === 'ocr' && <OcrTool />}
           {activeTab === 'documents' && (
             <DocumentManager

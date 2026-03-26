@@ -47,32 +47,18 @@ describe('extractDocumentData', () => {
   });
 
   it('returns correct ExtractionResult for valid JSON response', async () => {
-    const documentText = 'Patient John Doe was delivered a portable oxygen concentrator on January 15 2024. Delivered by UMS technician.';
+    const documentText = 'Patient John Doe, Trx# 12345. Height 68 inches, Weight 210 lbs. Diagnoses include COPD and osteoarthritis. Uses walker currently.';
     mockExtractText.mockResolvedValue({ text: documentText });
 
     const responseJson = JSON.stringify({
-      patientName: 'John Doe',
-      deliveryDate: '2024-01-15',
+      patientName: 'John Doe - Trx# 12345',
       patientDob: null,
-      patientId: null,
-      patientAddress: null,
       patientPhone: null,
-      equipmentDescription: 'Portable oxygen concentrator',
-      hcpcsCode: null,
-      serialNumber: null,
-      quantity: null,
-      deliveryMethod: null,
-      deliveredBy: 'UMS technician',
-      receivedBy: null,
-      deliveryAddress: null,
-      orderingPhysician: null,
-      npi: null,
-      referringProvider: null,
-      insuranceName: null,
-      policyNumber: null,
-      authorizationNumber: null,
+      heightInches: 68,
+      weightLbs: 210,
+      currentMobilityDevice: 'Walker',
+      qualifyingDiagnoses: 'COPD, osteoarthritis',
       notes: null,
-      discrepancies: null,
     });
 
     mockBedrockSend.mockResolvedValue(
@@ -82,9 +68,9 @@ describe('extractDocumentData', () => {
     const result = await extractDocumentData(Buffer.from('data'), 'test.pdf', 'application/pdf', 'ppd');
 
     expect(result.templateId).toBe('ppd');
-    expect(result.templateName).toBe('Proof of Prior Delivery (PPD)');
-    expect(result.data.patientName).toBe('John Doe');
-    expect(result.data.deliveryDate).toBe('2024-01-15');
+    expect(result.templateName).toBe('Patient Provided Data (PPD) — Seating Evaluation');
+    expect(result.data.patientName).toBe('John Doe - Trx# 12345');
+    expect(result.data.heightInches).toBe(68);
     expect(result.confidence).toBe('high');
     expect(result.extractionNotes).toBe('Complete extraction.');
     expect(result.modelUsed).toBe('test-extraction-model');
@@ -130,6 +116,6 @@ describe('extractDocumentData', () => {
     expect(result.extractionNotes).toContain('did not return parseable JSON');
     // All fields should be null
     expect(result.data.patientName).toBeNull();
-    expect(result.data.deliveryDate).toBeNull();
+    expect(result.data.notes).toBeNull();
   });
 });

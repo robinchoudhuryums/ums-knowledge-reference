@@ -42,6 +42,13 @@ export interface PmdRecommendation {
   description: string;
   category: 'complex-rehab' | 'standard';
   justification: string;
+  imageUrl?: string;
+  brochureUrl?: string;
+  seatDimensions?: string;
+  colors?: string;
+  leadTime?: string;
+  notes?: string;
+  portable?: boolean;
   status?: 'accepted' | 'rejected' | 'undecided';
   preferred?: boolean;
 }
@@ -145,174 +152,291 @@ export function getPpdQuestionById(id: string): PpdQuestion | undefined {
  * - Pain/spasticity/pressure ulcers → tilt/recline needs (Group 3)
  * - Neurological conditions → complex rehab vs. standard
  * - Upper extremity limitations → specialty controls (Group 4)
+ *
+ * Ported from the original filterRecommendations.gs Apps Script logic.
  */
 export function determinePmdRecommendations(responses: PpdResponse[]): PmdRecommendation[] {
+  const { PMD_CATALOG, getProductByHcpcs } = require('./pmdCatalog');
+
+  // ─── 1. Data Gathering ─────────────────────────────────────────────
   const get = (id: string): string => {
     const r = responses.find(r => r.questionId === id);
     if (r === undefined || r.answer === null) return '';
     return String(r.answer).toLowerCase().trim();
   };
 
-  const isYes = (id: string): boolean => {
+  const isPositive = (id: string): boolean => {
     const val = get(id);
-    return val === 'yes' || val === 'true';
+    return val.includes('yes') || val === 'true';
   };
 
-  const weight = parseFloat(get('q38')) || 0;
-  const recommendations: PmdRecommendation[] = [];
+  const weight = parseInt(get('q38').replace(/\D/g, ''), 10) || 0;
+  const neuroCondition = get('q43');
+  const numbnessAnswer = get('q25');
+  const amputationStatus = get('q34');
+  const strokeDetails = get('q31a');
 
-  // ─── Determine weight class ────────────────────────────────────────
-  let weightClass: 'standard' | 'heavy-duty' | 'very-heavy-duty' | 'extra-heavy-duty' = 'standard';
-  if (weight > 600) weightClass = 'extra-heavy-duty';
-  else if (weight > 450) weightClass = 'very-heavy-duty';
-  else if (weight > 300) weightClass = 'heavy-duty';
+  const hasSpineCurvature = isPositive('q35');
+  const isOnOxygen = isPositive('q44');
+  const hasPressureUlcers = isPositive('q33');
+  const hasSpasticity = isPositive('q32') || (get('q32').length > 3 && !get('q32').includes('no'));
+  const hasSwelling = isPositive('q36');
+  const usesCatheters = isPositive('q30');
 
-  // ─── Determine if complex rehab is indicated ───────────────────────
-  const hasNeuroCondition = get('q43').length > 3 && !get('q43').includes('no');
-  const hasStroke = isYes('q31');
-  const hasStrokeWeakness = get('q31a').length > 3;
-  const hasSpasticity = get('q32').length > 3 && !get('q32').includes('no');
-  const hasPressureUlcers = isYes('q33');
-  const hasSpinalCurvature = isYes('q35');
-  const hasAmputation = get('q34').length > 3 && !get('q34').includes('no');
+  const hasLowerExtremityNumbness = numbnessAnswer.includes('feet') || numbnessAnswer.includes('legs');
 
-  // ─── Determine tilt/recline need (Group 3 indicators) ─────────────
-  const needsTiltRecline = hasPressureUlcers || hasSpasticity || hasSpinalCurvature ||
-    (hasStroke && hasStrokeWeakness);
+  const hasAmputation = (amputationStatus.includes('knee') ||
+    amputationStatus.includes('left') ||
+    amputationStatus.includes('right')) &&
+    !amputationStatus.includes('no');
 
-  // ─── Determine upper extremity limitations (Group 4 indicators) ────
-  const cantMoveArms = !isYes('q7');
-  const cantRaiseArms = !isYes('q8') && !isYes('q9');
-  const severeUpperLimitation = cantMoveArms || (cantRaiseArms && hasNeuroCondition);
+  // ─── Stroke Analysis ───────────────────────────────────────────────
+  let qualifiesForHemiplegia = false;
+  let hasStrokeWeakness = false;
+  let hemiplegiaSide = '';
 
-  // ─── Complex Rehab (Group 3 with multiple power options) ───────────
-  const isComplexRehab = hasNeuroCondition || hasSpasticity || (hasStroke && hasStrokeWeakness) ||
-    hasPressureUlcers || hasSpinalCurvature || hasAmputation;
+  if (strokeDetails && !strokeDetails.includes('no')) {
+    const parts = strokeDetails.split(/[,;\n\r]+/);
+    let rightParaCount = 0;
+    let leftParaCount = 0;
 
-  if (isComplexRehab && needsTiltRecline) {
-    // Group 3 multiple power options (tilt + recline)
-    const codeMap: Record<string, string> = {
-      'standard': 'K0861',
-      'heavy-duty': 'K0863',
-      'very-heavy-duty': 'K0864',
-      'extra-heavy-duty': 'K0864',
-    };
-    recommendations.push({
-      hcpcsCode: codeMap[weightClass],
-      description: `PWC Group 3, ${weightClass.replace(/-/g, ' ')}, multiple power options (tilt + recline)`,
-      category: 'complex-rehab',
-      justification: buildJustification(responses, 'group3-multi'),
-    });
+    for (const raw of parts) {
+      const p = raw.trim().toLowerCase();
+      if (p.includes('weakness') || p.includes('paralysis')) {
+        hasStrokeWeakness = true;
+      }
+      if (p.includes('paralysis')) {
+        if (p.includes('right arm')) rightParaCount++;
+        if (p.includes('right leg')) rightParaCount++;
+        if (p.includes('right side')) rightParaCount += 2;
+        if (p.includes('left arm')) leftParaCount++;
+        if (p.includes('left leg')) leftParaCount++;
+        if (p.includes('left side')) leftParaCount += 2;
+      }
+    }
 
-    // Also offer single power option
-    const singleMap: Record<string, string> = {
-      'standard': 'K0857',
-      'heavy-duty': 'K0859',
-      'very-heavy-duty': 'K0852',
-      'extra-heavy-duty': 'K0854',
-    };
-    recommendations.push({
-      hcpcsCode: singleMap[weightClass],
-      description: `PWC Group 3, ${weightClass.replace(/-/g, ' ')}, single power option`,
-      category: 'complex-rehab',
-      justification: buildJustification(responses, 'group3-single'),
-    });
-  } else if (isComplexRehab) {
-    // Group 3 standard (no power options, but complex rehab qualifying)
-    const codeMap: Record<string, string> = {
-      'standard': 'K0849',
-      'heavy-duty': 'K0851',
-      'very-heavy-duty': 'K0853',
-      'extra-heavy-duty': 'K0855',
-    };
-    recommendations.push({
-      hcpcsCode: codeMap[weightClass],
-      description: `PWC Group 3, ${weightClass.replace(/-/g, ' ')}, captain chair`,
-      category: 'complex-rehab',
-      justification: buildJustification(responses, 'group3-std'),
-    });
+    if (rightParaCount >= 2) {
+      qualifiesForHemiplegia = true;
+      hemiplegiaSide = 'Right';
+    } else if (leftParaCount >= 2) {
+      qualifiesForHemiplegia = true;
+      hemiplegiaSide = 'Left';
+    }
   }
 
-  // ─── Group 4 (specialty controls) ──────────────────────────────────
-  if (severeUpperLimitation) {
-    recommendations.push({
-      hcpcsCode: weightClass === 'heavy-duty' ? 'K0870' : 'K0869',
-      description: `PWC Group 4, ${weightClass.replace(/-/g, ' ')}, specialty controls`,
-      category: 'complex-rehab',
-      justification: 'Severe upper extremity limitations require specialty input device (head control, sip-and-puff, etc.)',
-    });
-  }
+  const hasValidNeuroDiagnosis = neuroCondition !== '' &&
+    !['no', 'n/a', 'none', 'no.'].includes(neuroCondition);
 
-  // ─── Standard Power Wheelchairs (Group 2) ──────────────────────────
-  // Always offer Group 2 as a baseline option
-  if (needsTiltRecline && !isComplexRehab) {
-    // Group 2 with tilt and recline
-    const codeMap: Record<string, string> = {
-      'standard': 'K0836',
-      'heavy-duty': 'K0839',
-      'very-heavy-duty': 'K0840',
-      'extra-heavy-duty': 'K0840',
-    };
-    recommendations.push({
-      hcpcsCode: codeMap[weightClass],
-      description: `PWC Group 2, ${weightClass.replace(/-/g, ' ')}, power tilt and recline`,
-      category: 'standard',
-      justification: buildJustification(responses, 'group2-tilt'),
-    });
-  }
+  // ─── Eligibility Flags ─────────────────────────────────────────────
+  const isNeuroEligible = hasValidNeuroDiagnosis || hasSpasticity || qualifiesForHemiplegia;
 
-  // Group 2 standard (always include as fallback)
-  const stdMap: Record<string, string> = {
-    'standard': 'K0820',
-    'heavy-duty': 'K0823',
-    'very-heavy-duty': 'K0825',
-    'extra-heavy-duty': 'K0825',
-  };
-  recommendations.push({
-    hcpcsCode: stdMap[weightClass],
-    description: `PWC Group 2, ${weightClass.replace(/-/g, ' ')}, standard`,
-    category: 'standard',
-    justification: 'Standard power wheelchair meeting basic mobility needs. Lesser option if complex rehab criteria are not fully met.',
+  const isSPOEligible = hasSwelling ||
+    hasPressureUlcers ||
+    isNeuroEligible ||
+    usesCatheters ||
+    hasSpineCurvature ||
+    hasAmputation;
+
+  const isMPOEligible = usesCatheters || isNeuroEligible;
+
+  // ─── 2. Filter Products from Catalog ───────────────────────────────
+  const inherentlySolidCodes = [
+    'K0822', 'K0824', 'K0826', 'K0828',
+    'K0835', 'K0837', 'K0839',
+    'K0840', 'K0841', 'K0843',
+    'K0848', 'K0849', 'K0850', 'K0851',
+    'K0856', 'K0857', 'K0858', 'K0859',
+    'K0861', 'K0862', 'K0863', 'K0864',
+  ];
+
+  const eligibleProducts = PMD_CATALOG.filter((product: { hcpcs: string; seatType: string; weightCapacity: string }) => {
+    const hcpcs = product.hcpcs.trim();
+    const hcpcsNum = parseInt(hcpcs.replace(/\D/g, ''), 10) || 0;
+    if (hcpcsNum === 0) return false;
+
+    const seatCode = product.seatType.toLowerCase().trim();
+    const isKnownSolid = inherentlySolidCodes.includes(hcpcs);
+    const sheetSaysSolid = seatCode.includes('s');
+    const offersSolid = isKnownSolid || sheetSaysSolid;
+    const offersCaptain = seatCode.includes('c') && !isKnownSolid && !sheetSaysSolid;
+
+    // Weight filtering
+    if (weight > 0) {
+      if (product.weightCapacity.includes('-')) {
+        const [minCap, maxCap] = product.weightCapacity.split('-').map(n => parseInt(n, 10));
+        if (weight < minCap || weight > maxCap) return false;
+      } else {
+        const maxCap = parseInt(product.weightCapacity, 10);
+        if (weight > maxCap) return false;
+      }
+    }
+
+    const isGroup3 = hcpcsNum >= 848;
+    const isMPO = (hcpcsNum >= 840 && hcpcsNum <= 843) || (hcpcsNum >= 861 && hcpcsNum <= 864);
+    const isSPO = (hcpcsNum >= 835 && hcpcsNum <= 839) || (hcpcsNum >= 856 && hcpcsNum <= 859);
+
+    // Solid seat requirement
+    const needsSolidSeat = hasSpineCurvature ||
+      hasPressureUlcers ||
+      hasSpasticity ||
+      hasValidNeuroDiagnosis ||
+      qualifiesForHemiplegia ||
+      hasStrokeWeakness ||
+      hasLowerExtremityNumbness ||
+      usesCatheters ||
+      hasAmputation;
+
+    if (needsSolidSeat) {
+      if (!offersSolid) return false;
+    } else {
+      if (!isGroup3 && !offersCaptain) return false;
+    }
+
+    // Oxygen conflict
+    if (isOnOxygen && (hcpcs === 'K0837' || hcpcs === 'K0838')) return false;
+
+    // Group/power eligibility
+    if (isGroup3 && !isNeuroEligible) return false;
+    if (isMPO && !isMPOEligible) return false;
+    if (isSPO && !isSPOEligible) return false;
+
+    return true;
   });
 
-  return recommendations;
-}
-
-function buildJustification(responses: PpdResponse[], type: string): string {
-  const get = (id: string): string => {
-    const r = responses.find(r => r.questionId === id);
-    if (r === undefined || r.answer === null) return '';
-    return String(r.answer).trim();
+  // ─── 3. Substitution Rules ─────────────────────────────────────────
+  const substitutions: Record<string, string> = {
+    'K0856': 'K0861',
+    'K0838': 'K0837',
   };
 
-  const factors: string[] = [];
+  type ProductEntry = { hcpcs: string; brochureUrl: string; imageUrl: string; seatType: string; features: string; weightCapacity: string; seatDimensions?: string; colors?: string; leadTime?: string; notes?: string; portable?: boolean };
+  const processedMap = new Map<string, ProductEntry>();
 
-  const weight = parseFloat(get('q38')) || 0;
-  if (weight > 300) factors.push(`Patient weight ${weight} lbs requires heavy duty frame`);
+  for (const product of eligibleProducts) {
+    let finalHcpcs = product.hcpcs.trim();
+    let finalProduct = { ...product };
 
-  if (get('q43') && !get('q43').toLowerCase().includes('no')) {
-    factors.push(`Neurological condition: ${get('q43')}`);
-  }
-  if (get('q32') && !get('q32').toLowerCase().includes('no')) {
-    factors.push(`Spasticity present`);
-  }
-  if (get('q33')?.toLowerCase() === 'yes' || get('q33')?.toLowerCase() === 'true') {
-    factors.push('History of pressure ulcers — tilt/recline needed for pressure relief');
-  }
-  if (get('q35')?.toLowerCase() === 'yes' || get('q35')?.toLowerCase() === 'true') {
-    factors.push('Spinal curvature — positioning support needed');
-  }
-  if (get('q31')?.toLowerCase() === 'yes' || get('q31')?.toLowerCase() === 'true') {
-    factors.push(`Stroke history${get('q31a') ? ': ' + get('q31a') : ''}`);
+    // K0841/K0842/K0843 → upgrade to Group 3 if neuro-eligible
+    if (['K0841', 'K0842', 'K0843'].includes(finalHcpcs)) {
+      if (isNeuroEligible) {
+        finalHcpcs = finalHcpcs === 'K0843' ? 'K0862' : 'K0861';
+        const target = getProductByHcpcs(finalHcpcs);
+        if (target) {
+          finalProduct = { ...finalProduct, hcpcs: finalHcpcs, brochureUrl: target.brochureUrl, imageUrl: target.imageUrl };
+        }
+      }
+    } else if (substitutions[finalHcpcs]) {
+      const targetHcpcs = substitutions[finalHcpcs];
+      const targetIsGroup3 = parseInt(targetHcpcs.replace(/\D/g, ''), 10) >= 848;
+      const originalIsGroup2 = parseInt(finalHcpcs.replace(/\D/g, ''), 10) < 848;
+
+      if (originalIsGroup2 && targetIsGroup3 && !isNeuroEligible) {
+        // Keep original — can't upgrade without neuro eligibility
+      } else {
+        finalHcpcs = targetHcpcs;
+        const target = getProductByHcpcs(targetHcpcs);
+        if (target) {
+          finalProduct = { ...finalProduct, hcpcs: finalHcpcs, brochureUrl: target.brochureUrl, imageUrl: target.imageUrl };
+        }
+      }
+    }
+
+    if (!processedMap.has(finalHcpcs)) {
+      processedMap.set(finalHcpcs, finalProduct);
+    }
   }
 
-  if (type === 'group3-multi') {
-    factors.push('Multiple power options (tilt + recline) indicated for pressure management and positioning');
-  } else if (type === 'group3-single') {
-    factors.push('Single power option (tilt or recline) as alternative to multiple power');
-  } else if (type === 'group2-tilt') {
-    factors.push('Power tilt and recline for comfort and pressure management');
+  // ─── 4. Sort & Justify ─────────────────────────────────────────────
+  const results: PmdRecommendation[] = [];
+
+  for (const [, p] of processedMap) {
+    const hcpcsNum = parseInt(p.hcpcs.replace(/\D/g, ''), 10) || 0;
+    const isGroup3 = hcpcsNum >= 848;
+    const isComplex = hcpcsNum >= 835;
+    const isSPO = (hcpcsNum >= 835 && hcpcsNum <= 839) || (hcpcsNum >= 856 && hcpcsNum <= 859);
+
+    const isKnownSolid = inherentlySolidCodes.includes(p.hcpcs);
+    const seatCode = p.seatType.toLowerCase();
+    const sheetSaysSolid = seatCode.includes('s');
+    const offersSolid = isKnownSolid || sheetSaysSolid;
+    const isCaptainOnly = seatCode.includes('c') && !offersSolid;
+
+    let displayHcpcs = p.hcpcs;
+    let justification = 'Eligible option';
+
+    if (isGroup3) {
+      const reasons: string[] = [];
+      if (hasValidNeuroDiagnosis) reasons.push('Neuro Dx');
+      if (hasSpasticity) reasons.push('Spasticity');
+      if (qualifiesForHemiplegia) reasons.push(`Hemiplegia (${hemiplegiaSide} Side)`);
+      if (hasAmputation) reasons.push('Amputation');
+      justification = `Medically Necessary Upgrade due to: ${reasons.join(', ')}`;
+    } else {
+      const solidReasons: string[] = [];
+      if (hasPressureUlcers) solidReasons.push('Pressure Ulcers');
+      if (hasSpineCurvature) solidReasons.push('Spinal Curvature');
+      if (hasLowerExtremityNumbness) solidReasons.push('Impaired Sensation');
+      if (hasSpasticity) solidReasons.push('Spasticity');
+      if (hasValidNeuroDiagnosis) solidReasons.push('Neuro Dx');
+      if (hasStrokeWeakness && !qualifiesForHemiplegia) solidReasons.push('CVA/Stroke Weakness');
+      if (hasAmputation) solidReasons.push('Amputation (Center of Gravity/Pressure Relief)');
+      if (usesCatheters) solidReasons.push('Intermittent Catheterization');
+
+      if (isSPO) {
+        const spoReasons: string[] = [];
+        if (hasSwelling) spoReasons.push('Power Legs (Edema)');
+        if (hasPressureUlcers) spoReasons.push('Power Tilt (Pressure Relief)');
+        if (hasSpineCurvature || hasAmputation || isNeuroEligible) spoReasons.push('Power Tilt (Positioning/Stability)');
+        if (usesCatheters) spoReasons.push('Power Tilt (Catheterization)');
+        justification = `Indicated for: ${spoReasons.length > 0 ? spoReasons.join(', ') : 'Power Accessory'}`;
+      }
+
+      if (solidReasons.length > 0 && offersSolid) {
+        if (justification === 'Eligible option') justification = '';
+        else justification += ' | ';
+        justification += `Solid Seat indicated for: ${solidReasons.join(', ')}`;
+      } else if (!isSPO && offersSolid) {
+        if (justification === 'Eligible option') justification = 'Solid Seat';
+        else justification += ' (Solid Seat)';
+      } else if (isCaptainOnly && !isSPO) {
+        justification = "Captain's Seat";
+      }
+
+      // Substitution display for K0841/K0842/K0843
+      if (['K0841', 'K0842', 'K0843'].includes(p.hcpcs)) {
+        const subTarget = p.hcpcs === 'K0843' ? 'K0862' : 'K0861';
+        displayHcpcs = `${p.hcpcs} (substitute ${subTarget})`;
+        let reason = 'MPO';
+        if (usesCatheters) reason += ' (for Intermittent Cath)';
+        justification = `${reason} — Provide ${subTarget} as free upgrade`;
+      }
+
+      if (['K0800', 'K0801'].includes(p.hcpcs)) {
+        justification += ' | (if POV eligible)';
+      }
+    }
+
+    results.push({
+      hcpcsCode: displayHcpcs,
+      description: p.features,
+      category: isComplex ? 'complex-rehab' : 'standard',
+      justification,
+      imageUrl: p.imageUrl,
+      brochureUrl: p.brochureUrl,
+      seatDimensions: p.seatDimensions,
+      colors: p.colors,
+      leadTime: p.leadTime,
+      notes: p.notes,
+      portable: p.portable,
+    });
   }
 
-  return factors.length > 0 ? factors.join('. ') + '.' : 'Meets basic criteria for power mobility device.';
+  // Sort: higher HCPCS numbers first (complex rehab on top)
+  results.sort((a, b) => {
+    const aNum = parseInt(a.hcpcsCode.replace(/\D/g, ''), 10) || 0;
+    const bNum = parseInt(b.hcpcsCode.replace(/\D/g, ''), 10) || 0;
+    return bNum - aNum;
+  });
+
+  return results;
 }

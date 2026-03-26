@@ -31,12 +31,12 @@ function storageKey(patient: string): string {
 
 const sty = {
   container: { padding: 20, maxWidth: 900, margin: '0 auto', fontFamily: 'system-ui, sans-serif' } as React.CSSProperties,
-  header: { background: 'linear-gradient(135deg, #223b5d, #1565c0)', color: '#fff', padding: '16px 20px', borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 12 } as React.CSSProperties,
+  header: { background: 'linear-gradient(135deg, #223b5d, #1565c0)', color: '#fff', padding: '16px 20px', borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' } as React.CSSProperties,
   headerTitle: { margin: 0, fontSize: 20, fontWeight: 600 } as React.CSSProperties,
   patientInput: { padding: '8px 12px', borderRadius: 6, border: 'none', fontSize: 14, width: 260, outline: 'none' } as React.CSSProperties,
   langToggle: { display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.5)' } as React.CSSProperties,
   section: { border: '1px solid #d0d7de', borderRadius: 10, marginBottom: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', transition: 'all 0.3s ease' } as React.CSSProperties,
-  sectionHeader: { background: '#f0f4f8', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const } as React.CSSProperties,
+  sectionHeader: { background: 'linear-gradient(to right, #f0f4f8, #e8eef5)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s' } as React.CSSProperties,
   sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: '#223b5d' } as React.CSSProperties,
   sectionBody: { padding: '14px 16px', transition: 'max-height 0.3s ease', overflow: 'hidden' } as React.CSSProperties,
   questionRow: { marginBottom: 14 } as React.CSSProperties,
@@ -46,8 +46,8 @@ const sty = {
   textarea: { padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const, minHeight: 70, resize: 'vertical' as const } as React.CSSProperties,
   checkboxRow: { display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' } as React.CSSProperties,
   checkbox: { width: 20, height: 20, accentColor: '#1976d2', cursor: 'pointer' } as React.CSSProperties,
-  progressBar: { background: '#e9ecef', borderRadius: 8, height: 24, marginBottom: 16, position: 'relative' as const, overflow: 'hidden' } as React.CSSProperties,
-  progressText: { position: 'absolute' as const, top: 0, left: 0, right: 0, textAlign: 'center' as const, lineHeight: '24px', fontSize: 12, fontWeight: 600, color: '#333' } as React.CSSProperties,
+  progressRing: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '8px 0' } as React.CSSProperties,
+  progressRingText: { fontSize: 13, color: '#555', fontWeight: 500 } as React.CSSProperties,
   completionBadge: { fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600 } as React.CSSProperties,
   actionBar: { display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' as const, alignItems: 'center' } as React.CSSProperties,
   submitBtn: { background: '#1976d2', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' } as React.CSSProperties,
@@ -181,6 +181,13 @@ export function AccountCreationForm() {
 
   return (
     <div style={sty.container}>
+      <style>{`
+        .ac-section:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .ac-section-body { transition: max-height 0.3s ease, opacity 0.3s ease; overflow: hidden; }
+        .ac-section-body.collapsed { max-height: 0 !important; opacity: 0; padding: 0 16px !important; }
+        .ac-section-body.expanded { max-height: 2000px; opacity: 1; }
+        @media (max-width: 768px) { .ac-header-wrap { flex-direction: column !important; align-items: flex-start !important; } }
+      `}</style>
       {/* Header */}
       <div style={sty.header}>
         <h2 style={sty.headerTitle}>
@@ -194,10 +201,19 @@ export function AccountCreationForm() {
         </div>
       </div>
 
-      {/* Progress */}
-      <div style={sty.progressBar}>
-        <div style={{ background: progressPct === 100 ? '#28a745' : '#1976d2', height: '100%', width: `${progressPct}%`, transition: 'width 0.3s', borderRadius: 8 }} />
-        <div style={sty.progressText}>
+      {/* Progress ring */}
+      <div style={sty.progressRing}>
+        <svg width="60" height="60" viewBox="0 0 60 60">
+          <circle cx="30" cy="30" r="25" fill="none" stroke="#e9ecef" strokeWidth="5" />
+          <circle cx="30" cy="30" r="25" fill="none"
+            stroke={progressPct < 25 ? '#dee2e6' : progressPct < 75 ? '#ffc107' : '#28a745'}
+            strokeWidth="5" strokeLinecap="round"
+            strokeDasharray={`${progressPct * 1.57} 157`}
+            transform="rotate(-90 30 30)"
+            style={{ transition: 'stroke-dasharray 0.4s ease, stroke 0.3s ease' }} />
+          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="#333">{progressPct}%</text>
+        </svg>
+        <div style={sty.progressRingText}>
           {answeredCount} / {totalRequired} {lang === 'en' ? 'required fields' : 'campos obligatorios'}
         </div>
       </div>
@@ -211,7 +227,7 @@ export function AccountCreationForm() {
         const groupTitle = lang === 'en' ? group : translateGroup(group);
 
         return (
-          <div key={group} style={sty.section}>
+          <div key={group} className="ac-section" style={sty.section}>
             <div style={sty.sectionHeader} onClick={() => toggleSection(group)}>
               <h3 style={sty.sectionTitle}>{groupTitle}</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -220,12 +236,11 @@ export function AccountCreationForm() {
                     {badgeText}
                   </span>
                 )}
-                <span style={{ fontSize: 14, color: '#666' }}>{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+                <span style={{ fontSize: 14, color: '#666', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
               </div>
             </div>
-            {!isCollapsed && (
-              <div style={sty.sectionBody}>
-                {questions.filter(q => q.group === group).map(q => {
+            <div className={`ac-section-body ${isCollapsed ? 'collapsed' : 'expanded'}`} style={sty.sectionBody}>
+              {questions.filter(q => q.group === group).map(q => {
                   const label = lang === 'en' ? q.text : q.spanishText;
                   const val = responses[q.id] ?? '';
                   return (
@@ -251,8 +266,7 @@ export function AccountCreationForm() {
                     </div>
                   );
                 })}
-              </div>
-            )}
+            </div>
           </div>
         );
       })}

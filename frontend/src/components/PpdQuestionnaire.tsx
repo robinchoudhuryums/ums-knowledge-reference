@@ -1,42 +1,40 @@
 /**
  * PpdQuestionnaire — PPD (Patient Provided Data) questionnaire for DME agents
  * conducting phone interviews with patients for Power Mobility Device orders.
- *
- * Features: English/Spanish toggle, collapsible sections, progress bar,
- * auto-save to sessionStorage, recommendation cards with accept/reject.
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
 type QuestionType = 'yes-no' | 'text' | 'number' | 'select';
+type Lang = 'en' | 'es';
 
-interface QuestionDef {
+interface Question {
   id: string;
+  type: QuestionType;
   en: string;
   es: string;
-  type: QuestionType;
-  options?: { value: string; labelEn: string; labelEs: string }[];
   required?: boolean;
+  options?: { value: string; labelEn: string; labelEs: string }[];
   showWhen?: { questionId: string; value: string };
-  long?: boolean; // use textarea instead of input
+  long?: boolean;
 }
 
-interface SectionDef {
+interface QuestionSection {
   id: string;
   titleEn: string;
   titleEs: string;
-  questions: QuestionDef[];
+  questions: Question[];
 }
 
 interface RecommendationProduct {
-  id: string;
-  category: 'complex_rehab' | 'standard';
   hcpcsCode: string;
-  brochureUrl?: string;
-  imageUrl?: string;
+  description: string;
   justification: string;
+  category: 'complex_rehab' | 'standard';
+  imageUrl?: string;
+  brochureUrl?: string;
   seatDimensions?: string;
   colors?: string;
   leadTime?: string;
@@ -44,132 +42,196 @@ interface RecommendationProduct {
 }
 
 interface RecommendationResponse {
-  products: RecommendationProduct[];
+  complexRehab: RecommendationProduct[];
+  standard: RecommendationProduct[];
 }
 
-type ProductDecision = 'accept' | 'reject' | 'undecided';
+// ── Question definitions ───────────────────────────────────────────────────
 
-// ─── Colors ──────────────────────────────────────────────────────────────────
-
-const C = {
-  primary: '#1976d2',
-  headerDark: '#223b5d',
-  greenBg: '#d4edda', greenFg: '#155724',
-  redBg: '#f8d7da', redFg: '#721c24',
-  yellowBg: '#fff3cd', yellowFg: '#856404',
-  grayBg: '#e2e3e5', grayFg: '#383d41',
-  white: '#ffffff',
-  border: '#c8d6e5',
-};
-
-// ─── Question Data ───────────────────────────────────────────────────────────
-
-const SECTIONS: SectionDef[] = [
+const sections: QuestionSection[] = [
   {
-    id: 'mobility', titleEn: 'Current Mobility', titleEs: 'Movilidad Actual',
+    id: 'mobility',
+    titleEn: 'Current Mobility',
+    titleEs: 'Movilidad Actual',
     questions: [
-      { id: 'q1', en: 'Do you currently use a wheelchair or scooter?', es: '¿Actualmente usa una silla de ruedas o scooter?', type: 'yes-no', required: true },
-      { id: 'q2', en: 'How do you currently move around your home?', es: '¿Cómo se mueve actualmente en su hogar?', type: 'text', required: true },
-      { id: 'q3', en: 'How far can you walk without stopping (in feet)?', es: '¿Qué distancia puede caminar sin detenerse (en pies)?', type: 'number', required: true },
-    ],
-  },
-  {
-    id: 'mradl', titleEn: 'MRADLs (Mobility-Related Activities of Daily Living)', titleEs: 'MRADLs (Actividades de la Vida Diaria Relacionadas con la Movilidad)',
-    questions: [
-      { id: 'q10', en: 'Can you get to the bathroom on your own?', es: '¿Puede llegar al baño solo/a?', type: 'yes-no', required: true },
-      { id: 'q11', en: 'Can you prepare meals independently?', es: '¿Puede preparar comidas de manera independiente?', type: 'yes-no', required: true },
-      { id: 'q12', en: 'Can you get dressed without assistance?', es: '¿Puede vestirse sin ayuda?', type: 'yes-no' },
-      { id: 'q13', en: 'Can you feed yourself?', es: '¿Puede alimentarse solo/a?', type: 'yes-no' },
-    ],
-  },
-  {
-    id: 'extremity', titleEn: 'Extremity Strength', titleEs: 'Fuerza de Extremidades',
-    questions: [
-      { id: 'q20', en: 'Rate your upper body strength', es: 'Califique la fuerza de su parte superior del cuerpo', type: 'select', required: true, options: [
-        { value: 'good', labelEn: 'Good', labelEs: 'Buena' },
-        { value: 'fair', labelEn: 'Fair', labelEs: 'Regular' },
-        { value: 'poor', labelEn: 'Poor', labelEs: 'Mala' },
+      { id: 'q1', type: 'select', en: 'How do you currently move around your home?', es: '\u00bfC\u00f3mo se mueve actualmente dentro de su hogar?', required: true, options: [
+        { value: 'walk', labelEn: 'Walk independently', labelEs: 'Camino independientemente' },
+        { value: 'walker', labelEn: 'Walker / Rollator', labelEs: 'Andador / Rollator' },
+        { value: 'cane', labelEn: 'Cane', labelEs: 'Bast\u00f3n' },
+        { value: 'wheelchair', labelEn: 'Manual wheelchair', labelEs: 'Silla de ruedas manual' },
+        { value: 'power', labelEn: 'Power wheelchair / Scooter', labelEs: 'Silla de ruedas el\u00e9ctrica / Scooter' },
+        { value: 'bedbound', labelEn: 'Mostly bedbound', labelEs: 'Principalmente en cama' },
       ]},
-      { id: 'q21', en: 'Rate your lower body strength', es: 'Califique la fuerza de su parte inferior del cuerpo', type: 'select', required: true, options: [
-        { value: 'good', labelEn: 'Good', labelEs: 'Buena' },
-        { value: 'fair', labelEn: 'Fair', labelEs: 'Regular' },
-        { value: 'poor', labelEn: 'Poor', labelEs: 'Mala' },
+      { id: 'q2', type: 'text', en: 'How far can you walk without stopping?', es: '\u00bfQu\u00e9 distancia puede caminar sin detenerse?', required: true },
+      { id: 'q3', type: 'yes-no', en: 'Do you use any assistive device right now?', es: '\u00bfUsa alg\u00fan dispositivo de asistencia actualmente?', required: true },
+      { id: 'q4', type: 'text', en: 'Describe your home layout (stairs, doorway widths, flooring).', es: 'Describa la distribuci\u00f3n de su hogar (escaleras, ancho de puertas, pisos).', long: true },
+    ],
+  },
+  {
+    id: 'mradls',
+    titleEn: 'Mobility-Related Activities of Daily Living (MRADLs)',
+    titleEs: 'Actividades de la Vida Diaria Relacionadas con la Movilidad (MRADLs)',
+    questions: [
+      { id: 'q10', type: 'yes-no', en: 'Can you dress yourself independently?', es: '\u00bfPuede vestirse solo/a?', required: true },
+      { id: 'q11', type: 'yes-no', en: 'Can you bathe/shower independently?', es: '\u00bfPuede ba\u00f1arse/ducharse solo/a?', required: true },
+      { id: 'q12', type: 'yes-no', en: 'Can you use the toilet independently?', es: '\u00bfPuede usar el ba\u00f1o solo/a?', required: true },
+      { id: 'q13', type: 'yes-no', en: 'Can you prepare meals independently?', es: '\u00bfPuede preparar comidas solo/a?', required: true },
+      { id: 'q14', type: 'yes-no', en: 'Can you move between bed, chair, and wheelchair safely?', es: '\u00bfPuede trasladarse entre cama, silla y silla de ruedas de forma segura?', required: true },
+    ],
+  },
+  {
+    id: 'strength',
+    titleEn: 'Extremity Strength',
+    titleEs: 'Fuerza de Extremidades',
+    questions: [
+      { id: 'q20', type: 'select', en: 'Rate your upper body strength:', es: 'Califique su fuerza del tren superior:', required: true, options: [
+        { value: 'normal', labelEn: 'Normal', labelEs: 'Normal' },
+        { value: 'mild', labelEn: 'Mild weakness', labelEs: 'Debilidad leve' },
+        { value: 'moderate', labelEn: 'Moderate weakness', labelEs: 'Debilidad moderada' },
+        { value: 'severe', labelEn: 'Severe weakness', labelEs: 'Debilidad severa' },
       ]},
-      { id: 'q22', en: 'Can you self-propel a manual wheelchair?', es: '¿Puede impulsar una silla de ruedas manual por sí mismo/a?', type: 'yes-no', required: true },
+      { id: 'q21', type: 'select', en: 'Rate your lower body strength:', es: 'Califique su fuerza del tren inferior:', required: true, options: [
+        { value: 'normal', labelEn: 'Normal', labelEs: 'Normal' },
+        { value: 'mild', labelEn: 'Mild weakness', labelEs: 'Debilidad leve' },
+        { value: 'moderate', labelEn: 'Moderate weakness', labelEs: 'Debilidad moderada' },
+        { value: 'severe', labelEn: 'Severe weakness', labelEs: 'Debilidad severa' },
+      ]},
+      { id: 'q22', type: 'yes-no', en: 'Can you propel a manual wheelchair by yourself?', es: '\u00bfPuede impulsar una silla de ruedas manual por s\u00ed mismo/a?', required: true },
     ],
   },
   {
-    id: 'falls', titleEn: 'Falls & Safety', titleEs: 'Caídas y Seguridad',
+    id: 'falls',
+    titleEn: 'Falls & Safety',
+    titleEs: 'Ca\u00eddas y Seguridad',
     questions: [
-      { id: 'q30', en: 'How many times have you fallen in the past 6 months?', es: '¿Cuántas veces se ha caído en los últimos 6 meses?', type: 'number', required: true },
-      { id: 'q31', en: 'Have you been hospitalized due to a fall?', es: '¿Ha sido hospitalizado/a debido a una caída?', type: 'yes-no', required: true },
-      { id: 'q31a', en: 'Please describe the hospitalization', es: 'Por favor describa la hospitalización', type: 'text', long: true, showWhen: { questionId: 'q31', value: 'yes' } },
-      { id: 'q32', en: 'Do you feel unsteady when standing?', es: '¿Se siente inestable al estar de pie?', type: 'yes-no' },
+      { id: 'q30', type: 'number', en: 'How many falls have you had in the last 6 months?', es: '\u00bfCu\u00e1ntas ca\u00eddas ha tenido en los \u00faltimos 6 meses?', required: true },
+      { id: 'q31', type: 'yes-no', en: 'Have any falls resulted in injury?', es: '\u00bfAlguna ca\u00edda result\u00f3 en lesi\u00f3n?', required: true },
+      { id: 'q31a', type: 'text', en: 'Describe the injuries from falls.', es: 'Describa las lesiones por ca\u00eddas.', showWhen: { questionId: 'q31', value: 'yes' }, long: true },
+      { id: 'q32', type: 'yes-no', en: 'Do you feel safe moving around your home?', es: '\u00bfSe siente seguro/a movi\u00e9ndose por su hogar?', required: true },
+      { id: 'q33', type: 'yes-no', en: 'Have you been hospitalized due to a fall?', es: '\u00bfHa sido hospitalizado/a debido a una ca\u00edda?', required: true },
+      { id: 'q33a', type: 'text', en: 'When and how long was the hospitalization?', es: '\u00bfCu\u00e1ndo y cu\u00e1nto dur\u00f3 la hospitalizaci\u00f3n?', showWhen: { questionId: 'q33', value: 'yes' } },
     ],
   },
   {
-    id: 'pain', titleEn: 'Consistent Pain', titleEs: 'Dolor Constante',
+    id: 'pain',
+    titleEn: 'Consistent Pain',
+    titleEs: 'Dolor Constante',
     questions: [
-      { id: 'q33', en: 'Do you experience consistent pain that limits mobility?', es: '¿Experimenta dolor constante que limita su movilidad?', type: 'yes-no', required: true },
-      { id: 'q33a', en: 'Where is the pain and what is the severity (1-10)?', es: '¿Dónde es el dolor y cuál es la severidad (1-10)?', type: 'text', showWhen: { questionId: 'q33', value: 'yes' } },
-      { id: 'q34', en: 'Does pain increase with prolonged sitting?', es: '¿El dolor aumenta al estar sentado/a por mucho tiempo?', type: 'yes-no' },
+      { id: 'q40', type: 'yes-no', en: 'Do you experience consistent pain that limits mobility?', es: '\u00bfExperimenta dolor constante que limita su movilidad?', required: true },
+      { id: 'q41', type: 'number', en: 'Rate your average pain level (0-10):', es: 'Califique su nivel promedio de dolor (0-10):', required: true },
+      { id: 'q42', type: 'text', en: 'Where is the pain located?', es: '\u00bfD\u00f3nde se localiza el dolor?', required: true },
     ],
   },
   {
-    id: 'additional', titleEn: 'Additional Information', titleEs: 'Información Adicional',
+    id: 'additional',
+    titleEn: 'Additional Information',
+    titleEs: 'Informaci\u00f3n Adicional',
     questions: [
-      { id: 'q40', en: 'What is your height (inches)?', es: '¿Cuál es su estatura (pulgadas)?', type: 'number', required: true },
-      { id: 'q41', en: 'What is your weight (lbs)?', es: '¿Cuál es su peso (libras)?', type: 'number', required: true },
-      { id: 'q42', en: 'Door width at narrowest point in home (inches)?', es: '¿Ancho de la puerta más estrecha en su hogar (pulgadas)?', type: 'number' },
-      { id: 'q43', en: 'Any additional comments or concerns?', es: '¿Algún comentario o preocupación adicional?', type: 'text', long: true },
+      { id: 'q50', type: 'number', en: 'Patient weight (lbs):', es: 'Peso del paciente (libras):', required: true },
+      { id: 'q51', type: 'number', en: 'Patient height (inches):', es: 'Estatura del paciente (pulgadas):', required: true },
+      { id: 'q52', type: 'text', en: 'Any other comments or concerns?', es: '\u00bfAlg\u00fan otro comentario o preocupaci\u00f3n?', long: true },
     ],
   },
   {
-    id: 'diagnoses', titleEn: 'Diagnoses', titleEs: 'Diagnósticos',
+    id: 'diagnoses',
+    titleEn: 'Diagnoses',
+    titleEs: 'Diagn\u00f3sticos',
     questions: [
-      { id: 'q50', en: 'Primary diagnosis related to mobility impairment', es: 'Diagnóstico principal relacionado con la discapacidad de movilidad', type: 'text', required: true },
-      { id: 'q51', en: 'Secondary diagnoses (if any)', es: 'Diagnósticos secundarios (si los hay)', type: 'text', long: true },
-      { id: 'q52', en: 'Date of onset of primary condition', es: 'Fecha de inicio de la condición primaria', type: 'text' },
+      { id: 'q60', type: 'text', en: 'Primary diagnosis / ICD-10 code:', es: 'Diagn\u00f3stico primario / c\u00f3digo ICD-10:', required: true },
+      { id: 'q61', type: 'text', en: 'Secondary diagnoses:', es: 'Diagn\u00f3sticos secundarios:', long: true },
+      { id: 'q62', type: 'text', en: 'Current medications affecting mobility:', es: 'Medicamentos actuales que afectan la movilidad:', long: true },
     ],
   },
 ];
 
-const ALL_QUESTIONS = SECTIONS.flatMap(s => s.questions);
-const REQUIRED_QUESTIONS = ALL_QUESTIONS.filter(q => q.required);
+const allQuestions = sections.flatMap(s => s.questions);
+const requiredQuestions = allQuestions.filter(q => q.required && !q.showWhen);
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function storageKey(patient: string) {
-  return `ppd_responses_${patient.trim().toLowerCase()}`;
-}
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 function getCsrf(): string {
-  return document.cookie.match(/csrf_token=([^;]+)/)?.[1] || '';
+  return document.cookie.match(/(^|;\s*)csrf_token=([^;]*)/)?.[2] || '';
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+function storageKey(patient: string): string {
+  return `ppd_responses_${patient.replace(/\s+/g, '_').toLowerCase()}`;
+}
+
+// ── Styles ─────────────────────────────────────────────────────────────────
+
+const sty = {
+  container: { padding: 20, maxWidth: 900, margin: '0 auto', fontFamily: 'system-ui, sans-serif' } as React.CSSProperties,
+  header: { background: '#223b5d', color: '#fff', padding: '16px 20px', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } as React.CSSProperties,
+  headerTitle: { margin: 0, fontSize: 20, fontWeight: 600 } as React.CSSProperties,
+  patientInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: 280 } as React.CSSProperties,
+  langToggle: { display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid #fff' } as React.CSSProperties,
+  progressBar: { background: '#e9ecef', borderRadius: 8, height: 22, marginBottom: 16, position: 'relative' as const, overflow: 'hidden' } as React.CSSProperties,
+  progressText: { position: 'absolute' as const, top: 0, left: 0, right: 0, textAlign: 'center' as const, lineHeight: '22px', fontSize: 12, fontWeight: 600, color: '#333' } as React.CSSProperties,
+  section: { border: '1px solid #d0d7de', borderRadius: 8, marginBottom: 12, overflow: 'hidden' } as React.CSSProperties,
+  sectionHeader: { background: '#f0f4f8', padding: '10px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const } as React.CSSProperties,
+  sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: '#223b5d' } as React.CSSProperties,
+  sectionBody: { padding: '12px 16px' } as React.CSSProperties,
+  questionRow: { marginBottom: 14 } as React.CSSProperties,
+  questionLabel: { display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500, color: '#333' } as React.CSSProperties,
+  yesNoGroup: { display: 'flex', gap: 8 } as React.CSSProperties,
+  textInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
+  textarea: { padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const, minHeight: 60, resize: 'vertical' as const } as React.CSSProperties,
+  selectInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
+  submitBtn: { background: '#1976d2', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
+  submitBtnDisabled: { background: '#90b4d8', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'not-allowed', marginTop: 8 } as React.CSSProperties,
+  error: { background: '#f8d7da', color: '#721c24', padding: '10px 14px', borderRadius: 6, marginTop: 12 } as React.CSSProperties,
+  recSection: { marginTop: 24 } as React.CSSProperties,
+  recHeading: { fontSize: 17, fontWeight: 700, color: '#223b5d', borderBottom: '2px solid #1976d2', paddingBottom: 6, marginBottom: 12 } as React.CSSProperties,
+  recCard: { border: '1px solid #d0d7de', borderRadius: 8, padding: 14, marginBottom: 12, display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' as const } as React.CSSProperties,
+  recImage: { width: 100, height: 100, objectFit: 'cover' as const, borderRadius: 6, border: '1px solid #ddd', flexShrink: 0 } as React.CSSProperties,
+  recBody: { flex: 1, minWidth: 200 } as React.CSSProperties,
+  recHcpcs: { fontSize: 16, fontWeight: 700, color: '#1976d2', textDecoration: 'none' } as React.CSSProperties,
+  recJustification: { fontSize: 13, color: '#555', margin: '6px 0' } as React.CSSProperties,
+  recDetail: { fontSize: 12, color: '#666', margin: '2px 0' } as React.CSSProperties,
+  recControls: { display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' as const } as React.CSSProperties,
+  starLabel: { cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties,
+  statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 } as React.CSSProperties,
+};
+
+function langBtn(active: boolean): React.CSSProperties {
+  return { padding: '6px 14px', cursor: 'pointer', border: 'none', background: active ? '#fff' : 'transparent', color: active ? '#223b5d' : '#fff', fontWeight: active ? 700 : 400, fontSize: 13 };
+}
+
+function yesBtn(sel: boolean): React.CSSProperties {
+  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #28a745', background: sel ? '#d4edda' : '#fff', color: sel ? '#155724' : '#333', fontWeight: sel ? 700 : 400 };
+}
+
+function noBtn(sel: boolean): React.CSSProperties {
+  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #dc3545', background: sel ? '#f8d7da' : '#fff', color: sel ? '#721c24' : '#333', fontWeight: sel ? 700 : 400 };
+}
+
+function progressFill(pct: number): React.CSSProperties {
+  return { background: '#1976d2', height: '100%', width: `${pct}%`, transition: 'width 0.3s', borderRadius: 8 };
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
 
 export function PpdQuestionnaire() {
-  const [lang, setLang] = useState<'en' | 'es'>('en');
+  const [lang, setLang] = useState<Lang>('en');
   const [patientInfo, setPatientInfo] = useState('');
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [recommendations, setRecommendations] = useState<RecommendationProduct[] | null>(null);
-  const [preferred, setPreferred] = useState<string | null>(null);
-  const [decisions, setDecisions] = useState<Record<string, ProductDecision>>({});
+  const [recommendations, setRecommendations] = useState<RecommendationResponse | null>(null);
+  const [preferred, setPreferred] = useState('');
+  const [productStatus, setProductStatus] = useState<Record<string, string>>({});
 
-  // Load from sessionStorage when patientInfo changes
+  // Load from sessionStorage on patient change
   useEffect(() => {
     if (!patientInfo.trim()) return;
     const saved = sessionStorage.getItem(storageKey(patientInfo));
     if (saved) {
-      try { setResponses(JSON.parse(saved)); } catch { /* ignore */ }
+      try { setResponses(JSON.parse(saved)); } catch { /* ignore corrupt data */ }
     }
   }, [patientInfo]);
 
-  // Auto-save to sessionStorage
+  // Auto-save responses to sessionStorage
   useEffect(() => {
     if (!patientInfo.trim()) return;
     sessionStorage.setItem(storageKey(patientInfo), JSON.stringify(responses));
@@ -179,56 +241,45 @@ export function PpdQuestionnaire() {
     setResponses(prev => ({ ...prev, [id]: value }));
   }, []);
 
-  const toggleSection = useCallback((sectionId: string) => {
-    setCollapsed(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+  const toggleSection = useCallback((id: string) => {
+    setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  // Progress
-  const answeredRequired = useMemo(() => {
-    return REQUIRED_QUESTIONS.filter(q => {
-      if (q.showWhen) {
-        const parentVal = responses[q.showWhen.questionId];
-        if (parentVal !== q.showWhen.value) return false;
-      }
-      return (responses[q.id] ?? '').trim() !== '';
+  const isVisible = useCallback((q: Question): boolean => {
+    if (!q.showWhen) return true;
+    return responses[q.showWhen.questionId] === q.showWhen.value;
+  }, [responses]);
+
+  // Progress calculation
+  const answeredCount = useMemo(() => {
+    return requiredQuestions.filter(q => {
+      const val = responses[q.id];
+      return val !== undefined && val !== '';
     }).length;
   }, [responses]);
 
-  const visibleRequired = useMemo(() => {
-    return REQUIRED_QUESTIONS.filter(q => {
-      if (q.showWhen) {
-        return responses[q.showWhen.questionId] === q.showWhen.value;
-      }
-      return true;
-    }).length;
-  }, [responses]);
+  const totalRequired = requiredQuestions.length;
+  const progressPct = totalRequired > 0 ? Math.round((answeredCount / totalRequired) * 100) : 0;
 
-  const progressPct = visibleRequired > 0 ? Math.round((answeredRequired / visibleRequired) * 100) : 0;
-
-  // Submit
+  // Submit to API
   const handleSubmit = async () => {
     setLoading(true);
     setError('');
     setRecommendations(null);
-    setPreferred(null);
-    setDecisions({});
-
     try {
+      const csrf = getCsrf();
       const res = await fetch('/api/ppd/recommend', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-csrf-token': getCsrf(),
-        },
-        body: JSON.stringify({ patientInfo, responses, lang }),
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+        body: JSON.stringify({ patientInfo, responses, language: lang }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(body.error || `HTTP ${res.status}`);
+        const msg = await res.text();
+        throw new Error(msg || `Request failed (${res.status})`);
       }
       const data: RecommendationResponse = await res.json();
-      setRecommendations(data.products);
+      setRecommendations(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get recommendations');
     } finally {
@@ -236,99 +287,45 @@ export function PpdQuestionnaire() {
     }
   };
 
-  const isVisible = (q: QuestionDef) => {
-    if (!q.showWhen) return true;
-    return responses[q.showWhen.questionId] === q.showWhen.value;
-  };
+  // ── Render helpers ─────────────────────────────────────────────────────
 
-  // ─── Styles ──────────────────────────────────────────────────────────────
-
-  const styles = {
-    container: { maxWidth: 900, margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#333' } as React.CSSProperties,
-    header: { background: C.headerDark, color: C.white, padding: '16px 20px', borderRadius: '8px 8px 0 0', marginBottom: 0 } as React.CSSProperties,
-    headerTitle: { margin: 0, fontSize: 20, fontWeight: 600 } as React.CSSProperties,
-    topRow: { display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' as const, marginTop: 12 },
-    input: { padding: '8px 12px', borderRadius: 4, border: `1px solid ${C.border}`, fontSize: 14, flex: 1, minWidth: 200 } as React.CSSProperties,
-    toggleBtn: (active: boolean) => ({
-      padding: '6px 16px', borderRadius: 4, border: `1px solid ${C.primary}`, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-      background: active ? C.primary : C.white, color: active ? C.white : C.primary,
-    } as React.CSSProperties),
-    progressWrap: { background: '#f0f4f8', padding: '10px 20px', borderBottom: `1px solid ${C.border}` } as React.CSSProperties,
-    progressBar: { height: 8, borderRadius: 4, background: '#dce3eb', overflow: 'hidden' as const, marginTop: 6 },
-    progressFill: (pct: number) => ({ height: '100%', width: `${pct}%`, background: C.primary, borderRadius: 4, transition: 'width 0.3s' } as React.CSSProperties),
-    body: { background: C.white, border: `1px solid ${C.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '0 0 16px' } as React.CSSProperties,
-    sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', background: '#eaf0f7', cursor: 'pointer', userSelect: 'none' as const, borderTop: `1px solid ${C.border}` },
-    sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: C.headerDark } as React.CSSProperties,
-    questionRow: { padding: '10px 20px' } as React.CSSProperties,
-    label: { display: 'block', fontSize: 14, marginBottom: 6, fontWeight: 500 } as React.CSSProperties,
-    ynBtn: (selected: boolean, variant: 'yes' | 'no') => ({
-      padding: '6px 20px', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 600, marginRight: 8,
-      border: '1px solid',
-      background: selected ? (variant === 'yes' ? C.greenBg : C.redBg) : C.white,
-      color: selected ? (variant === 'yes' ? C.greenFg : C.redFg) : C.grayFg,
-      borderColor: selected ? (variant === 'yes' ? C.greenFg : C.redFg) : C.border,
-    } as React.CSSProperties),
-    textInput: { padding: '8px 12px', borderRadius: 4, border: `1px solid ${C.border}`, fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
-    textarea: { padding: '8px 12px', borderRadius: 4, border: `1px solid ${C.border}`, fontSize: 14, width: '100%', boxSizing: 'border-box' as const, minHeight: 60, resize: 'vertical' as const } as React.CSSProperties,
-    select: { padding: '8px 12px', borderRadius: 4, border: `1px solid ${C.border}`, fontSize: 14 } as React.CSSProperties,
-    submitBtn: { padding: '10px 28px', borderRadius: 6, border: 'none', background: C.primary, color: C.white, fontSize: 15, fontWeight: 600, cursor: 'pointer', margin: '16px 20px' } as React.CSSProperties,
-    error: { color: C.redFg, background: C.redBg, padding: '10px 20px', margin: '0 20px', borderRadius: 4, fontSize: 14 } as React.CSSProperties,
-    recSection: { padding: '0 20px', marginTop: 16 } as React.CSSProperties,
-    recHeading: { fontSize: 16, fontWeight: 600, color: C.headerDark, borderBottom: `2px solid ${C.primary}`, paddingBottom: 6, marginBottom: 12 } as React.CSSProperties,
-    card: { display: 'flex', gap: 16, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14, marginBottom: 12, background: '#fafbfd' } as React.CSSProperties,
-    cardImg: { width: 120, height: 120, objectFit: 'contain' as const, borderRadius: 6, background: '#f0f0f0', flexShrink: 0 } as React.CSSProperties,
-    cardBody: { flex: 1, minWidth: 0 } as React.CSSProperties,
-    hcpcsLink: { fontSize: 16, fontWeight: 700, color: C.primary, textDecoration: 'none' } as React.CSSProperties,
-    cardDetail: { fontSize: 13, color: '#555', margin: '4px 0' } as React.CSSProperties,
-    radioLabel: { fontSize: 13, cursor: 'pointer', marginRight: 16, color: C.yellowFg } as React.CSSProperties,
-    decisionSelect: { padding: '4px 8px', borderRadius: 4, border: `1px solid ${C.border}`, fontSize: 13 } as React.CSSProperties,
-  };
-
-  // ─── Render ──────────────────────────────────────────────────────────────
-
-  const renderQuestion = (q: QuestionDef) => {
+  const renderQuestion = (q: Question) => {
     if (!isVisible(q)) return null;
-    const text = lang === 'en' ? q.en : q.es;
+    const label = lang === 'en' ? q.en : q.es;
     const val = responses[q.id] ?? '';
 
     return (
-      <div key={q.id} style={styles.questionRow}>
-        <label style={styles.label}>
-          {text}
-          {q.required && <span style={{ color: C.redFg, marginLeft: 4 }}>*</span>}
+      <div key={q.id} style={sty.questionRow}>
+        <label style={sty.questionLabel}>
+          {label}
+          {q.required && <span style={{ color: '#dc3545', marginLeft: 3 }}>*</span>}
         </label>
 
         {q.type === 'yes-no' && (
-          <div>
-            <button
-              type="button"
-              style={styles.ynBtn(val === 'yes', 'yes')}
-              onClick={() => setResponse(q.id, val === 'yes' ? '' : 'yes')}
-            >
-              {lang === 'en' ? 'Yes' : 'Sí'}
+          <div style={sty.yesNoGroup}>
+            <button type="button" style={yesBtn(val === 'yes')} onClick={() => setResponse(q.id, 'yes')}>
+              {lang === 'en' ? 'Yes' : 'S\u00ed'}
             </button>
-            <button
-              type="button"
-              style={styles.ynBtn(val === 'no', 'no')}
-              onClick={() => setResponse(q.id, val === 'no' ? '' : 'no')}
-            >
+            <button type="button" style={noBtn(val === 'no')} onClick={() => setResponse(q.id, 'no')}>
               No
             </button>
           </div>
         )}
 
-        {q.type === 'text' && (
-          q.long
-            ? <textarea style={styles.textarea} value={val} onChange={e => setResponse(q.id, e.target.value)} />
-            : <input style={styles.textInput} type="text" value={val} onChange={e => setResponse(q.id, e.target.value)} />
+        {q.type === 'text' && !q.long && (
+          <input style={sty.textInput} value={val} onChange={e => setResponse(q.id, e.target.value)} />
+        )}
+
+        {q.type === 'text' && q.long && (
+          <textarea style={sty.textarea} value={val} onChange={e => setResponse(q.id, e.target.value)} />
         )}
 
         {q.type === 'number' && (
-          <input style={{ ...styles.textInput, width: 120 }} type="number" value={val} onChange={e => setResponse(q.id, e.target.value)} />
+          <input type="number" style={{ ...sty.textInput, width: 120 }} value={val} onChange={e => setResponse(q.id, e.target.value)} />
         )}
 
         {q.type === 'select' && q.options && (
-          <select style={styles.select} value={val} onChange={e => setResponse(q.id, e.target.value)}>
+          <select style={sty.selectInput} value={val} onChange={e => setResponse(q.id, e.target.value)}>
             <option value="">{lang === 'en' ? '-- Select --' : '-- Seleccionar --'}</option>
             {q.options.map(o => (
               <option key={o.value} value={o.value}>{lang === 'en' ? o.labelEn : o.labelEs}</option>
@@ -339,132 +336,137 @@ export function PpdQuestionnaire() {
     );
   };
 
-  const complexProducts = recommendations?.filter(p => p.category === 'complex_rehab') ?? [];
-  const standardProducts = recommendations?.filter(p => p.category === 'standard') ?? [];
-
-  const renderProductCard = (p: RecommendationProduct) => (
-    <div key={p.id} style={styles.card}>
-      {p.imageUrl ? (
-        <img src={p.imageUrl} alt={p.hcpcsCode} style={styles.cardImg} />
-      ) : (
-        <div style={{ ...styles.cardImg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: 12 }}>
-          No Image
-        </div>
-      )}
-      <div style={styles.cardBody}>
-        <div>
-          {p.brochureUrl ? (
-            <a href={p.brochureUrl} target="_blank" rel="noopener noreferrer" style={styles.hcpcsLink}>{p.hcpcsCode}</a>
-          ) : (
-            <span style={styles.hcpcsLink}>{p.hcpcsCode}</span>
-          )}
-        </div>
-        <p style={{ ...styles.cardDetail, fontStyle: 'italic' }}>{p.justification}</p>
-        {p.seatDimensions && <p style={styles.cardDetail}><strong>Seat:</strong> {p.seatDimensions}</p>}
-        {p.colors && <p style={styles.cardDetail}><strong>Colors:</strong> {p.colors}</p>}
-        {p.leadTime && <p style={styles.cardDetail}><strong>Lead Time:</strong> {p.leadTime}</p>}
-        {p.notes && <p style={styles.cardDetail}><strong>Notes:</strong> {p.notes}</p>}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
-          <label style={styles.radioLabel}>
-            <input
-              type="radio"
-              name="preferred-product"
-              checked={preferred === p.id}
-              onChange={() => setPreferred(p.id)}
-              style={{ marginRight: 4 }}
-            />
-            {lang === 'en' ? 'Preferred' : 'Preferido'}
-          </label>
-          <select
-            style={styles.decisionSelect}
-            value={decisions[p.id] ?? 'undecided'}
-            onChange={e => setDecisions(prev => ({ ...prev, [p.id]: e.target.value as ProductDecision }))}
-          >
-            <option value="undecided">{lang === 'en' ? 'Undecided' : 'Indeciso'}</option>
-            <option value="accept">{lang === 'en' ? 'Accept' : 'Aceptar'}</option>
-            <option value="reject">{lang === 'en' ? 'Reject' : 'Rechazar'}</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderRecSection = (title: string, products: RecommendationProduct[]) => {
-    if (products.length === 0) return null;
+  const renderProductCard = (product: RecommendationProduct, idx: number) => {
+    const key = `${product.category}_${idx}`;
     return (
-      <div style={styles.recSection}>
-        <h3 style={styles.recHeading}>{title}</h3>
-        {products.map(renderProductCard)}
+      <div key={key} style={sty.recCard}>
+        {product.imageUrl && (
+          <img src={product.imageUrl} alt={product.hcpcsCode} style={sty.recImage} />
+        )}
+        <div style={sty.recBody}>
+          {product.brochureUrl ? (
+            <a href={product.brochureUrl} target="_blank" rel="noopener noreferrer" style={sty.recHcpcs}>{product.hcpcsCode}</a>
+          ) : (
+            <span style={sty.recHcpcs}>{product.hcpcsCode}</span>
+          )}
+          {product.description && <div style={{ fontSize: 14, fontWeight: 500, marginTop: 2 }}>{product.description}</div>}
+          <p style={sty.recJustification}>{product.justification}</p>
+          {product.seatDimensions && <div style={sty.recDetail}><strong>Seat:</strong> {product.seatDimensions}</div>}
+          {product.colors && <div style={sty.recDetail}><strong>Colors:</strong> {product.colors}</div>}
+          {product.leadTime && <div style={sty.recDetail}><strong>Lead time:</strong> {product.leadTime}</div>}
+          {product.notes && <div style={sty.recDetail}><strong>Notes:</strong> {product.notes}</div>}
+
+          <div style={sty.recControls}>
+            <label style={sty.starLabel}>
+              <input type="radio" name="preferred_product" checked={preferred === key} onChange={() => setPreferred(key)} />
+              {lang === 'en' ? 'Preferred' : 'Preferido'}
+            </label>
+            <select
+              style={sty.statusSelect}
+              value={productStatus[key] || 'undecided'}
+              onChange={e => setProductStatus(prev => ({ ...prev, [key]: e.target.value }))}
+            >
+              <option value="undecided">{lang === 'en' ? 'Undecided' : 'Indeciso'}</option>
+              <option value="accept">{lang === 'en' ? 'Accept' : 'Aceptar'}</option>
+              <option value="reject">{lang === 'en' ? 'Reject' : 'Rechazar'}</option>
+            </select>
+          </div>
+        </div>
       </div>
     );
   };
 
+  // ── Main render ────────────────────────────────────────────────────────
+
   return (
-    <div style={styles.container}>
+    <div style={sty.container}>
       {/* Header */}
-      <div style={styles.header}>
-        <h2 style={styles.headerTitle}>
-          {lang === 'en' ? 'PPD Questionnaire — Power Mobility Device' : 'Cuestionario PPD — Dispositivo de Movilidad Motorizada'}
+      <div style={sty.header}>
+        <h2 style={sty.headerTitle}>
+          {lang === 'en' ? 'PPD Questionnaire \u2014 Power Mobility' : 'Cuestionario PPD \u2014 Movilidad El\u00e9ctrica'}
         </h2>
-        <div style={styles.topRow}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const }}>
           <input
-            style={{ ...styles.input, background: 'rgba(255,255,255,0.95)', color: '#333' }}
+            style={sty.patientInput}
             placeholder={lang === 'en' ? 'Patient Name - Trx#' : 'Nombre del Paciente - Trx#'}
             value={patientInfo}
             onChange={e => setPatientInfo(e.target.value)}
           />
-          <div style={{ display: 'flex', gap: 0 }}>
-            <button type="button" style={{ ...styles.toggleBtn(lang === 'en'), borderRadius: '4px 0 0 4px' }} onClick={() => setLang('en')}>English</button>
-            <button type="button" style={{ ...styles.toggleBtn(lang === 'es'), borderRadius: '0 4px 4px 0' }} onClick={() => setLang('es')}>Español</button>
+          <div style={sty.langToggle}>
+            <button type="button" style={langBtn(lang === 'en')} onClick={() => setLang('en')}>EN</button>
+            <button type="button" style={langBtn(lang === 'es')} onClick={() => setLang('es')}>ES</button>
           </div>
         </div>
       </div>
 
-      {/* Progress */}
-      <div style={styles.progressWrap}>
-        <span style={{ fontSize: 13, color: C.grayFg }}>
-          {answeredRequired} {lang === 'en' ? 'of' : 'de'} {visibleRequired} {lang === 'en' ? 'required questions answered' : 'preguntas requeridas respondidas'}
-        </span>
-        <div style={styles.progressBar}>
-          <div style={styles.progressFill(progressPct)} />
+      {/* Progress bar */}
+      <div style={sty.progressBar}>
+        <div style={progressFill(progressPct)} />
+        <div style={sty.progressText}>
+          {answeredCount} / {totalRequired} {lang === 'en' ? 'required questions answered' : 'preguntas obligatorias respondidas'}
         </div>
       </div>
 
-      {/* Body */}
-      <div style={styles.body}>
-        {SECTIONS.map(section => (
-          <div key={section.id}>
-            <div style={styles.sectionHeader} onClick={() => toggleSection(section.id)}>
-              <h3 style={styles.sectionTitle}>{lang === 'en' ? section.titleEn : section.titleEs}</h3>
-              <span style={{ fontSize: 18, color: C.grayFg }}>{collapsed[section.id] ? '▸' : '▾'}</span>
+      {/* Question sections */}
+      {sections.map(section => {
+        const isCollapsed = collapsed[section.id] ?? false;
+        const title = lang === 'en' ? section.titleEn : section.titleEs;
+        return (
+          <div key={section.id} style={sty.section}>
+            <div style={sty.sectionHeader} onClick={() => toggleSection(section.id)}>
+              <h3 style={sty.sectionTitle}>{title}</h3>
+              <span style={{ fontSize: 14, color: '#666' }}>{isCollapsed ? '\u25B6' : '\u25BC'}</span>
             </div>
-            {!collapsed[section.id] && section.questions.map(renderQuestion)}
+            {!isCollapsed && (
+              <div style={sty.sectionBody}>
+                {section.questions.map(renderQuestion)}
+              </div>
+            )}
           </div>
-        ))}
+        );
+      })}
 
-        {/* Submit */}
-        <button
-          type="button"
-          style={{ ...styles.submitBtn, opacity: loading ? 0.6 : 1 }}
-          disabled={loading}
-          onClick={handleSubmit}
-        >
-          {loading
-            ? (lang === 'en' ? 'Loading...' : 'Cargando...')
-            : (lang === 'en' ? 'Get Recommendations' : 'Obtener Recomendaciones')}
-        </button>
+      {/* Submit button */}
+      <button
+        type="button"
+        style={loading ? sty.submitBtnDisabled : sty.submitBtn}
+        disabled={loading}
+        onClick={handleSubmit}
+      >
+        {loading
+          ? (lang === 'en' ? 'Getting Recommendations...' : 'Obteniendo Recomendaciones...')
+          : (lang === 'en' ? 'Get Recommendations' : 'Obtener Recomendaciones')}
+      </button>
 
-        {error && <div style={styles.error}>{error}</div>}
+      {/* Error display */}
+      {error && <div style={sty.error}>{error}</div>}
 
-        {/* Recommendations */}
-        {recommendations && recommendations.length === 0 && (
-          <div style={{ ...styles.recSection, color: C.grayFg, fontStyle: 'italic' }}>
-            {lang === 'en' ? 'No product recommendations returned.' : 'No se devolvieron recomendaciones de productos.'}
-          </div>
-        )}
-        {renderRecSection(lang === 'en' ? 'Complex Rehab Technology' : 'Tecnología de Rehabilitación Compleja', complexProducts)}
-        {renderRecSection(lang === 'en' ? 'Standard Power Mobility' : 'Movilidad Motorizada Estándar', standardProducts)}
-      </div>
+      {/* Recommendation results */}
+      {recommendations && (
+        <div style={sty.recSection}>
+          {recommendations.complexRehab.length > 0 && (
+            <>
+              <h3 style={sty.recHeading}>
+                {lang === 'en' ? 'Complex Rehab Technology (CRT)' : 'Tecnolog\u00eda de Rehabilitaci\u00f3n Compleja (CRT)'}
+              </h3>
+              {recommendations.complexRehab.map((p, i) => renderProductCard(p, i))}
+            </>
+          )}
+          {recommendations.standard.length > 0 && (
+            <>
+              <h3 style={sty.recHeading}>
+                {lang === 'en' ? 'Standard Power Mobility' : 'Movilidad El\u00e9ctrica Est\u00e1ndar'}
+              </h3>
+              {recommendations.standard.map((p, i) => renderProductCard(p, i))}
+            </>
+          )}
+          {recommendations.complexRehab.length === 0 && recommendations.standard.length === 0 && (
+            <div style={{ padding: 16, textAlign: 'center', color: '#666' }}>
+              {lang === 'en' ? 'No recommendations returned. Please review your responses.' : 'No se devolvieron recomendaciones. Revise sus respuestas.'}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

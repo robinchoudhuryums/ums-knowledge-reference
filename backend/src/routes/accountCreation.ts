@@ -3,7 +3,11 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { getAccountCreationQuestions, getAccountCreationGroups, AccountCreationResponse } from '../services/accountCreation';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
+import { readInsuranceCard, compareInsuranceFields } from '../services/insuranceCardReader';
 import { logger } from '../utils/logger';
+import multer from 'multer';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -125,5 +129,54 @@ function buildAccountCreationHtml(
     </div>
   `;
 }
+
+// ─── Insurance Card OCR ───────────────────────────────────────────────
+// Shared endpoint: upload insurance card image → OCR → extract fields.
+// Used by both PMD and PAP account creation forms.
+
+router.post('/read-insurance-card', authenticate, upload.single('file'), async (req: AuthRequest, res: Response) => {
+  try {
+    const file = (req as unknown as { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: 'No image file uploaded' });
+      return;
+    }
+
+    if (!file.mimetype.startsWith('image/')) {
+      res.status(400).json({ error: 'File must be an image (JPEG, PNG, etc.)' });
+      return;
+    }
+
+    const extracted = await readInsuranceCard(file.buffer, file.originalname);
+
+    // If agent provided existing entries, compare them
+    const enteredInsurance = req.body?.enteredInsurance;
+    const enteredMemberId = req.body?.enteredMemberId;
+    const enteredName = req.body?.enteredName;
+    const enteredDob = req.body?.enteredDob;
+
+    let mismatches: Array<{ field: string; extracted: string; entered: string }> = [];
+    if (enteredInsurance || enteredMemberId || enteredName || enteredDob) {
+      mismatches = compareInsuranceFields(extracted, {
+        insuranceName: enteredInsurance,
+        memberId: enteredMemberId,
+        subscriberName: enteredName,
+        dob: enteredDob,
+      });
+    }
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'query', {
+      action: 'insurance_card_ocr',
+      filename: file.originalname,
+      fieldsExtracted: Object.entries(extracted).filter(([k, v]) => k !== 'rawText' && v !== null).length,
+      mismatchCount: mismatches.length,
+    });
+
+    res.json({ extracted, mismatches });
+  } catch (error) {
+    logger.error('Insurance card OCR failed', { error: String(error) });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to read insurance card' });
+  }
+});
 
 export default router;

@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { InsuranceCardUpload } from './InsuranceCardUpload';
 
 interface AcQuestion {
   id: string;
@@ -240,6 +241,23 @@ export function AccountCreationForm() {
               </div>
             </div>
             <div className={`ac-section-body ${isCollapsed ? 'collapsed' : 'expanded'}`} style={sty.sectionBody}>
+              {group === 'Insurance' && (
+                <InsuranceCardUpload
+                  lang={lang}
+                  enteredInsurance={responses['ac7']}
+                  enteredMemberId={responses['ac7']?.split('#')?.pop()?.trim()}
+                  enteredName={responses['ac1']}
+                  enteredDob={responses['ac5']}
+                  onFieldsExtracted={(fields) => {
+                    if (fields.insuranceName && fields.memberId && !responses['ac7']) {
+                      setResponse('ac7', `${fields.insuranceName} #${fields.memberId}`);
+                    }
+                    if (fields.subscriberName && !responses['ac1']) {
+                      setResponse('ac1', fields.subscriberName);
+                    }
+                  }}
+                />
+              )}
               {questions.filter(q => q.group === group).map(q => {
                   const label = lang === 'en' ? q.text : q.spanishText;
                   const val = responses[q.id] ?? '';

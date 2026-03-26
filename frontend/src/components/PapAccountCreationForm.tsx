@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { InsuranceCardUpload } from './InsuranceCardUpload';
 
 interface PapQuestion {
   id: string;
@@ -211,6 +212,23 @@ export function PapAccountCreationForm() {
               </div>
             </div>
             <div className={`pap-section-body ${isCollapsed ? 'collapsed' : 'expanded'}`} style={sty.sectionBody}>
+                {group === 'Insurance' && (
+                  <InsuranceCardUpload
+                    lang={lang}
+                    enteredInsurance={responses['pap7']}
+                    enteredMemberId={responses['pap7']?.split('#')?.pop()?.trim()}
+                    enteredName={responses['pap1']}
+                    enteredDob={responses['pap5']}
+                    onFieldsExtracted={(fields) => {
+                      if (fields.insuranceName && fields.memberId && !responses['pap7']) {
+                        setResponse('pap7', `${fields.insuranceName} #${fields.memberId}`);
+                      }
+                      if (fields.subscriberName && !responses['pap1']) {
+                        setResponse('pap1', fields.subscriberName);
+                      }
+                    }}
+                  />
+                )}
                 {questions.filter(q => q.group === group).map(q => {
                   const label = lang === 'en' ? q.text : q.spanishText;
                   const val = responses[q.id] ?? '';

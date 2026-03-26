@@ -59,14 +59,14 @@ function storageKey(patient: string): string {
 
 const sty = {
   container: { padding: 20, maxWidth: 900, margin: '0 auto', fontFamily: 'system-ui, sans-serif' } as React.CSSProperties,
-  header: { background: '#223b5d', color: '#fff', padding: '16px 20px', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 } as React.CSSProperties,
+  header: { background: 'linear-gradient(135deg, #223b5d, #1565c0)', color: '#fff', padding: '16px 20px', borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' } as React.CSSProperties,
   headerTitle: { margin: 0, fontSize: 20, fontWeight: 600 } as React.CSSProperties,
   patientInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: 280 } as React.CSSProperties,
   langToggle: { display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid #fff' } as React.CSSProperties,
-  progressBar: { background: '#e9ecef', borderRadius: 8, height: 22, marginBottom: 16, position: 'relative' as const, overflow: 'hidden' } as React.CSSProperties,
-  progressText: { position: 'absolute' as const, top: 0, left: 0, right: 0, textAlign: 'center' as const, lineHeight: '22px', fontSize: 12, fontWeight: 600, color: '#333' } as React.CSSProperties,
-  section: { border: '1px solid #d0d7de', borderRadius: 8, marginBottom: 12, overflow: 'hidden' } as React.CSSProperties,
-  sectionHeader: { background: '#f0f4f8', padding: '10px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const } as React.CSSProperties,
+  progressRing: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '8px 0' } as React.CSSProperties,
+  progressRingText: { fontSize: 13, color: '#555', fontWeight: 500 } as React.CSSProperties,
+  section: { border: '1px solid #d0d7de', borderRadius: 10, marginBottom: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', transition: 'box-shadow 0.3s ease' } as React.CSSProperties,
+  sectionHeader: { background: 'linear-gradient(to right, #f0f4f8, #e8eef5)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s' } as React.CSSProperties,
   sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: '#223b5d' } as React.CSSProperties,
   sectionBody: { padding: '12px 16px' } as React.CSSProperties,
   questionRow: { marginBottom: 14 } as React.CSSProperties,
@@ -79,9 +79,11 @@ const sty = {
   submitBtnDisabled: { background: '#90b4d8', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'not-allowed', marginTop: 8 } as React.CSSProperties,
   error: { background: '#f8d7da', color: '#721c24', padding: '10px 14px', borderRadius: 6, marginTop: 12 } as React.CSSProperties,
   recSection: { marginTop: 24 } as React.CSSProperties,
-  recHeading: { fontSize: 17, fontWeight: 700, color: '#223b5d', borderBottom: '2px solid #1976d2', paddingBottom: 6, marginBottom: 12 } as React.CSSProperties,
-  recCard: { border: '1px solid #d0d7de', borderRadius: 8, padding: 14, marginBottom: 12, display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' as const } as React.CSSProperties,
-  recImage: { width: 100, height: 100, objectFit: 'cover' as const, borderRadius: 6, border: '1px solid #ddd', flexShrink: 0 } as React.CSSProperties,
+  recHeading: { fontSize: 17, fontWeight: 700, color: '#fff', padding: '10px 16px', borderRadius: 8, marginBottom: 14 } as React.CSSProperties,
+  recHeadingComplex: { background: 'linear-gradient(135deg, #b71c1c, #d32f2f)' } as React.CSSProperties,
+  recHeadingStandard: { background: 'linear-gradient(135deg, #1565c0, #1976d2)' } as React.CSSProperties,
+  recCard: { border: '1px solid #d0d7de', borderRadius: 10, padding: 16, marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' as const, transition: 'box-shadow 0.2s, transform 0.2s', cursor: 'default' } as React.CSSProperties,
+  recImage: { width: 150, height: 150, objectFit: 'contain' as const, borderRadius: 8, border: '1px solid #eee', flexShrink: 0, background: '#fafafa' } as React.CSSProperties,
   recBody: { flex: 1, minWidth: 200 } as React.CSSProperties,
   recHcpcs: { fontSize: 16, fontWeight: 700, color: '#1976d2', textDecoration: 'none' } as React.CSSProperties,
   recJustification: { fontSize: 13, color: '#555', margin: '6px 0' } as React.CSSProperties,
@@ -107,10 +109,6 @@ function yesBtn(sel: boolean): React.CSSProperties {
 
 function noBtn(sel: boolean): React.CSSProperties {
   return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #dc3545', background: sel ? '#f8d7da' : '#fff', color: sel ? '#721c24' : '#333', fontWeight: sel ? 700 : 400 };
-}
-
-function progressFill(pct: number): React.CSSProperties {
-  return { background: '#1976d2', height: '100%', width: `${pct}%`, transition: 'width 0.3s', borderRadius: 8 };
 }
 
 function painToggle(active: boolean): React.CSSProperties {
@@ -406,7 +404,7 @@ export function PpdQuestionnaire() {
   const renderProductCard = (product: RecommendationProduct, idx: number) => {
     const key = `${product.category}_${idx}`;
     return (
-      <div key={key} style={sty.recCard}>
+      <div key={key} className="ppd-rec-card" style={sty.recCard}>
         {product.imageUrl && (
           <img src={product.imageUrl} alt={product.hcpcsCode} style={sty.recImage} />
         )}
@@ -487,6 +485,19 @@ export function PpdQuestionnaire() {
 
   return (
     <div style={sty.container}>
+      {/* Hover effects via CSS (can't do :hover with inline styles) */}
+      <style>{`
+        .ppd-rec-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); transform: translateY(-2px); }
+        .ppd-section:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .ppd-section-body { transition: max-height 0.3s ease, opacity 0.3s ease; overflow: hidden; }
+        .ppd-section-body.collapsed { max-height: 0 !important; opacity: 0; padding: 0 16px !important; }
+        .ppd-section-body.expanded { max-height: 3000px; opacity: 1; }
+        @media (max-width: 768px) {
+          .ppd-rec-card { flex-direction: column !important; }
+          .ppd-rec-card img { width: 100% !important; height: auto !important; max-height: 200px; }
+          .ppd-header-wrap { flex-direction: column !important; align-items: flex-start !important; }
+        }
+      `}</style>
       {/* Header */}
       <div style={sty.header}>
         <h2 style={sty.headerTitle}>
@@ -506,10 +517,19 @@ export function PpdQuestionnaire() {
         </div>
       </div>
 
-      {/* Progress bar */}
-      <div style={sty.progressBar}>
-        <div style={progressFill(progressPct)} />
-        <div style={sty.progressText}>
+      {/* Progress ring */}
+      <div style={sty.progressRing}>
+        <svg width="60" height="60" viewBox="0 0 60 60">
+          <circle cx="30" cy="30" r="25" fill="none" stroke="#e9ecef" strokeWidth="5" />
+          <circle cx="30" cy="30" r="25" fill="none"
+            stroke={progressPct < 25 ? '#dee2e6' : progressPct < 75 ? '#ffc107' : '#28a745'}
+            strokeWidth="5" strokeLinecap="round"
+            strokeDasharray={`${progressPct * 1.57} 157`}
+            transform="rotate(-90 30 30)"
+            style={{ transition: 'stroke-dasharray 0.4s ease, stroke 0.3s ease' }} />
+          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="#333">{progressPct}%</text>
+        </svg>
+        <div style={sty.progressRingText}>
           {answeredCount} / {totalRequired} {lang === 'en' ? 'required questions answered' : 'preguntas obligatorias respondidas'}
         </div>
       </div>
@@ -523,7 +543,7 @@ export function PpdQuestionnaire() {
         const isPainGroup = group === 'Consistent Pain';
 
         return (
-          <div key={group} style={sty.section}>
+          <div key={group} className="ppd-section" style={sty.section}>
             <div style={sty.sectionHeader} onClick={() => toggleSection(group)}>
               <h3 style={sty.sectionTitle}>
                 {group}
@@ -531,16 +551,14 @@ export function PpdQuestionnaire() {
                   {counts.answered}/{counts.total}
                 </span>
               </h3>
-              <span style={{ fontSize: 14, color: '#666' }}>{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+              <span style={{ fontSize: 14, color: '#666', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
             </div>
-            {!isCollapsed && (
-              <div style={sty.sectionBody}>
-                {isPainGroup
-                  ? renderPainGroup(qs)
-                  : qs.map(renderQuestion)
-                }
-              </div>
-            )}
+            <div className={`ppd-section-body ${isCollapsed ? 'collapsed' : 'expanded'}`} style={sty.sectionBody}>
+              {isPainGroup
+                ? renderPainGroup(qs)
+                : qs.map(renderQuestion)
+              }
+            </div>
           </div>
         );
       })}
@@ -577,7 +595,7 @@ export function PpdQuestionnaire() {
         <div style={sty.recSection}>
           {recommendations.complexRehab.length > 0 && (
             <>
-              <h3 style={sty.recHeading}>
+              <h3 style={{ ...sty.recHeading, ...sty.recHeadingComplex }}>
                 {lang === 'en' ? 'Complex Rehab Technology (CRT)' : 'Tecnolog\u00eda de Rehabilitaci\u00f3n Compleja (CRT)'}
               </h3>
               {recommendations.complexRehab.map((p, i) => renderProductCard(p, i))}
@@ -585,7 +603,7 @@ export function PpdQuestionnaire() {
           )}
           {recommendations.standard.length > 0 && (
             <>
-              <h3 style={sty.recHeading}>
+              <h3 style={{ ...sty.recHeading, ...sty.recHeadingStandard }}>
                 {lang === 'en' ? 'Standard Power Mobility' : 'Movilidad El\u00e9ctrica Est\u00e1ndar'}
               </h3>
               {recommendations.standard.map((p, i) => renderProductCard(p, i))}

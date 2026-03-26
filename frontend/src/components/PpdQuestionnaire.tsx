@@ -192,6 +192,7 @@ const sty = {
   starLabel: { cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties,
   statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 } as React.CSSProperties,
   copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid #1976d2', background: '#e3f2fd', color: '#1565c0', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
+  actionBar: { display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' as const } as React.CSSProperties,
 };
 
 function langBtn(active: boolean): React.CSSProperties {
@@ -223,6 +224,10 @@ export function PpdQuestionnaire() {
   const [preferred, setPreferred] = useState('');
   const [productStatus, setProductStatus] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState('');
+  const [seatingEvalHtml, setSeatingEvalHtml] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState('');
+  const [evalLoading, setEvalLoading] = useState(false);
 
   // Load from sessionStorage on patient change
   useEffect(() => {
@@ -489,6 +494,124 @@ export function PpdQuestionnaire() {
               {lang === 'en' ? 'No recommendations returned. Please review your responses.' : 'No se devolvieron recomendaciones. Revise sus respuestas.'}
             </div>
           )}
+
+          {/* ── Action Buttons ─────────────────────────────── */}
+          <div style={sty.actionBar}>
+            <button
+              type="button"
+              style={evalLoading ? sty.submitBtnDisabled : { ...sty.submitBtn, background: '#2e7d32' }}
+              disabled={evalLoading}
+              onClick={async () => {
+                setEvalLoading(true);
+                setSeatingEvalHtml('');
+                try {
+                  const csrf = getCsrf();
+                  const allRecs = [...recommendations.complexRehab, ...recommendations.standard];
+                  const apiResponses = Object.entries(responses).map(([questionId, answer]) => ({ questionId, answer }));
+                  const res = await fetch('/api/ppd/seating-eval', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+                    body: JSON.stringify({ patientInfo, responses: apiResponses, recommendations: allRecs }),
+                  });
+                  if (!res.ok) throw new Error(`Failed (${res.status})`);
+                  const data = await res.json();
+                  setSeatingEvalHtml(data.html);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Failed to generate seating evaluation');
+                } finally {
+                  setEvalLoading(false);
+                }
+              }}
+            >
+              {evalLoading
+                ? (lang === 'en' ? 'Generating...' : 'Generando...')
+                : (lang === 'en' ? 'Generate Seating Evaluation' : 'Generar Evaluación de Asiento')}
+            </button>
+
+            <button
+              type="button"
+              style={submitting ? sty.submitBtnDisabled : { ...sty.submitBtn, background: '#e65100' }}
+              disabled={submitting}
+              onClick={async () => {
+                setSubmitting(true);
+                setSubmitSuccess('');
+                try {
+                  const csrf = getCsrf();
+                  const allRecs = [...recommendations.complexRehab, ...recommendations.standard];
+                  const apiResponses = Object.entries(responses).map(([questionId, answer]) => ({ questionId, answer }));
+                  const res = await fetch('/api/ppd/submit', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
+                    body: JSON.stringify({
+                      patientInfo,
+                      responses: apiResponses,
+                      recommendations: allRecs,
+                      productSelections: productStatus,
+                      language: lang === 'en' ? 'english' : 'spanish',
+                    }),
+                  });
+                  if (!res.ok) throw new Error(`Failed (${res.status})`);
+                  setSubmitSuccess(lang === 'en'
+                    ? 'PPD submitted to Pre-Appointment Kit queue!'
+                    : 'PPD enviado a la cola del Kit de Pre-Cita!');
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Failed to submit PPD');
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+            >
+              {submitting
+                ? (lang === 'en' ? 'Submitting...' : 'Enviando...')
+                : (lang === 'en' ? 'Submit to Queue' : 'Enviar a Cola')}
+            </button>
+          </div>
+
+          {submitSuccess && (
+            <div style={{ background: '#d4edda', color: '#155724', padding: '10px 14px', borderRadius: 6, marginTop: 12, fontWeight: 600 }}>
+              {submitSuccess}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Seating Evaluation Preview ─────────────────────── */}
+      {seatingEvalHtml && (
+        <div style={sty.recSection}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={sty.recHeading}>
+              {lang === 'en' ? 'Seating Evaluation Preview' : 'Vista Previa de Evaluación de Asiento'}
+            </h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                style={sty.copyBtn}
+                onClick={() => {
+                  const w = window.open('', '_blank');
+                  if (w) { w.document.write(seatingEvalHtml); w.document.close(); w.print(); }
+                }}
+              >
+                {lang === 'en' ? 'Print' : 'Imprimir'}
+              </button>
+              <button
+                type="button"
+                style={sty.copyBtn}
+                onClick={() => {
+                  navigator.clipboard.writeText(seatingEvalHtml);
+                  setCopiedId('eval_html');
+                  setTimeout(() => setCopiedId(''), 2000);
+                }}
+              >
+                {copiedId === 'eval_html' ? 'Copied!' : (lang === 'en' ? 'Copy HTML' : 'Copiar HTML')}
+              </button>
+            </div>
+          </div>
+          <div
+            style={{ border: '1px solid #d0d7de', borderRadius: 8, padding: 16, background: '#fff', overflow: 'auto', maxHeight: 600 }}
+            dangerouslySetInnerHTML={{ __html: seatingEvalHtml }}
+          />
         </div>
       )}
     </div>

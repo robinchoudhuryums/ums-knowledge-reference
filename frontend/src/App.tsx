@@ -14,7 +14,7 @@ import { DocumentExtractor } from './components/DocumentExtractor';
 import { ObservabilityDashboard } from './components/ObservabilityDashboard';
 import { ChangePasswordForm } from './components/ChangePasswordForm';
 import { IntakeAutoFill } from './components/IntakeAutoFill';
-import { PpdQuestionnaire } from './components/PpdQuestionnaire';
+import { FormsTab } from './components/FormsTab';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/ConfirmDialog';
@@ -152,7 +152,7 @@ export default function App() {
           {activeTab === 'search' && <DocumentSearch collections={collections} />}
           {activeTab === 'extract' && <DocumentExtractor />}
           {activeTab === 'intake' && <IntakeAutoFill />}
-          {activeTab === 'forms' && <PpdQuestionnaire />}
+          {activeTab === 'forms' && <FormsTab />}
           {activeTab === 'ocr' && <OcrTool />}
           {activeTab === 'documents' && (
             <DocumentManager

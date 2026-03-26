@@ -32,6 +32,8 @@ import hcpcsRoutes from './routes/hcpcs';
 import icd10Routes from './routes/icd10';
 import coverageRoutes from './routes/coverage';
 import ppdRoutes from './routes/ppd';
+import accountCreationRoutes from './routes/accountCreation';
+import papAccountCreationRoutes from './routes/papAccountCreation';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -250,6 +252,12 @@ app.use('/api/coverage', coverageRoutes);
 
 // PPD questionnaire routes (Power Mobility Device orders)
 app.use('/api/ppd', ppdRoutes);
+
+// PMD Account Creation routes
+app.use('/api/account-creation', accountCreationRoutes);
+
+// PAP Account Creation routes
+app.use('/api/pap-account', papAccountCreationRoutes);
 
 // In production, serve the frontend static files from the same server.
 // The built frontend is expected at ../frontend/dist relative to the backend root.

@@ -147,7 +147,7 @@ router.post('/read-insurance-card', authenticate, upload.single('file'), async (
       return;
     }
 
-    const extracted = await readInsuranceCard(file.buffer, file.originalname);
+    const extracted = await readInsuranceCard(file.buffer, file.originalname, req.user?.id);
 
     // If agent provided existing entries, compare them
     const enteredInsurance = req.body?.enteredInsurance;

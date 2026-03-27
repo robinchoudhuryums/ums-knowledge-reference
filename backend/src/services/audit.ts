@@ -4,11 +4,32 @@ import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { AuditLogEntry } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
+import { redactPhi } from '../utils/phiRedactor';
 
 const GENESIS_HASH = 'GENESIS';
 
 // Module-level variable tracking the hash of the last written entry
 let lastEntryHash: string = GENESIS_HASH;
+
+// Mutex to serialize audit writes and prevent concurrent entries from
+// reading the same lastEntryHash, which would break the hash chain.
+let auditMutexPromise: Promise<void> | null = null;
+
+async function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
+  while (auditMutexPromise) {
+    await auditMutexPromise;
+  }
+
+  let resolve: () => void;
+  auditMutexPromise = new Promise<void>(r => { resolve = r; });
+
+  try {
+    return await fn();
+  } finally {
+    auditMutexPromise = null;
+    resolve!();
+  }
+}
 
 /**
  * Compute SHA-256 hash of a string.
@@ -32,40 +53,56 @@ export async function logAuditEvent(
   action: AuditLogEntry['action'],
   details: Record<string, unknown>
 ): Promise<void> {
-  const entry: AuditLogEntry = {
-    id: uuidv4(),
-    timestamp: new Date().toISOString(),
-    userId,
-    username,
-    action,
-    details,
-    previousHash: lastEntryHash,
-  };
-
-  // Compute and attach the entry's own hash (covers all fields except entryHash itself)
-  entry.entryHash = computeEntryHash(entry);
-
-  // Store audit logs by date for easy retrieval
-  const date = new Date().toISOString().split('T')[0];
-  const key = `${S3_PREFIXES.audit}${date}/${entry.id}.json`;
-
-  try {
-    await s3Client.send(new PutObjectCommand({
-      Bucket: S3_BUCKET,
-      Key: key,
-      Body: JSON.stringify(entry),
-      ContentType: 'application/json',
-      ServerSideEncryption: 'AES256',
-    }));
-
-    // Update the chain: next entry will reference this entry's hash
-    lastEntryHash = entry.entryHash;
-
-    logger.info('Audit event logged', { action, userId, entryId: entry.id });
-  } catch (error) {
-    // Audit logging should not break the main flow, but we log the failure
-    logger.error('Failed to write audit log', { error: String(error), entry });
+  // Redact PHI from string values in the details payload before persisting.
+  // This catches cases where callers forget to redact (defense-in-depth).
+  const sanitizedDetails: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(details)) {
+    if (typeof value === 'string') {
+      sanitizedDetails[key] = redactPhi(value).text;
+    } else {
+      sanitizedDetails[key] = value;
+    }
   }
+
+  // Serialize audit writes under a mutex to ensure each entry's previousHash
+  // correctly references the preceding entry. Without this, concurrent writes
+  // would both read the same lastEntryHash, producing a broken chain.
+  await withAuditLock(async () => {
+    const entry: AuditLogEntry = {
+      id: uuidv4(),
+      timestamp: new Date().toISOString(),
+      userId,
+      username,
+      action,
+      details: sanitizedDetails,
+      previousHash: lastEntryHash,
+    };
+
+    // Compute and attach the entry's own hash (covers all fields except entryHash itself)
+    entry.entryHash = computeEntryHash(entry);
+
+    // Store audit logs by date for easy retrieval
+    const date = new Date().toISOString().split('T')[0];
+    const key = `${S3_PREFIXES.audit}${date}/${entry.id}.json`;
+
+    try {
+      await s3Client.send(new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+        Body: JSON.stringify(entry),
+        ContentType: 'application/json',
+        ServerSideEncryption: 'AES256',
+      }));
+
+      // Update the chain: next entry will reference this entry's hash
+      lastEntryHash = entry.entryHash;
+
+      logger.info('Audit event logged', { action, userId, entryId: entry.id });
+    } catch (error) {
+      // Audit logging should not break the main flow, but we log the failure
+      logger.error('Failed to write audit log', { error: String(error), action, entryId: entry.id });
+    }
+  });
 }
 
 export async function getAuditLogs(date: string): Promise<AuditLogEntry[]> {

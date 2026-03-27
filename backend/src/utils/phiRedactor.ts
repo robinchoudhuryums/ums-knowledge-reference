@@ -30,11 +30,15 @@ const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
 // Date of birth patterns: DOB 01/15/1952, DOB: 1/15/52, born on 01-15-1952, date of birth 01/15/1952
 const DOB_PATTERN = /(?:DOB|d\.?o\.?b\.?|date\s+of\s+birth|born\s+on|birthdate)[:\s]*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}/gi;
 
+// Natural language birth patterns: "born in January 1952", "birth date January 15, 1952"
+const DOB_NATURAL_PATTERN = /(?:born\s+(?:in\s+)?|birth\s*date[:\s]*)(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}?,?\s*\d{2,4}/gi;
+
 // Standalone dates that look like birthdates (MM/DD/YYYY or MM-DD-YYYY with year before 2010)
 const DATE_PATTERN = /\b(?:0?[1-9]|1[0-2])[/\-](?:0?[1-9]|[12]\d|3[01])[/\-](?:19\d{2}|200\d)\b/g;
 
-// MRN / Medical Record Number patterns
-const MRN_PATTERN = /(?:MRN|medical\s+record(?:\s+number)?|patient\s+(?:id|number|#))[:\s#]*[A-Z0-9-]{4,15}/gi;
+// MRN / Medical Record Number patterns — require at least one digit to avoid matching
+// non-numeric identifiers like "MRN: PART-A" which aren't actual record numbers
+const MRN_PATTERN = /(?:MRN|medical\s+record(?:\s+number)?|patient\s+(?:id|number|#))[:\s#]*(?=[A-Z0-9-]*\d)[A-Z0-9-]{4,15}/gi;
 
 // Medicare Beneficiary Identifier (MBI): 1AN9-AA0-AA00 format
 const MBI_PATTERN = /\b[1-9][A-Za-z]\w{2}[-\s]?[A-Za-z]\w{2}[-\s]?\w{4}\b/g;
@@ -84,6 +88,9 @@ export function redactPhi(text: string): RedactionResult {
 
   // DOB with keyword context (before generic date)
   applyPattern(DOB_PATTERN, 'DOB');
+
+  // Natural language DOB ("born in January 1952", "birth date March 3, 1960")
+  applyPattern(DOB_NATURAL_PATTERN, 'DOB');
 
   // Standalone birthdates
   applyPattern(DATE_PATTERN, 'DATE');

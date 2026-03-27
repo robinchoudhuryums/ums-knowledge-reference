@@ -11,11 +11,32 @@ import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { logAuditEvent } from './audit';
 import { logger } from '../utils/logger';
 
-// Retention periods in days, configurable via environment variables
-const RETENTION_AUDIT_DAYS = parseInt(process.env.RETENTION_AUDIT_DAYS || '2555', 10);       // ~7 years (HIPAA minimum 6)
-const RETENTION_QUERY_LOG_DAYS = parseInt(process.env.RETENTION_QUERY_LOG_DAYS || '365', 10); // 1 year
-const RETENTION_RAG_TRACE_DAYS = parseInt(process.env.RETENTION_RAG_TRACE_DAYS || '90', 10);  // 90 days
-const RETENTION_FEEDBACK_DAYS = parseInt(process.env.RETENTION_FEEDBACK_DAYS || '365', 10);   // 1 year
+// HIPAA-mandated minimum retention floors (in days).
+// These cannot be overridden by environment variables — they represent the absolute
+// legal minimums. HIPAA requires audit trails for 6 years; we enforce 6 years minimum.
+const MIN_RETENTION_AUDIT_DAYS = 2190;     // 6 years — HIPAA § 164.530(j)
+const MIN_RETENTION_QUERY_LOG_DAYS = 180;  // 6 months minimum for operational logs
+const MIN_RETENTION_RAG_TRACE_DAYS = 30;   // 30 days minimum for troubleshooting
+const MIN_RETENTION_FEEDBACK_DAYS = 180;   // 6 months minimum
+
+// Retention periods in days, configurable via environment variables.
+// The configured value is clamped to be at least the HIPAA minimum floor.
+const RETENTION_AUDIT_DAYS = Math.max(
+  parseInt(process.env.RETENTION_AUDIT_DAYS || '2555', 10),
+  MIN_RETENTION_AUDIT_DAYS
+);
+const RETENTION_QUERY_LOG_DAYS = Math.max(
+  parseInt(process.env.RETENTION_QUERY_LOG_DAYS || '365', 10),
+  MIN_RETENTION_QUERY_LOG_DAYS
+);
+const RETENTION_RAG_TRACE_DAYS = Math.max(
+  parseInt(process.env.RETENTION_RAG_TRACE_DAYS || '90', 10),
+  MIN_RETENTION_RAG_TRACE_DAYS
+);
+const RETENTION_FEEDBACK_DAYS = Math.max(
+  parseInt(process.env.RETENTION_FEEDBACK_DAYS || '365', 10),
+  MIN_RETENTION_FEEDBACK_DAYS
+);
 
 export interface RetentionSummary {
   auditDeleted: number;

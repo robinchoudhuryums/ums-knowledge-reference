@@ -41,9 +41,19 @@ export function clearAuthCookie(res: Response): void {
   });
 }
 
-// Warn at startup if using the default JWT secret
+// Enforce secure JWT_SECRET in production — refuse to start with the default
 if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    logger.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start in production with default secret.');
+    process.exit(1);
+  }
   logger.warn('[SECURITY WARNING] JWT_SECRET not set — using insecure default. Set JWT_SECRET in production!');
+} else if (process.env.JWT_SECRET.length < 32) {
+  if (process.env.NODE_ENV === 'production') {
+    logger.error('FATAL: JWT_SECRET must be at least 32 characters in production.');
+    process.exit(1);
+  }
+  logger.warn('[SECURITY WARNING] JWT_SECRET is shorter than 32 characters — use a stronger secret in production.');
 }
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -170,12 +180,20 @@ export async function initializeAuth(): Promise<void> {
       mustChangePassword: true,
     };
     await saveUsers([adminUser]);
-    // Log the temporary password once — admin must change on first login
-    logger.warn('Default admin user created (username: admin) — INITIAL PASSWORD (change immediately):', { initialPassword });
-    logger.warn('╔══════════════════════════════════════════════════════════════╗');
-    logger.warn(`║  Admin initial password: ${initialPassword.padEnd(34)} ║`);
-    logger.warn('║  This password MUST be changed on first login.             ║');
-    logger.warn('╚══════════════════════════════════════════════════════════════╝');
+    // Write the temporary password to a secure file instead of logging it.
+    // Plaintext passwords in logs violate HIPAA and could be captured by log aggregators.
+    const passwordFilePath = '/tmp/ums-admin-initial-password.txt';
+    try {
+      const { writeFileSync } = require('fs');
+      writeFileSync(passwordFilePath, `Admin initial password: ${initialPassword}\nThis password MUST be changed on first login.\n`, { mode: 0o600 });
+      logger.warn('Default admin user created (username: admin). Initial password written to: ' + passwordFilePath);
+      logger.warn('Read the password from that file, then delete it immediately.');
+    } catch {
+      // If file write fails (e.g. read-only filesystem), fall back to stdout only (not the structured logger)
+      process.stdout.write(`\n[ADMIN SETUP] Initial password for admin: ${initialPassword}\n`);
+      process.stdout.write('[ADMIN SETUP] Change this password immediately on first login.\n\n');
+      logger.warn('Default admin user created (username: admin). Initial password printed to stdout.');
+    }
   }
 }
 

@@ -339,11 +339,11 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         confidence: 'low',
         traceId,
       };
-      // Log trace for zero-result queries too
+      // Log trace for zero-result queries too (redact PHI from logged text)
       logRagTrace({
         traceId, timestamp: new Date().toISOString(),
         userId: req.user!.id, username: req.user!.username,
-        queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+        queryText: redactPhi(question).text, reformulatedQuery: searchQuery !== question ? redactPhi(searchQuery).text : undefined,
         retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
         chunksPassedToModel: 0, modelId: BEDROCK_GENERATION_MODEL,
         responseText: response.answer, confidence: 'low',
@@ -412,10 +412,12 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     await logQuery(req.user!.id, req.user!.username, question, answer, confidence, sources, collectionIds);
 
     // Log RAG trace asynchronously (fire-and-forget)
+    // Redact reformulated query — it may contain PHI expanded from conversation context
+    const redactedReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
     logRagTrace({
       traceId, timestamp: new Date().toISOString(),
       userId: req.user!.id, username: req.user!.username,
-      queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+      queryText: redactPhi(question).text, reformulatedQuery: redactedReformulated,
       retrievedChunkIds: searchResults.map(r => r.chunk.id),
       retrievalScores: searchResults.map(r => r.score),
       avgRetrievalScore: avgScore,
@@ -518,7 +520,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       logRagTrace({
         traceId, timestamp: new Date().toISOString(),
         userId: req.user!.id, username: req.user!.username,
-        queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+        queryText: redactPhi(question).text, reformulatedQuery: searchQuery !== question ? redactPhi(searchQuery).text : undefined,
         retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
         chunksPassedToModel: 0, modelId: BEDROCK_GENERATION_MODEL,
         responseText: noResultAnswer, confidence: 'low',
@@ -595,10 +597,12 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore, topScore);
     logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(() => {});
     // Log RAG trace (fire and forget)
+    // Redact query and reformulated query — may contain PHI from conversation context
+    const redactedStreamReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
     logRagTrace({
       traceId, timestamp: new Date().toISOString(),
       userId: req.user!.id, username: req.user!.username,
-      queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+      queryText: redactPhi(question).text, reformulatedQuery: redactedStreamReformulated,
       retrievedChunkIds: searchResults.map(r => r.chunk.id),
       retrievalScores: searchResults.map(r => r.score),
       avgRetrievalScore: avgScore,

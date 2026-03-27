@@ -20,26 +20,59 @@ import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import { Collection } from './types';
 import { listCollections } from './services/api';
+import {
+  ChatBubbleLeftRightIcon,
+  MagnifyingGlassIcon,
+  DocumentTextIcon,
+  ClipboardDocumentListIcon,
+  DocumentDuplicateIcon,
+  CameraIcon,
+  FolderOpenIcon,
+  Cog6ToothIcon,
+  SunIcon,
+  MoonIcon,
+  ArrowRightStartOnRectangleIcon,
+} from '@heroicons/react/24/outline';
+import clsx from 'clsx';
 
 type Tab = 'chat' | 'search' | 'extract' | 'intake' | 'forms' | 'documents' | 'ocr' | 'admin';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
-const tabIcons: Record<Tab, string> = {
-  chat: '\u2728',
-  search: '\uD83D\uDD0D',
-  extract: '\uD83D\uDCDD',
-  intake: '\uD83D\uDCCB',
-  forms: '\uD83D\uDCC4',
-  ocr: '\uD83D\uDCF7',
-  documents: '\uD83D\uDCC1',
-  admin: '\u2699\uFE0F',
+const tabIcons: Record<Tab, React.ComponentType<React.SVGProps<SVGSVGElement>>> = {
+  chat: ChatBubbleLeftRightIcon,
+  search: MagnifyingGlassIcon,
+  extract: DocumentTextIcon,
+  intake: ClipboardDocumentListIcon,
+  forms: DocumentDuplicateIcon,
+  ocr: CameraIcon,
+  documents: FolderOpenIcon,
+  admin: Cog6ToothIcon,
 };
+
+/** Dark mode hook — persists to localStorage, toggles .dark class on <html> */
+function useDarkMode(): [boolean, () => void] {
+  const [dark, setDark] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const stored = localStorage.getItem('ums-dark-mode');
+    if (stored !== null) return stored === 'true';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+    localStorage.setItem('ums-dark-mode', String(dark));
+  }, [dark]);
+
+  const toggle = useCallback(() => setDark(d => !d), []);
+  return [dark, toggle];
+}
 
 export default function App() {
   const { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [isDark, toggleDark] = useDarkMode();
 
   const { showWarning, remainingSeconds } = useIdleTimeout(
     () => { logout(); },
@@ -117,26 +150,47 @@ export default function App() {
           <nav style={styles.nav}>
             {tabs
               .filter(t => !t.adminOnly || isAdmin)
-              .map(t => (
-                <button
-                  key={t.key}
-                  onClick={() => setActiveTab(t.key)}
-                  style={activeTab === t.key ? styles.tabActive : styles.tab}
-                >
-                  <span style={styles.tabIcon}>{tabIcons[t.key]}</span>
-                  {t.label}
-                </button>
-              ))}
+              .map(t => {
+                const Icon = tabIcons[t.key];
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setActiveTab(t.key)}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border-none cursor-pointer transition-all duration-200',
+                      activeTab === t.key
+                        ? 'font-semibold'
+                        : 'bg-transparent'
+                    )}
+                    style={activeTab === t.key ? styles.tabActive : styles.tab}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {t.label}
+                  </button>
+                );
+              })}
           </nav>
         </div>
         <div style={styles.headerRight}>
           <PopoutButton />
+          <button
+            onClick={toggleDark}
+            className="p-1.5 rounded-lg border cursor-pointer transition-all duration-200 hover:scale-105"
+            style={{ background: 'var(--ums-bg-surface-alt)', borderColor: 'var(--ums-border)', color: 'var(--ums-text-muted)' }}
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle dark mode"
+          >
+            {isDark ? <SunIcon className="w-4 h-4" /> : <MoonIcon className="w-4 h-4" />}
+          </button>
           <div style={styles.userBadge}>
             <div style={styles.avatar}>{auth.user?.username?.charAt(0).toUpperCase()}</div>
             <span style={styles.user}>{auth.user?.username}</span>
             <span style={styles.roleBadge}>{auth.user?.role}</span>
           </div>
-          <button onClick={logout} style={styles.logoutButton}>Sign Out</button>
+          <button onClick={logout} style={styles.logoutButton} title="Sign out">
+            <ArrowRightStartOnRectangleIcon className="w-4 h-4 inline-block mr-1 -mt-0.5" />
+            Sign Out
+          </button>
         </div>
       </header>
 
@@ -199,20 +253,21 @@ export default function App() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  app: { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#EDF4FC' },
+  app: { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: 'var(--ums-bg-app)' },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '0 24px',
     height: '62px',
-    background: 'rgba(255, 255, 255, 0.92)',
-    backdropFilter: 'blur(12px)',
-    color: '#1A2B3C',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02)',
-    borderBottom: '1px solid rgba(214, 228, 240, 0.7)',
+    background: 'var(--ums-header-bg)',
+    backdropFilter: 'var(--ums-header-blur)',
+    color: 'var(--ums-text-secondary)',
+    boxShadow: 'var(--ums-shadow-sm)',
+    borderBottom: '1px solid var(--ums-border-light)',
     position: 'relative' as const,
     zIndex: 10,
+    transition: 'background-color 0.2s ease',
   },
   headerLeft: { display: 'flex', alignItems: 'center', gap: '28px' },
   headerRight: { display: 'flex', alignItems: 'center', gap: '12px' },
@@ -221,7 +276,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '34px',
     height: '34px',
     borderRadius: '10px',
-    background: 'linear-gradient(135deg, #1B6FC9, #42A5F5)',
+    background: 'var(--ums-brand-gradient)',
     color: 'white',
     display: 'flex',
     alignItems: 'center',
@@ -230,12 +285,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     flexShrink: 0,
   },
-  logo: { margin: 0, fontSize: '17px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
+  logo: { margin: 0, fontSize: '17px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.3px' },
   nav: { display: 'flex', gap: '2px' },
   tab: {
     padding: '7px 14px',
     background: 'transparent',
-    color: '#6B8299',
+    color: 'var(--ums-text-muted)',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
@@ -249,8 +304,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     padding: '7px 14px',
-    background: 'linear-gradient(135deg, rgba(27, 111, 201, 0.08), rgba(66, 165, 245, 0.1))',
-    color: '#1565C0',
+    background: 'var(--ums-bg-active)',
+    color: 'var(--ums-brand-text)',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
@@ -261,21 +316,20 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '6px',
     boxShadow: 'inset 0 0 0 1px rgba(27, 111, 201, 0.15)',
   },
-  tabIcon: { fontSize: '14px' },
   userBadge: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    background: '#F0F7FF',
+    background: 'var(--ums-bg-surface-alt)',
     borderRadius: '8px',
     padding: '4px 12px 4px 4px',
-    border: '1px solid #D6E4F0',
+    border: '1px solid var(--ums-border)',
   },
   avatar: {
     width: '28px',
     height: '28px',
     borderRadius: '6px',
-    background: 'linear-gradient(135deg, #1B6FC9, #42A5F5)',
+    background: 'var(--ums-brand-gradient)',
     color: 'white',
     display: 'flex',
     alignItems: 'center',
@@ -283,14 +337,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     fontWeight: 600,
   },
-  user: { fontSize: '13px', color: '#1A2B3C' },
+  user: { fontSize: '13px', color: 'var(--ums-text-secondary)' },
   popoutUser: { fontSize: '13px', color: 'rgba(255,255,255,0.9)' },
   roleBadge: {
     fontSize: '10px',
     padding: '2px 6px',
-    background: '#E3F2FD',
+    background: 'var(--ums-brand-light)',
     borderRadius: '4px',
-    color: '#1565C0',
+    color: 'var(--ums-brand-text)',
     textTransform: 'uppercase' as const,
     fontWeight: 600,
     letterSpacing: '0.5px',
@@ -298,20 +352,22 @@ const styles: Record<string, React.CSSProperties> = {
   logoutButton: {
     padding: '6px 14px',
     background: 'transparent',
-    color: '#6B8299',
-    border: '1px solid #D6E4F0',
+    color: 'var(--ums-text-muted)',
+    border: '1px solid var(--ums-border)',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 500,
+    display: 'flex',
+    alignItems: 'center',
   },
   main: { flex: 1, overflow: 'hidden' },
-  adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px', background: '#ffffff' },
+  adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px', background: 'var(--ums-bg-surface)' },
   adminHeader: { padding: '28px 28px 0' },
-  adminTitle: { margin: '0 0 4px', fontSize: '24px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
-  adminSubtitle: { margin: '0 0 24px', fontSize: '14px', color: '#5F7A8F' },
+  adminTitle: { margin: '0 0 4px', fontSize: '24px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.3px' },
+  adminSubtitle: { margin: '0 0 24px', fontSize: '14px', color: 'var(--ums-text-muted)' },
   adminGrid: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
-  adminSection: { background: '#ffffff' },
+  adminSection: { background: 'var(--ums-bg-surface)' },
   popoutHeader: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -324,9 +380,9 @@ const styles: Record<string, React.CSSProperties> = {
   popoutLogo: { margin: 0, fontSize: '15px', fontWeight: 600 },
   idleWarningBanner: {
     padding: '10px 24px',
-    background: '#FFF3CD',
-    color: '#856404',
-    borderBottom: '1px solid #FFEEBA',
+    background: 'var(--ums-warning)',
+    color: '#000',
+    borderBottom: '1px solid var(--ums-border)',
     fontSize: '14px',
     fontWeight: 500,
     textAlign: 'center' as const,

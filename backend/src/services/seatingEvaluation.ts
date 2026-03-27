@@ -103,7 +103,9 @@ export function generateSeatingEvaluation(
     return val === 'yes' || val === 'true';
   };
 
-  // Determine MRADL level from free-text PPD answers
+  // Determine MRADL level from free-text PPD answers.
+  // Returns null if the text doesn't match any known impairment keywords,
+  // rather than defaulting to 'cannot_complete' for all non-empty text.
   const classifyMradl = (text: string): 'cannot_accomplish' | 'cannot_attempt' | 'cannot_complete' | null => {
     if (!text) return null;
     const lower = text.toLowerCase();
@@ -114,10 +116,12 @@ export function generateSeatingEvaluation(
       return 'cannot_attempt';
     }
     if (lower.includes('difficulty') || lower.includes('struggle') || lower.includes('hard') ||
-        lower.includes('takes long') || lower.includes('help') || lower.includes('assist')) {
+        lower.includes('takes long') || lower.includes('help') || lower.includes('assist') ||
+        lower.includes('pain') || lower.includes('limited')) {
       return 'cannot_complete';
     }
-    return 'cannot_complete'; // Default: if they mention it at all, it's compromised
+    // No recognized impairment keywords — don't assume compromised
+    return null;
   };
 
   // Map arm strength Q7-Q9 to 0-5 scale
@@ -285,7 +289,11 @@ export function generateSeatingEvaluation(
     rulesOutManualWheelchair: armStrength <= '3' || painLocationsUE.length >= 2,
     rulesOutScooterPOV: isYes('q35') || isYes('q33') || !isYes('q7'),
 
-    cognitiveStatus: ['Intact'],
+    // Cognitive status inferred from PPD responses rather than hardcoded.
+    // If neuro conditions suggest cognitive impact, flag it; otherwise default to 'Intact'.
+    cognitiveStatus: diagnoses.some(d =>
+      /dementia|alzheimer|tbi|brain\s*injury|cognitive/i.test(d)
+    ) ? ['Impaired — see diagnosis'] : ['Intact'],
     hasCaregiverForAttendantControl: null,
 
     needsWeightShift: isSPO || isMPO,
@@ -298,15 +306,16 @@ export function generateSeatingEvaluation(
     multiPowerReasons,
 
     hasPressureUlcers: isYes('q33'),
-    ulcerLocations: get('q33a') ? get('q33a').split(/[,;]/).map(s => s.trim()) : [],
-    hasImpairedSensation: get('q33a')?.toLowerCase().includes('absent') || get('q33a')?.toLowerCase().includes('impaired') || false,
+    ulcerLocations: get('q33a') ? get('q33a').split(/[,;]/).map((s: string) => s.trim()).filter(Boolean) : [],
+    hasImpairedSensation: (get('q33a') || '').toLowerCase().includes('absent') || (get('q33a') || '').toLowerCase().includes('impaired'),
     hasAmputation: ampText.length > 3 && !ampText.includes('no'),
     amputationDetails: ampDetails,
     hasPosturalAsymmetries: isYes('q35') || ampDetails.length > 0,
     posturalDetails: { pelvis: pelvisIssues, trunk: trunkIssues },
 
     needsToManage,
-    mradlsImprovedByPMD: true,
+    // Only assert MRADLs improved if at least one MRADL was actually identified as compromised
+    mradlsImprovedByPMD: needsToManage.length > 0,
     willingAndAble: true,
     hoursPerDay: '>2',
     primaryUseInHome: true,

@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import {
   getPpdQuestions,
@@ -13,6 +14,27 @@ import { submitPpd, getPpdSubmission, listPpdSubmissions, updatePpdStatus, delet
 import { generateSeatingEvaluation, renderSeatingEvalHtml } from '../services/seatingEvaluation';
 import { requireAdmin } from '../middleware/auth';
 import { logger } from '../utils/logger';
+
+// Stricter rate limit for PPD queue submissions to prevent abuse.
+// 10 submissions per 15 minutes per user should be more than sufficient.
+const submissionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  message: { error: 'Too many submissions. Please wait before submitting again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate limit for email sending — 5 emails per 15 minutes per user
+const emailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  message: { error: 'Too many emails sent. Please wait before sending again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const router = Router();
 
@@ -116,7 +138,7 @@ router.post('/seating-eval', authenticate, async (req: AuthRequest, res: Respons
 // ─── PPD Submission Queue ─────────────────────────────────────────────
 
 // Submit a completed PPD to the queue for Pre-Appointment Kit team review
-router.post('/submit', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/submit', authenticate, submissionLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { patientInfo, responses, recommendations, productSelections, language } = req.body;
 
@@ -246,7 +268,7 @@ router.get('/email-status', authenticate, (_req: AuthRequest, res: Response) => 
 });
 
 // Send PPD form via email
-router.post('/send-email', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/send-email', authenticate, emailLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { to, patientInfo, responses, recommendations, productSelections } = req.body as {
       to: string;

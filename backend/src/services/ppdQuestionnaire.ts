@@ -179,7 +179,12 @@ export function determinePmdRecommendations(responses: PpdResponse[]): PmdRecomm
   const hasSpineCurvature = isPositive('q35');
   const isOnOxygen = isPositive('q44');
   const hasPressureUlcers = isPositive('q33');
-  const hasSpasticity = isPositive('q32') || (get('q32').length > 3 && !get('q32').includes('no'));
+  // Spasticity detection — use explicit keywords rather than "anything that isn't 'no'"
+  // to avoid false positives on ambiguous answers like "maybe" or "mild"
+  const spasticityAnswer = get('q32');
+  const spasticityPositiveKeywords = ['yes', 'severe', 'moderate', 'spasm', 'spastic', 'stiff', 'tight', 'rigid', 'clonus'];
+  const hasSpasticity = isPositive('q32') ||
+    spasticityPositiveKeywords.some(kw => spasticityAnswer.includes(kw));
   const hasSwelling = isPositive('q36');
   const usesCatheters = isPositive('q30');
 
@@ -260,13 +265,17 @@ export function determinePmdRecommendations(responses: PpdResponse[]): PmdRecomm
     const offersSolid = isKnownSolid || sheetSaysSolid;
     const offersCaptain = seatCode.includes('c') && !isKnownSolid && !sheetSaysSolid;
 
-    // Weight filtering
+    // Weight filtering — validate parsed numbers to avoid NaN comparisons
     if (weight > 0) {
       if (product.weightCapacity.includes('-')) {
-        const [minCap, maxCap] = product.weightCapacity.split('-').map(n => parseInt(n, 10));
+        const parts = product.weightCapacity.split('-').map(n => parseInt(n, 10));
+        const minCap = parts[0];
+        const maxCap = parts[1];
+        if (isNaN(minCap) || isNaN(maxCap) || parts.length !== 2) return false;
         if (weight < minCap || weight > maxCap) return false;
       } else {
         const maxCap = parseInt(product.weightCapacity, 10);
+        if (isNaN(maxCap)) return false;
         if (weight > maxCap) return false;
       }
     }

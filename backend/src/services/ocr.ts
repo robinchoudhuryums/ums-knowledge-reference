@@ -142,6 +142,11 @@ async function extractTextWithAsyncOcr(buffer: Buffer, filename: string): Promis
 
       if (!getResponse.NextToken) break;
       nextToken = getResponse.NextToken;
+
+      // Brief delay between pagination calls to avoid AWS API throttling.
+      // Textract's GetDocumentTextDetection has a default rate of 10 TPS;
+      // a 100ms pause keeps us well under that even at max concurrency.
+      await sleep(100);
     }
 
     return parseTextractBlocks(allBlocks, filename);

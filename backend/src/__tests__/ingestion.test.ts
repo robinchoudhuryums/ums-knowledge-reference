@@ -156,10 +156,19 @@ describe('Ingestion Pipeline', () => {
       expect(doc.chunkCount).toBe(1);
     });
 
-    it('should produce consistent contentHash for the same content', async () => {
+    it('should reject duplicate content in the same collection', async () => {
+      const buffer = Buffer.from('identical content');
+      await ingestDocument(buffer, 'a.txt', 'text/plain', 'col-1', 'user-1');
+
+      await expect(
+        ingestDocument(buffer, 'b.txt', 'text/plain', 'col-1', 'user-1')
+      ).rejects.toThrow('identical content already exists');
+    });
+
+    it('should allow same content in different collections', async () => {
       const buffer = Buffer.from('identical content');
       const result1 = await ingestDocument(buffer, 'a.txt', 'text/plain', 'col-1', 'user-1');
-      const result2 = await ingestDocument(buffer, 'b.txt', 'text/plain', 'col-1', 'user-1');
+      const result2 = await ingestDocument(buffer, 'a.txt', 'text/plain', 'col-2', 'user-1');
 
       expect(result1.document.contentHash).toBe(result2.document.contentHash);
     });

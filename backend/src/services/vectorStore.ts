@@ -214,7 +214,21 @@ export async function initializeVectorStore(): Promise<void> {
   initPromise = (async () => {
     cachedIndex = await loadVectorIndex();
     if (cachedIndex) {
-      logger.info('Vector store loaded from S3', { chunkCount: cachedIndex.chunks.length });
+      const chunkCount = cachedIndex.chunks.length;
+      logger.info('Vector store loaded from S3', { chunkCount });
+
+      // Warn if approaching memory limits. At 1024 dimensions (4 bytes each),
+      // each chunk embedding is ~4KB. 50K chunks ≈ 200MB of embeddings in RAM.
+      // The S3 JSON size guard is 500MB, but memory pressure starts earlier.
+      const CHUNK_WARNING_THRESHOLD = 50_000;
+      if (chunkCount > CHUNK_WARNING_THRESHOLD) {
+        logger.warn('Vector store is large — consider migrating to pgvector', {
+          chunkCount,
+          warningThreshold: CHUNK_WARNING_THRESHOLD,
+          estimatedMemoryMB: Math.round(chunkCount * 4 / 1024), // rough: 4KB per chunk embedding
+        });
+      }
+
       // Pre-build IDF cache on startup
       idfCache = buildIdfMap(cachedIndex.chunks);
       idfChunkCount = cachedIndex.chunks.length;

@@ -4,17 +4,49 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 
 ## Features
 
-- **Document ingestion** — Upload PDFs, DOCX, XLSX, CSV, and TXT files. Text extraction uses pdf-parse, AWS Textract OCR, and Claude vision (for images/diagrams in PDFs).
-- **RAG chat** — Ask questions and get cited answers grounded in your documents. Streaming SSE responses with markdown rendering.
-- **Conversation memory** — Follow-up questions are reformulated into standalone queries for better retrieval. Older turns are summarized automatically.
+### Knowledge Base & RAG
+- **Document ingestion** — Upload PDFs, DOCX, XLSX, CSV, TXT, and HTML files. Text extraction uses pdf-parse, AWS Textract OCR, and Claude vision (for images/diagrams in PDFs).
+- **RAG chat** — Ask questions and get cited answers grounded in your documents. Streaming SSE responses with markdown rendering. Auto-enriched with structured HCPCS/ICD-10/coverage data when relevant.
+- **Conversation memory** — Follow-up questions are reformulated into standalone queries. Older turns are summarized automatically.
 - **Hybrid search** — Cosine similarity + IDF-enhanced BM25 keyword scoring with post-retrieval re-ranking.
-- **Structured extraction** — Extract structured data from documents using configurable templates (PPD, CMN, Prior Auth, General).
-- **Clinical note extraction** — Upload physician notes to extract ICD-10 codes, test results, medical necessity language, and map them to CMN form fields.
-- **Form review** — CMN form type auto-detection with required-field rules, blank detection, and confidence-based annotations on PDFs.
-- **Interactive PDF annotations** — Client-side PDF viewer with drag-to-move annotations, undo/redo, and highlight drawing.
-- **Document source monitoring** — Track external URLs (LCDs, CMS policies) for changes and auto-reingest when content updates.
-- **HIPAA compliance** — PHI redaction on logs, JWT auth with account lockout, HTTPS enforcement with HSTS, password history tracking, audit logging.
-- **Admin dashboards** — RAG observability tracing, query quality metrics, FAQ analytics, query log export (CSV).
+
+### DME Reference Data (integrated into RAG)
+- **HCPCS code lookup** — 332 real DME codes across 25 categories (power wheelchairs, oxygen, CPAP supplies, catheters, incontinence, ventilators, bed/wheelchair accessories, respiratory supplies).
+- **ICD-10 to HCPCS crosswalk** — 66 diagnosis codes, 116+ mappings. Forward/reverse lookup with documentation requirements.
+- **LCD coverage checklists** — 8 real CMS LCDs with per-item documentation requirements and validation.
+- **Structured reference enrichment** — RAG queries automatically detect HCPCS/ICD-10 codes and inject structured data alongside document context.
+
+### Forms & Workflow Tools
+- **PPD Questionnaire** — 45-question phone interview tool (EN/ES) for Power Mobility Device orders with:
+  - PMD recommendation engine (weight class, neuro eligibility, solid seat logic, substitution rules)
+  - Product catalog with images, brochures, dimensions, colors, lead times
+  - Auto-generated Seating Evaluation (maps all answers to 10-section clinical form)
+  - Submission queue for Pre-Appointment Kit team handoff
+  - Interactive pain body map, SVG progress ring, animated sections
+- **PMD Account Creation** — Sales lead intake form for power mobility patients (demographics, insurance, clinical, scheduling).
+- **PAP Account Creation** — CPAP/BiPAP sales lead intake with conditional formatting (sleep study status, equipment age).
+- **Insurance card OCR** — Upload card photo → Textract + Claude extracts insurance name, member ID, group #, plan type. Auto-fills form fields and flags mismatches.
+
+### Document Management
+- **Structured extraction** — Extract data using templates (PPD Seating Evaluation, CMN, Prior Auth, General).
+- **Clinical note extraction** — Upload physician notes → extract ICD-10 codes, test results, medical necessity, map to CMN fields.
+- **Document source monitoring** — Track external URLs (CMS LCDs, policies) for changes and auto-reingest. 8 LCD sources pre-configured.
+- **Form review** — CMN form type auto-detection with required-field rules and confidence-based PDF annotations.
+
+### HIPAA Compliance
+- PHI redaction on all logs (SSN, DOB, MRN, phone, email, addresses, Medicare/Medicaid IDs)
+- JWT auth with httpOnly cookies, 30-minute expiry, 15-minute idle timeout
+- Account lockout (5 attempts, 15-minute cooldown), password history (last 5)
+- Audit logging with SHA-256 hash chaining (tamper-evident)
+- Automated data retention (audit 7yr, query logs 1yr, traces 90d)
+- HTTPS enforcement with HSTS, CSRF protection, SSRF prevention
+- Non-root Docker container
+
+### Admin & Analytics
+- RAG observability dashboard, query quality metrics, FAQ analytics
+- Query log viewer with CSV export, audit log export with chain verification
+- User management (CRUD, role assignment, password reset)
+- Email sending via Gmail SMTP for form submissions
 
 ## Architecture
 
@@ -64,6 +96,10 @@ See `backend/.env.example` for all configuration options:
 - `BEDROCK_EXTRACTION_MODEL` — Claude model for extraction (default: Sonnet 4.6)
 - `JWT_SECRET` — **Must be changed from default in production** (server will refuse to start otherwise)
 - `JWT_EXPIRY` — Token expiry (default: 30m, HIPAA-recommended short sessions)
+- `SMTP_USER`, `SMTP_PASS` — Gmail app password for form email sending (optional)
+- `PPD_BCC_EMAIL` — BCC address for PPD/form emails (optional)
+- `RETENTION_AUDIT_DAYS` — Audit log retention (default: 2555, ~7 years)
+- `RETENTION_QUERY_LOG_DAYS` — Query log retention (default: 365)
 
 ### Docker
 
@@ -78,8 +114,11 @@ docker run -p 3001:3001 --env-file backend/.env ums-knowledge
 # Type-check
 cd backend && npx tsc --noEmit
 
-# Run tests (38 tests: vector store + PHI redaction)
+# Run tests (205 tests across 18 test files)
 cd backend && npm test
+
+# Lint
+cd backend && npm run lint
 
 # Build frontend for production
 cd frontend && npm run build
@@ -96,16 +135,26 @@ The IAM role/user needs:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/query` | RAG query (non-streaming) |
+| POST | `/api/query` | RAG query (non-streaming, auto-enriched with structured data) |
 | POST | `/api/query/stream` | RAG query (streaming SSE) |
 | POST | `/api/documents/upload` | Upload document |
 | GET | `/api/documents` | List documents |
 | POST | `/api/documents/clinical-extract` | Extract clinical data from notes |
 | POST | `/api/extraction/extract` | Structured extraction with template |
+| GET | `/api/hcpcs/search?q=` | Search HCPCS codes |
+| GET | `/api/icd10/for-diagnosis/:code` | ICD-10 → HCPCS crosswalk |
+| GET | `/api/coverage/checklist/:code` | LCD coverage checklist |
+| GET | `/api/ppd/questions` | PPD questionnaire (45 questions EN/ES) |
+| POST | `/api/ppd/recommend` | PMD recommendations from PPD responses |
+| POST | `/api/ppd/seating-eval` | Auto-fill Seating Evaluation form |
+| POST | `/api/ppd/submit` | Submit PPD to review queue |
+| GET | `/api/account-creation/questions` | PMD Account Creation form |
+| POST | `/api/account-creation/read-insurance-card` | OCR insurance card image |
+| GET | `/api/pap-account/questions` | PAP Account Creation form |
 | POST | `/api/feedback` | Submit response feedback |
-| GET | `/api/query-log` | View query logs (admin) |
-| GET | `/api/usage` | Usage stats |
 | CRUD | `/api/sources/*` | Document source monitoring (admin) |
+| CRUD | `/api/users/*` | User management (admin) |
+| GET | `/api/query-log/*` | Query logs, audit logs, observability (admin) |
 
 ## License
 

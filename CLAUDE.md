@@ -10,7 +10,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Entry**: `backend/src/index.ts`
 - **Key services** (`backend/src/services/`):
   - `ingestion.ts` — Full pipeline: upload to S3 → extract text → vision describe images → chunk → embed → store in vector store
-  - `textExtractor.ts` — Extracts text from PDFs (pdf-parse + Textract OCR in parallel), DOCX, XLSX, CSV
+  - `textExtractor.ts` — Extracts text from PDFs (pdf-parse + Textract OCR in parallel), DOCX, XLSX, CSV, HTML
   - `visionExtractor.ts` — Sends PDFs to Haiku 4.5 via Bedrock Converse API to describe images/diagrams
   - `ocr.ts` — AWS Textract OCR (sync for images, async for multi-page PDFs)
   - `chunker.ts` — Splits text into overlapping chunks with section header detection
@@ -34,6 +34,19 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `sourceMonitor.ts` — Automated URL monitoring for external document changes (SHA-256 hash comparison)
   - `feeScheduleFetcher.ts` — CMS DME fee schedule auto-fetch and ingestion
   - `reindexer.ts` — Document change detection and re-ingestion service
+  - `hcpcsLookup.ts` — Static HCPCS code database (332 codes, 25 categories) with search, lookup, and category browsing
+  - `icd10Mapping.ts` — ICD-10 to HCPCS crosswalk (66 diagnosis codes, 116+ mappings) for DME equipment justification
+  - `coverageChecklists.ts` — LCD coverage criteria checklists (8 LCDs) with documentation validation
+  - `referenceEnrichment.ts` — Auto-detects HCPCS/ICD-10 codes and coverage keywords in queries, injects structured reference data into RAG context
+  - `ppdQuestionnaire.ts` — PPD (Patient Provided Data) questionnaire (45 questions EN/ES) for Power Mobility Device orders
+  - `pmdCatalog.ts` — PMD product catalog (22 products) with images, brochures, weight capacities, seat types
+  - `ppdQueue.ts` — S3-backed PPD submission queue with status workflow (pending → in_review → completed/returned)
+  - `seatingEvaluation.ts` — Auto-fills 2-page Seating Evaluation form from PPD responses (10 sections mapped)
+  - `accountCreation.ts` — PMD Account Creation questionnaire (25 questions EN/ES) for sales lead intake
+  - `papAccountCreation.ts` — PAP/CPAP Account Creation questionnaire (24 questions EN/ES) with conditional formatting
+  - `emailService.ts` — Gmail SMTP email sending via nodemailer (configurable via SMTP_USER/SMTP_PASS env vars)
+  - `insuranceCardReader.ts` — Insurance card OCR: Textract + Claude extracts structured fields, compares against entered data for mismatch detection
+  - `dataRetention.ts` — HIPAA-compliant automated data retention cleanup (audit 7yr, query logs 1yr, traces 90d, feedback 1yr)
 - **Routes** (`backend/src/routes/`):
   - `query.ts` — RAG query (non-streaming + streaming SSE), query reformulation for follow-ups
   - `documents.ts` — Document upload, listing, deletion, clinical extraction, fee schedule fetch, reindex
@@ -44,12 +57,18 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `queryLog.ts` — Query log viewing and CSV export
   - `sourceMonitor.ts` — Admin CRUD API for monitored document sources
   - `usage.ts` — Usage stats and limits
+  - `hcpcs.ts` — HCPCS code search, lookup, categories
+  - `icd10.ts` — ICD-10 to HCPCS crosswalk lookups
+  - `coverage.ts` — LCD coverage checklist retrieval and documentation validation
+  - `ppd.ts` — PPD questionnaire, PMD recommendations, seating evaluation, submission queue, email
+  - `accountCreation.ts` — PMD Account Creation form submission + insurance card OCR
+  - `papAccountCreation.ts` — PAP/CPAP Account Creation form submission
 - **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `formRules.ts` (CMN form type rules)
 - **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, account lockout)
 - **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `phiRedactor.ts` (PHI scrubbing), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout)
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts` — decoupled from S3 for future database migration
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): `vectorStore.test.ts` (20), `phiRedactor.test.ts` (18), `urlValidation.test.ts` (13), `auth.test.ts` (14), `usage.test.ts` (6), `hipaaCompliance.test.ts` (30) — 101 total, vitest
+- **Tests** (`backend/src/__tests__/`): 205 total tests across 18 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, and more.
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
@@ -72,7 +91,13 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `SourceViewer.tsx` — Source citation viewer
   - `PopoutButton.tsx` — Popout window utility
   - `ErrorBoundary.tsx` — React error boundary for graceful degradation
-- **Hooks**: `frontend/src/hooks/useAuth.ts`
+  - `FormsTab.tsx` — Forms tab container with sub-navigation (PPD, PMD Account, PAP Account, PPD Queue)
+  - `PpdQuestionnaire.tsx` — PPD phone interview form with API-driven questions (EN/ES), pain body map grid, SVG progress ring, PMD recommendation engine, seating evaluation generator, queue submission
+  - `PpdQueueViewer.tsx` — PPD submission queue viewer with status filters, detail view, reviewer controls
+  - `AccountCreationForm.tsx` — PMD Account Creation form with section completion badges, progress ring, insurance card OCR upload
+  - `PapAccountCreationForm.tsx` — PAP/CPAP Account Creation form with conditional formatting badges, insurance card OCR upload
+  - `InsuranceCardUpload.tsx` — Reusable drag-and-drop/paste image upload with Textract OCR, auto-fill, and mismatch detection
+- **Hooks**: `frontend/src/hooks/useAuth.ts`, `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout)
 - **API client**: `frontend/src/services/api.ts`
 - **Types**: `frontend/src/types/index.ts`
 - **Styling**: Inline styles + `index.css` (healthcare blue palette with hexagonal/molecular background pattern)
@@ -128,6 +153,23 @@ docker build -t ums-knowledge .
 - **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
 
 ## Recent Changes (reverse chronological)
+- **Insurance card OCR auto-fill**: Upload insurance card images (drag-and-drop/paste) → Textract OCR → Claude extracts structured fields (insurance name, member ID, group #, plan type, subscriber name/DOB). Auto-fills form fields and flags mismatches against entered data. Integrated into both PMD and PAP Account Creation forms.
+- **PAP Account Creation form**: CPAP/BiPAP sales lead intake tool ported from Apps Script. 24 questions across 4 sections with conditional formatting badges (sleep study status, CPAP age). Purple/indigo theme. Email via Gmail SMTP.
+- **PMD Account Creation form**: Power mobility sales lead intake tool ported from Apps Script. 25 questions across 4 sections (Demographics, Insurance, Clinical, Scheduling) with EN/ES toggle, email support.
+- **PPD visual improvements**: SVG progress ring, animated section collapse, pain body map grid (2-column toggle), gradient headers, section completion badges, hover shadows, responsive layout, product cards with 150px images and category gradient headers.
+- **PPD questionnaire rewrite**: Switched from hardcoded questions to API-driven (GET /api/ppd/questions). Questions always match backend's 45-question set. Clear form button with confirmation.
+- **Seating Evaluation auto-fill**: Maps all 45 PPD answers to the 10-section Seating Evaluation for PMD form. Generates printable HTML. API: POST /api/ppd/seating-eval.
+- **PPD submission queue**: In-app queue replacing email handoff. Status workflow: pending → in_review → completed/returned. S3-backed with index. Frontend queue viewer with status filters and reviewer controls.
+- **PPD questionnaire and PMD recommendation engine**: Full port of Apps Script PPD tool. 45 questions (EN/ES), phone interview workflow, PMD recommendation engine with: weight-class routing, solid seat logic, stroke/hemiplegia analysis, neuro/SPO/MPO eligibility, oxygen conflict, substitution rules (K0841→K0861, etc.), product catalog with images/brochures.
+- **Forms tab**: New "Forms" tab with sub-navigation housing PPD Questionnaire, PMD Account Creation, PAP Account Creation, and PPD Queue.
+- **Gmail SMTP email service**: Nodemailer-based email sending for form submissions. Configurable via SMTP_USER/SMTP_PASS env vars. Styled HTML email generation matching original Apps Script format.
+- **Structured reference enrichment in RAG**: Query pipeline auto-detects HCPCS codes, ICD-10 codes, and coverage keywords. Injects structured data (code details, crosswalk mappings, LCD checklists) as [Structured Reference] blocks alongside RAG document context.
+- **LCD coverage checklists**: 8 real CMS LCD checklists (L33797 oxygen, L33718 CPAP, L33895 beds, etc.) with per-item required/optional flags and validation endpoint.
+- **ICD-10 to HCPCS crosswalk**: 66 ICD-10 codes, 116+ mappings. Forward/reverse lookup, partial code matching.
+- **HCPCS code lookup**: 332 real DME HCPCS codes across 25 categories (power wheelchairs K0813-K0890, oxygen, CPAP supplies, catheters, incontinence, ventilators, bed accessories, wheelchair accessories, respiratory supplies, etc.).
+- **LCD source monitor seeding**: One-call endpoint (POST /api/sources/seed-lcds) creates collection and registers 8 CMS LCD sources for weekly auto-monitoring. HTML text extraction support added.
+- **HIPAA compliance improvements**: (1) Audit log hash chaining — tamper-evident SHA-256 chain with verification endpoint. (2) Automated data retention — configurable cleanup at 3 AM daily (audit 7yr, query logs 1yr, traces 90d). (3) Frontend idle timeout — 15-minute auto-logout with 2-minute warning countdown.
+- **OpenAPI specification**: Comprehensive OpenAPI 3.0.3 spec (`backend/openapi.yaml`) covering 50+ endpoints, 11 tags, reusable schemas.
 - **Horizontal scaling prep**: Cache abstraction layer (`cache/interfaces.ts`) with `CacheProvider` and `SetProvider` interfaces. In-memory implementation with TTL and LRU eviction (10K cap). `SCALING.md` documents all in-memory state and migration paths for multi-instance deployment.
 - **HIPAA compliance test suite**: 30 automated tests covering PHI redaction patterns (SSN, phone, email, DOB, MRN, names), false positive prevention (HCPCS codes), redaction performance (<100ms for 100KB), auth security controls, password policy, audit trail fields, HTTPS/HSTS config, session timeout, account lockout. Total: 101 tests.
 - **Async document extraction**: Job queue (`jobQueue.ts`) with `POST /api/extraction/extract/async` returning `202 {jobId}`, `GET /api/extraction/jobs/:id` for status polling, `GET /api/extraction/jobs` for user's job list. Background processing with progress tracking. Auto-cleanup of completed jobs after 1 hour.
@@ -213,3 +255,27 @@ The Bedrock IAM policy needs these actions:
 | DELETE | `/api/sources/:id` | Admin | Delete monitored source |
 | POST | `/api/sources/:id/check` | Admin | Force-check a source for changes |
 | POST | `/api/sources/check-all` | Admin | Force-check all sources |
+| POST | `/api/sources/seed-lcds` | Admin | Seed 8 CMS LCD sources for auto-monitoring |
+| GET | `/api/hcpcs/search?q=` | User | Search HCPCS codes by code or description |
+| GET | `/api/hcpcs/code/:code` | User | Exact HCPCS code lookup |
+| GET | `/api/hcpcs/categories` | User | List all HCPCS categories |
+| GET | `/api/hcpcs/category/:cat` | User | Codes in a category |
+| GET | `/api/icd10/for-diagnosis/:code` | User | HCPCS codes justified by an ICD-10 code |
+| GET | `/api/icd10/for-hcpcs/:code` | User | ICD-10 codes that justify a HCPCS code |
+| GET | `/api/icd10/search?q=` | User | Search ICD-10 codes |
+| GET | `/api/coverage/checklist/:code` | User | LCD coverage checklist for a HCPCS code |
+| GET | `/api/coverage/list` | User | List all available checklists |
+| POST | `/api/coverage/validate` | User | Validate documentation completeness |
+| GET | `/api/ppd/questions` | User | Get PPD questionnaire (45 questions EN/ES) |
+| POST | `/api/ppd/recommend` | User | Submit PPD responses, get PMD recommendations |
+| POST | `/api/ppd/seating-eval` | User | Generate auto-filled Seating Evaluation |
+| POST | `/api/ppd/submit` | User | Submit PPD to review queue |
+| GET | `/api/ppd/submissions` | User | List PPD submissions (own or all for admin) |
+| PUT | `/api/ppd/submissions/:id/status` | User | Update PPD submission status |
+| POST | `/api/ppd/send-email` | User | Email PPD form via Gmail SMTP |
+| GET | `/api/account-creation/questions` | User | Get PMD Account Creation questionnaire |
+| POST | `/api/account-creation/submit` | User | Submit PMD Account Creation form |
+| POST | `/api/account-creation/read-insurance-card` | User | OCR insurance card image |
+| GET | `/api/pap-account/questions` | User | Get PAP Account Creation questionnaire |
+| POST | `/api/pap-account/submit` | User | Submit PAP Account Creation form |
+| GET | `/api/query-log/audit/:date/verify` | Admin | Verify audit log hash chain integrity |

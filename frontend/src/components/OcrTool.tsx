@@ -778,7 +778,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #FECACA', display: 'inline-flex', alignItems: 'center', gap: '4px',
   },
   sectionTag: {
-    fontSize: '10px', background: '#E3F2FD', color: '#1565C0', padding: '2px 5px',
+    fontSize: '10px', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', padding: '2px 5px',
     borderRadius: '3px', fontWeight: 600,
   },
 
@@ -797,8 +797,8 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 6px rgba(230,81,0,0.2)',
   },
   downloadBtnOriginal: {
-    padding: '10px 20px', border: '1px solid #D6E4F0', borderRadius: '10px',
-    background: 'white', color: '#374151',
+    padding: '10px 20px', border: '1px solid var(--ums-border)', borderRadius: '10px',
+    background: 'var(--ums-bg-surface)', color: '#374151',
     fontSize: '13px', fontWeight: 600, cursor: 'pointer',
   },
   previewBtn: {
@@ -813,11 +813,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   downloadBtnDisabled: {
     padding: '10px 20px', border: 'none', borderRadius: '10px',
-    background: '#5F7A8F', color: 'white',
+    background: 'var(--ums-text-muted)', color: 'var(--ums-bg-surface)',
     fontSize: '13px', fontWeight: 600, cursor: 'wait',
   },
   downloadHint: {
-    margin: '10px 0 0', fontSize: '12px', color: '#5F7A8F', lineHeight: '1.5',
+    margin: '10px 0 0', fontSize: '12px', color: 'var(--ums-text-muted)', lineHeight: '1.5',
     fontStyle: 'italic',
   },
 
@@ -832,7 +832,7 @@ const styles: Record<string, React.CSSProperties> = {
   previewTitle: { fontSize: '13px', fontWeight: 600, color: '#6D28D9' },
   previewClose: {
     padding: '4px 12px', border: '1px solid #C4B5FD', borderRadius: '6px',
-    background: 'white', color: '#6D28D9', fontSize: '12px', cursor: 'pointer',
+    background: 'var(--ums-bg-surface)', color: '#6D28D9', fontSize: '12px', cursor: 'pointer',
   },
   previewIframe: {
     width: '100%', height: '600px', border: 'none',
@@ -919,9 +919,9 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#DC2626', padding: '2px 6px', borderRadius: '4px', minWidth: '28px',
     textAlign: 'center' as const,
   },
-  fieldKey: { fontSize: '13px', fontWeight: 600, color: '#0D2137', flex: 1, display: 'flex', alignItems: 'center', gap: '6px' },
+  fieldKey: { fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: '6px' },
   fieldValue: {
-    fontSize: '12px', color: '#6B8299', maxWidth: '200px',
+    fontSize: '12px', color: 'var(--ums-text-muted)', maxWidth: '200px',
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   fieldPage: { fontSize: '11px', color: '#5F7A8F' },

@@ -91,24 +91,24 @@ const sty = {
   recControls: { display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' as const } as React.CSSProperties,
   starLabel: { cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties,
   statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 } as React.CSSProperties,
-  copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid #1976d2', background: '#e3f2fd', color: '#1565c0', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
+  copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid #1976d2', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
   actionBar: { display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' as const } as React.CSSProperties,
   loadingContainer: { padding: 60, textAlign: 'center' as const, color: '#666', fontSize: 16 } as React.CSSProperties,
   badge: { display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, marginLeft: 8 } as React.CSSProperties,
   painGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 } as React.CSSProperties,
-  clearBtn: { background: '#fff', color: '#dc3545', border: '1px solid #dc3545', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
+  clearBtn: { background: 'var(--ums-bg-surface)', color: '#dc3545', border: '1px solid #dc3545', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
 };
 
 function langBtn(active: boolean): React.CSSProperties {
-  return { padding: '6px 14px', cursor: 'pointer', border: 'none', background: active ? '#fff' : 'transparent', color: active ? '#223b5d' : '#fff', fontWeight: active ? 700 : 400, fontSize: 13 };
+  return { padding: '6px 14px', cursor: 'pointer', border: 'none', background: active ? 'var(--ums-bg-surface)' : 'transparent', color: active ? '#223b5d' : '#fff', fontWeight: active ? 700 : 400, fontSize: 13 };
 }
 
 function yesBtn(sel: boolean): React.CSSProperties {
-  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #28a745', background: sel ? '#d4edda' : '#fff', color: sel ? '#155724' : '#333', fontWeight: sel ? 700 : 400 };
+  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #28a745', background: sel ? '#d4edda' : 'var(--ums-bg-surface)', color: sel ? '#155724' : '#333', fontWeight: sel ? 700 : 400 };
 }
 
 function noBtn(sel: boolean): React.CSSProperties {
-  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #dc3545', background: sel ? '#f8d7da' : '#fff', color: sel ? '#721c24' : '#333', fontWeight: sel ? 700 : 400 };
+  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #dc3545', background: sel ? '#f8d7da' : 'var(--ums-bg-surface)', color: sel ? '#721c24' : '#333', fontWeight: sel ? 700 : 400 };
 }
 
 function painToggle(active: boolean): React.CSSProperties {
@@ -117,7 +117,7 @@ function painToggle(active: boolean): React.CSSProperties {
     borderRadius: 8,
     cursor: 'pointer',
     border: active ? '2px solid #dc3545' : '1px solid #ccc',
-    background: active ? '#f8d7da' : '#fff',
+    background: active ? '#f8d7da' : 'var(--ums-bg-surface)',
     color: active ? '#721c24' : '#333',
     fontWeight: active ? 700 : 400,
     fontSize: 14,
@@ -359,8 +359,8 @@ export function PpdQuestionnaire() {
                   style={{
                     padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
                     border: selected ? '2px solid #1976d2' : '1px solid #ccc',
-                    background: selected ? '#e3f2fd' : '#fff',
-                    color: selected ? '#1565c0' : '#333',
+                    background: selected ? 'var(--ums-brand-light)' : 'var(--ums-bg-surface)',
+                    color: selected ? 'var(--ums-brand-primary)' : '#333',
                     fontWeight: selected ? 700 : 400, fontSize: 13,
                   }}
                   onClick={() => {
@@ -729,7 +729,7 @@ export function PpdQuestionnaire() {
             </div>
           </div>
           <div
-            style={{ border: '1px solid #d0d7de', borderRadius: 8, padding: 16, background: '#fff', overflow: 'auto', maxHeight: 600 }}
+            style={{ border: '1px solid #d0d7de', borderRadius: 8, padding: 16, background: 'var(--ums-bg-surface)', overflow: 'auto', maxHeight: 600 }}
             dangerouslySetInnerHTML={{ __html: seatingEvalHtml }}
           />
         </div>

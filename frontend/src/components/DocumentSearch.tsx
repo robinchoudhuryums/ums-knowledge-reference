@@ -127,30 +127,30 @@ export function DocumentSearch({ collections }: Props) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', height: '100%', overflowY: 'auto', background: '#ffffff' },
+  container: { padding: '28px', height: '100%', overflowY: 'auto', background: 'var(--ums-bg-surface)' },
   header: { marginBottom: '24px' },
-  title: { margin: '0 0 4px', fontSize: '20px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.3px' },
-  subtitle: { margin: 0, fontSize: '14px', color: '#6B8299' },
+  title: { margin: '0 0 4px', fontSize: '20px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.3px' },
+  subtitle: { margin: 0, fontSize: '14px', color: 'var(--ums-text-muted)' },
 
   searchForm: { marginBottom: '24px' },
   searchRow: { display: 'flex', gap: '10px' },
-  searchInput: { flex: 1, padding: '11px 16px', border: '1px solid #D6E4F0', borderRadius: '10px', fontSize: '14px', outline: 'none', background: '#F7FAFD' },
-  collectionSelect: { padding: '11px 14px', border: '1px solid #D6E4F0', borderRadius: '10px', fontSize: '13px', background: 'white', outline: 'none', minWidth: '160px', color: '#4A6274' },
-  searchButton: { padding: '11px 24px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
+  searchInput: { flex: 1, padding: '11px 16px', border: '1px solid var(--ums-border)', borderRadius: '10px', fontSize: '14px', outline: 'none', background: 'var(--ums-bg-surface-alt)' },
+  collectionSelect: { padding: '11px 14px', border: '1px solid var(--ums-border)', borderRadius: '10px', fontSize: '13px', background: 'var(--ums-bg-surface)', outline: 'none', minWidth: '160px', color: 'var(--ums-text-muted)' },
+  searchButton: { padding: '11px 24px', background: 'var(--ums-brand-gradient)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
 
   results: {},
-  noResults: { textAlign: 'center', color: '#5F7A8F', padding: '48px', fontSize: '14px' },
+  noResults: { textAlign: 'center', color: 'var(--ums-text-muted)', padding: '48px', fontSize: '14px' },
 
-  resultCard: { border: '1px solid #E8EFF5', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
-  resultHeader: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px 18px', border: 'none', background: 'white', cursor: 'pointer', fontSize: '14px', textAlign: 'left' },
+  resultCard: { border: '1px solid var(--ums-border)', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  resultHeader: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px 18px', border: 'none', background: 'var(--ums-bg-surface)', cursor: 'pointer', fontSize: '14px', textAlign: 'left' },
   docIcon: { fontSize: '18px', flexShrink: 0 },
-  docName: { flex: 1, fontWeight: 500, color: '#0D2137' },
-  matchCount: { fontSize: '12px', color: '#1B6FC9', background: '#E3F2FD', padding: '3px 10px', borderRadius: '6px', fontWeight: 500 },
-  expandArrow: { fontSize: '11px', color: '#5F7A8F' },
+  docName: { flex: 1, fontWeight: 500, color: 'var(--ums-text-primary)' },
+  matchCount: { fontSize: '12px', color: 'var(--ums-brand-primary)', background: 'var(--ums-brand-light)', padding: '3px 10px', borderRadius: '6px', fontWeight: 500 },
+  expandArrow: { fontSize: '11px', color: 'var(--ums-text-muted)' },
 
-  matchesList: { borderTop: '1px solid #E8EFF5' },
-  matchItem: { padding: '14px 18px', borderBottom: '1px solid #F7FAFD' },
+  matchesList: { borderTop: '1px solid var(--ums-border)' },
+  matchItem: { padding: '14px 18px', borderBottom: '1px solid var(--ums-bg-surface-alt)' },
   matchMeta: { display: 'flex', gap: '6px', marginBottom: '8px' },
-  matchBadge: { fontSize: '11px', color: '#1B6FC9', border: '1px solid #BBDEFB', borderRadius: '6px', padding: '2px 8px', background: '#E3F2FD', fontWeight: 500 },
-  matchText: { fontSize: '13px', lineHeight: '1.7', color: '#4A6274', whiteSpace: 'pre-wrap' },
+  matchBadge: { fontSize: '11px', color: 'var(--ums-brand-primary)', border: '1px solid #BBDEFB', borderRadius: '6px', padding: '2px 8px', background: 'var(--ums-brand-light)', fontWeight: 500 },
+  matchText: { fontSize: '13px', lineHeight: '1.7', color: 'var(--ums-text-muted)', whiteSpace: 'pre-wrap' },
 };

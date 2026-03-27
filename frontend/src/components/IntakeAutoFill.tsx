@@ -331,7 +331,7 @@ function FormField({ label, value, onChange, placeholder, wide }: {
 // --- Styles ---
 
 const s: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', maxWidth: '960px', background: '#ffffff', height: '100%', overflowY: 'auto' },
+  container: { padding: '28px', maxWidth: '960px', background: 'var(--ums-bg-surface)', height: '100%', overflowY: 'auto' },
   header: { display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'flex-start' },
   iconBg: {
     width: '48px', height: '48px', borderRadius: '14px',
@@ -339,8 +339,8 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   icon: { fontSize: '24px' },
-  title: { margin: '0 0 4px', fontSize: '18px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.2px' },
-  desc: { margin: 0, fontSize: '14px', color: '#6B8299', lineHeight: '1.5' },
+  title: { margin: '0 0 4px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
+  desc: { margin: 0, fontSize: '14px', color: 'var(--ums-text-muted)', lineHeight: '1.5' },
 
   // Tabs
   tabRow: {
@@ -349,17 +349,17 @@ const s: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'white', color: '#065F46', fontSize: '13px', fontWeight: 600,
+    background: 'var(--ums-bg-surface)', color: '#065F46', fontSize: '13px', fontWeight: 600,
     cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
   tabActiveClinical: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'white', color: '#7C3AED', fontSize: '13px', fontWeight: 600,
+    background: 'var(--ums-bg-surface)', color: '#7C3AED', fontSize: '13px', fontWeight: 600,
     cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
   tabInactive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'transparent', color: '#5F7A8F', fontSize: '13px', fontWeight: 500,
+    background: 'transparent', color: 'var(--ums-text-muted)', fontSize: '13px', fontWeight: 500,
     cursor: 'pointer',
   },
 
@@ -375,8 +375,8 @@ const s: Record<string, React.CSSProperties> = {
     marginBottom: '4px',
   },
   fieldInput: {
-    width: '100%', padding: '8px 12px', border: '1px solid #D6E4F0', borderRadius: '8px',
-    fontSize: '13px', color: '#0D2137', outline: 'none', boxSizing: 'border-box' as const,
+    width: '100%', padding: '8px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px',
+    fontSize: '13px', color: 'var(--ums-text-primary)', outline: 'none', boxSizing: 'border-box' as const,
   },
   generateBtn: {
     padding: '10px 24px', border: 'none', borderRadius: '10px',
@@ -397,11 +397,11 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 8px rgba(124, 58, 237, 0.25)', cursor: 'pointer',
   },
   uploadBtnLoading: {
-    display: 'inline-block', padding: '11px 24px', background: '#5F7A8F',
+    display: 'inline-block', padding: '11px 24px', background: 'var(--ums-text-muted)',
     color: 'white', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'wait',
   },
   loadingBar: {
-    marginTop: '16px', height: '4px', borderRadius: '2px', background: '#E8EFF5', overflow: 'hidden',
+    marginTop: '16px', height: '4px', borderRadius: '2px', background: 'var(--ums-border)', overflow: 'hidden',
   },
   loadingFill: {
     height: '100%', width: '40%', borderRadius: '2px',
@@ -420,9 +420,9 @@ const s: Record<string, React.CSSProperties> = {
   },
   confRow: {
     display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 18px',
-    background: '#F7FAFD', borderBottom: '1px solid #E8EFF5',
+    background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid #E8EFF5',
   },
-  confLabel: { fontSize: '12px', color: '#6B8299', fontWeight: 500 },
+  confLabel: { fontSize: '12px', color: 'var(--ums-text-muted)', fontWeight: 500 },
   confHigh: {
     fontSize: '11px', color: '#059669', background: '#ECFDF5', padding: '3px 8px',
     borderRadius: '6px', fontWeight: 600, border: '1px solid #A7F3D0',
@@ -435,16 +435,16 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: '11px', color: '#DC2626', background: '#FEF2F2', padding: '3px 8px',
     borderRadius: '6px', fontWeight: 600, border: '1px solid #FECACA',
   },
-  modelLabel: { fontSize: '11px', color: '#5F7A8F', marginLeft: 'auto' },
+  modelLabel: { fontSize: '11px', color: 'var(--ums-text-muted)', marginLeft: 'auto' },
   notes: {
-    margin: 0, padding: '10px 18px', fontSize: '13px', color: '#6B8299',
+    margin: 0, padding: '10px 18px', fontSize: '13px', color: 'var(--ums-text-muted)',
     background: '#FFFBEB', borderBottom: '1px solid #FDE68A', lineHeight: '1.5',
     fontStyle: 'italic',
   },
 
   section: { padding: '14px 18px', borderBottom: '1px solid #E8EFF5' },
   sectionTitle: {
-    margin: '0 0 8px', fontSize: '12px', fontWeight: 700, color: '#0D2137',
+    margin: '0 0 8px', fontSize: '12px', fontWeight: 700, color: 'var(--ums-text-primary)',
     textTransform: 'uppercase' as const, letterSpacing: '0.3px',
   },
   sectionText: { margin: 0, fontSize: '13px', color: '#374151', lineHeight: '1.5' },
@@ -456,16 +456,16 @@ const s: Record<string, React.CSSProperties> = {
   },
   hcpcsTag: {
     fontSize: '12px', padding: '4px 10px', borderRadius: '6px',
-    background: '#E3F2FD', color: '#1565C0', fontWeight: 600, fontFamily: 'monospace',
+    background: 'var(--ums-brand-light)', color: 'var(--ums-brand-text)', fontWeight: 600, fontFamily: 'monospace',
     border: '1px solid #BBDEFB',
   },
   testRow: {
     display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 0',
     borderBottom: '1px solid #F1F5F9',
   },
-  testName: { fontSize: '13px', fontWeight: 600, color: '#0D2137', minWidth: '140px' },
+  testName: { fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-primary)', minWidth: '140px' },
   testVal: { fontSize: '13px', color: '#059669', fontWeight: 600, fontFamily: 'monospace' },
-  testDate: { fontSize: '11px', color: '#5F7A8F', marginLeft: 'auto' },
+  testDate: { fontSize: '11px', color: 'var(--ums-text-muted)', marginLeft: 'auto' },
   quote: {
     margin: 0, padding: '10px 14px', borderLeft: '3px solid #7C3AED',
     background: '#F5F3FF', fontSize: '13px', color: '#374151', lineHeight: '1.6',
@@ -486,7 +486,7 @@ const s: Record<string, React.CSSProperties> = {
   mappingsTitle: { margin: 0, fontSize: '15px', fontWeight: 700, color: '#065F46' },
   copyBtn: {
     padding: '6px 14px', border: '1px solid #6EE7B7', borderRadius: '8px',
-    background: 'white', color: '#065F46', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+    background: 'var(--ums-bg-surface)', color: '#065F46', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
   },
   mappingsDesc: {
     margin: 0, padding: '10px 18px', fontSize: '12px', color: '#047857',
@@ -494,7 +494,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   mappingsList: { padding: '10px 18px', display: 'flex', flexDirection: 'column' as const, gap: '8px' },
   mappingItem: {
-    padding: '10px 14px', background: 'white', borderRadius: '8px',
+    padding: '10px 14px', background: 'var(--ums-bg-surface)', borderRadius: '8px',
     border: '1px solid #D1FAE5',
   },
   mappingTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
@@ -511,6 +511,6 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: '10px', color: '#DC2626', background: '#FEE2E2', padding: '2px 6px',
     borderRadius: '4px', fontWeight: 600,
   },
-  mappingValue: { fontSize: '13px', color: '#0D2137', fontWeight: 600, marginBottom: '2px' },
-  mappingSource: { fontSize: '11px', color: '#6B8299', fontStyle: 'italic' },
+  mappingValue: { fontSize: '13px', color: 'var(--ums-text-primary)', fontWeight: 600, marginBottom: '2px' },
+  mappingSource: { fontSize: '11px', color: 'var(--ums-text-muted)', fontStyle: 'italic' },
 };

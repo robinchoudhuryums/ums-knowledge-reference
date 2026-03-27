@@ -185,7 +185,7 @@ app.use('/api/', perUserLimiter);
 
 // Health check — reports service status + dependency connectivity for ALB probes
 app.get('/api/health', async (_req, res) => {
-  const checks: Record<string, 'ok' | 'error'> = {};
+  const checks: Record<string, string> = {};
   let healthy = true;
 
   // S3 connectivity check (lightweight HeadBucket)
@@ -197,6 +197,16 @@ app.get('/api/health', async (_req, res) => {
   } catch {
     checks.s3 = 'error';
     healthy = false;
+  }
+
+  // Database connectivity check
+  try {
+    const { checkDatabaseConnection } = await import('./config/database');
+    const dbOk = await checkDatabaseConnection();
+    checks.database = dbOk ? 'ok' : 'not_configured';
+    // Database is optional during S3→RDS migration — don't mark unhealthy
+  } catch {
+    checks.database = 'error';
   }
 
   // Vector store loaded check
@@ -296,6 +306,19 @@ async function start() {
     const { verifyS3BucketConfig } = await import('./config/aws');
     await verifyS3BucketConfig();
 
+    // Run database migrations if PostgreSQL is configured
+    try {
+      const { checkDatabaseConnection } = await import('./config/database');
+      if (await checkDatabaseConnection()) {
+        const { runMigrations } = await import('./config/migrate');
+        await runMigrations();
+      } else {
+        logger.info('Database not configured — running in S3-only mode');
+      }
+    } catch (dbErr) {
+      logger.warn('Database migration check failed — continuing in S3-only mode', { error: String(dbErr) });
+    }
+
     // Initialize auth (create default admin if needed)
     await initializeAuth();
 
@@ -344,6 +367,12 @@ async function start() {
         const { flushUsage } = await import('./services/usage');
         await Promise.allSettled([flushQueryLog(), flushTraces(), flushUsage(), flushJobs()]);
         logger.info('All in-memory buffers flushed to S3');
+
+        // Close database pool if connected
+        try {
+          const { closeDatabasePool } = await import('./config/database');
+          await closeDatabasePool();
+        } catch { /* ignore if not configured */ }
       } catch (err) {
         logger.error('Error during shutdown flush', { error: String(err) });
       }

@@ -84,12 +84,25 @@ export async function saveMetadata<T>(key: string, data: T): Promise<void> {
   }));
 }
 
+// Maximum metadata JSON size we'll load into memory (50 MB).
+// Protects against OOM if an object grows unexpectedly large.
+const MAX_METADATA_BYTES = 50 * 1024 * 1024;
+
 export async function loadMetadata<T>(key: string): Promise<T | null> {
   try {
     const result = await s3Client.send(new GetObjectCommand({
       Bucket: S3_BUCKET,
       Key: `${S3_PREFIXES.metadata}${key}`,
     }));
+
+    // Guard: reject objects that would consume too much memory
+    if (result.ContentLength && result.ContentLength > MAX_METADATA_BYTES) {
+      logger.error('S3 metadata object exceeds size limit', {
+        key, sizeBytes: result.ContentLength, limitBytes: MAX_METADATA_BYTES,
+      });
+      throw new Error(`Metadata object too large: ${key} is ${Math.round(result.ContentLength / 1024 / 1024)}MB (limit: ${MAX_METADATA_BYTES / 1024 / 1024}MB)`);
+    }
+
     const body = await result.Body?.transformToString();
     if (!body) return null;
     return JSON.parse(body) as T;
@@ -143,12 +156,24 @@ export async function saveVectorIndex(index: VectorStoreIndex): Promise<void> {
   logger.info('Vector index saved to S3', { chunkCount: index.chunks.length });
 }
 
+// Maximum vector index size (500 MB) — vector indexes are large but bounded.
+const MAX_VECTOR_INDEX_BYTES = 500 * 1024 * 1024;
+
 export async function loadVectorIndex(): Promise<VectorStoreIndex | null> {
   try {
     const result = await s3Client.send(new GetObjectCommand({
       Bucket: S3_BUCKET,
       Key: `${S3_PREFIXES.vectors}index.json`,
     }));
+
+    // Guard: reject vector indexes that would consume too much memory
+    if (result.ContentLength && result.ContentLength > MAX_VECTOR_INDEX_BYTES) {
+      logger.error('Vector index exceeds size limit', {
+        sizeBytes: result.ContentLength, limitBytes: MAX_VECTOR_INDEX_BYTES,
+      });
+      throw new Error(`Vector index too large: ${Math.round(result.ContentLength / 1024 / 1024)}MB (limit: ${MAX_VECTOR_INDEX_BYTES / 1024 / 1024}MB). Consider migrating to pgvector.`);
+    }
+
     const body = await result.Body?.transformToString();
     if (!body) return null;
     return JSON.parse(body) as VectorStoreIndex;

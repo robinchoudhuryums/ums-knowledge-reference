@@ -10,13 +10,14 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
 import { runWithCorrelationId } from './utils/correlationId';
+import { recordRequest, getMetricsSnapshot } from './utils/metrics';
 import { validateEnv } from './utils/envValidation';
 import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
 import { initializeVectorStore } from './services/vectorStore';
 import { startReindexScheduler } from './services/reindexer';
 import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
 import { startSourceMonitor } from './services/sourceMonitor';
-import { startJobCleanup } from './services/jobQueue';
+import { startJobCleanup, loadPersistedJobs, flushJobs } from './services/jobQueue';
 import { startOrphanCleanup } from './services/orphanCleanup';
 import { startRetentionScheduler } from './services/dataRetention';
 import documentRoutes from './routes/documents';
@@ -128,6 +129,8 @@ app.use((req, res, next) => {
         statusCode: res.statusCode,
         durationMs: duration,
       });
+      // Record metrics for observability endpoint
+      recordRequest(req.method, req.originalUrl, res.statusCode, duration);
     });
     next();
   });
@@ -212,6 +215,11 @@ app.get('/api/health', async (_req, res) => {
   });
 });
 
+// Metrics endpoint — request counts, latency percentiles, memory usage (admin only)
+app.get('/api/metrics', authenticate, requireAdmin, (_req: express.Request, res: express.Response) => {
+  res.json(getMetricsSnapshot());
+});
+
 // Auth routes
 app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/users', authenticate, requireAdmin, (req, res) => createUserHandler(req as AuthRequest, res));
@@ -294,6 +302,9 @@ async function start() {
     // Load vector store index into memory
     await initializeVectorStore();
 
+    // Restore persisted job queue (marks in-progress jobs as failed)
+    await loadPersistedJobs();
+
     // Start background re-indexing scheduler
     startReindexScheduler();
 
@@ -331,7 +342,7 @@ async function start() {
         const { flushQueryLog } = await import('./services/queryLog');
         const { flushTraces } = await import('./services/ragTrace');
         const { flushUsage } = await import('./services/usage');
-        await Promise.allSettled([flushQueryLog(), flushTraces(), flushUsage()]);
+        await Promise.allSettled([flushQueryLog(), flushTraces(), flushUsage(), flushJobs()]);
         logger.info('All in-memory buffers flushed to S3');
       } catch (err) {
         logger.error('Error during shutdown flush', { error: String(err) });

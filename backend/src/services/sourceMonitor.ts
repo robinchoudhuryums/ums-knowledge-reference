@@ -412,29 +412,42 @@ export async function checkAllDueSources(): Promise<{
   let ingested = 0;
   let errors = 0;
 
-  // Check sources sequentially to avoid overwhelming the server
-  for (const source of dueSources) {
-    try {
-      const result = await checkSource(source);
-      results.push({
-        sourceId: source.id,
-        name: source.name,
-        changed: result.changed,
-        ingested: result.ingested,
-        message: result.message,
-      });
-      if (result.changed) changed++;
-      if (result.ingested) ingested++;
-      if (!result.ingested && result.changed) errors++;
-    } catch (error) {
-      errors++;
-      results.push({
-        sourceId: source.id,
-        name: source.name,
-        changed: false,
-        ingested: false,
-        message: `Unexpected error: ${String(error)}`,
-      });
+  // Check sources in parallel with a concurrency limit to balance speed vs. load.
+  // Without parallelism, 10 sources with 1-minute timeouts would take 10+ minutes.
+  const CONCURRENCY_LIMIT = 3;
+  for (let i = 0; i < dueSources.length; i += CONCURRENCY_LIMIT) {
+    const batch = dueSources.slice(i, i + CONCURRENCY_LIMIT);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (source) => {
+        const result = await checkSource(source);
+        return { source, result };
+      })
+    );
+
+    for (const settled of batchResults) {
+      if (settled.status === 'fulfilled') {
+        const { source, result } = settled.value;
+        results.push({
+          sourceId: source.id,
+          name: source.name,
+          changed: result.changed,
+          ingested: result.ingested,
+          message: result.message,
+        });
+        if (result.changed) changed++;
+        if (result.ingested) ingested++;
+        if (!result.ingested && result.changed) errors++;
+      } else {
+        const source = batch[batchResults.indexOf(settled)];
+        errors++;
+        results.push({
+          sourceId: source.id,
+          name: source.name,
+          changed: false,
+          ingested: false,
+          message: `Unexpected error: ${String(settled.reason)}`,
+        });
+      }
     }
   }
 

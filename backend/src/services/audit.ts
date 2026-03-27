@@ -47,22 +47,38 @@ function computeEntryHash(entry: AuditLogEntry): string {
   return sha256(JSON.stringify(rest));
 }
 
+/**
+ * Recursively redact PHI from all string values in an object tree.
+ * Traverses nested objects and arrays to catch PHI at any depth.
+ */
+function deepRedactPhi(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return redactPhi(value).text;
+  }
+  if (Array.isArray(value)) {
+    return value.map(deepRedactPhi);
+  }
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      result[k] = deepRedactPhi(v);
+    }
+    return result;
+  }
+  // Numbers, booleans, null — pass through unchanged
+  return value;
+}
+
 export async function logAuditEvent(
   userId: string,
   username: string,
   action: AuditLogEntry['action'],
   details: Record<string, unknown>
 ): Promise<void> {
-  // Redact PHI from string values in the details payload before persisting.
-  // This catches cases where callers forget to redact (defense-in-depth).
-  const sanitizedDetails: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(details)) {
-    if (typeof value === 'string') {
-      sanitizedDetails[key] = redactPhi(value).text;
-    } else {
-      sanitizedDetails[key] = value;
-    }
-  }
+  // Deep-redact PHI from all string values at any depth in the details payload.
+  // This catches nested objects like { userInfo: { name: "John Doe" } } and arrays
+  // like { documents: ["file with SSN 123-45-6789"] } that shallow redaction missed.
+  const sanitizedDetails = deepRedactPhi(details) as Record<string, unknown>;
 
   // Serialize audit writes under a mutex to ensure each entry's previousHash
   // correctly references the preceding entry. Without this, concurrent writes

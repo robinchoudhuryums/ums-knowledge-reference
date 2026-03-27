@@ -116,6 +116,27 @@ function getLockoutRemainingSeconds(user: User): number {
 }
 
 // ---------------------------------------------------------------------------
+// In-memory lockout cache — populated from S3 on every successful getUsers() call,
+// used as fallback when S3 is unavailable so locked accounts stay locked.
+// Without this, a transient S3 failure would let a locked account through.
+const lockedAccountCache = new Map<string, string>(); // userId → lockedUntil ISO string
+
+function updateLockoutCache(users: User[]): void {
+  lockedAccountCache.clear();
+  for (const u of users) {
+    if (u.lockedUntil) {
+      lockedAccountCache.set(u.id, u.lockedUntil);
+    }
+  }
+}
+
+function isAccountLockedFromCache(userId: string): boolean {
+  const lockedUntil = lockedAccountCache.get(userId);
+  if (!lockedUntil) return false;
+  return new Date(lockedUntil).getTime() > Date.now();
+}
+
+// ---------------------------------------------------------------------------
 // Server-side token revocation
 // In-memory set of revoked JWT IDs. Cleared on server restart (acceptable since
 // JWTs are short-lived at 30min). For multi-instance deployments, move to Redis.
@@ -433,13 +454,22 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
   (async () => {
     try {
       const users = await getUsers();
+      // Update the in-memory lockout cache so it stays fresh
+      updateLockoutCache(users);
       const user = users.find(u => u.id === decoded.id);
       if (user && isAccountLocked(user)) {
         res.status(423).json({ error: 'Account is locked due to too many failed login attempts' });
         return;
       }
     } catch {
-      // If user lookup fails (transient S3 error), allow the request.
+      // S3 unavailable — check the in-memory lockout cache as fallback.
+      // This ensures locked accounts stay locked even during transient S3 failures,
+      // rather than failing open and allowing all requests through.
+      if (isAccountLockedFromCache(decoded.id)) {
+        res.status(423).json({ error: 'Account is locked due to too many failed login attempts' });
+        return;
+      }
+      // If not in lockout cache either, allow the request.
       // Token is already validated — lockout is defense-in-depth, not primary auth.
     }
     req.user = decoded;

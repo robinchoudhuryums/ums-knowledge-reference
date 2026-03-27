@@ -490,6 +490,18 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       confidence = 'low';
     }
 
+    // PHI scan on RAG response: if the LLM quoted PHI from source documents,
+    // log a warning for HIPAA monitoring. We don't block the response since
+    // the user uploaded the documents, but we flag it for audit visibility.
+    const phiScan = redactPhi(answer);
+    let phiDetectedInResponse = false;
+    if (phiScan.redactionCount > 0) {
+      phiDetectedInResponse = true;
+      logger.warn('PHI detected in RAG response', {
+        traceId, userId: req.user!.id, redactionCount: phiScan.redactionCount,
+      });
+    }
+
     const sources = buildSourceCitations(searchResults);
     const responseTimeMs = Date.now() - pipelineStart;
 
@@ -526,7 +538,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       inputTokens, outputTokens,
     }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
 
-    const response: QueryResponse = { answer, sources, confidence, traceId };
+    const response: QueryResponse = { answer, sources, confidence, traceId, ...(phiDetectedInResponse && { phiDetected: true }) };
     res.json(response);
   } catch (error) {
     logger.error('Query failed', { error: String(error) });
@@ -683,6 +695,15 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       });
       confidence = 'low';
       res.write(`data: ${JSON.stringify({ type: 'warning', message: OUTPUT_ANOMALY_REPLACEMENT })}\n\n`);
+    }
+
+    // PHI scan on streamed response for HIPAA monitoring
+    const streamPhiScan = redactPhi(fullAnswer);
+    if (streamPhiScan.redactionCount > 0) {
+      logger.warn('PHI detected in streamed RAG response', {
+        traceId, userId: req.user!.id, redactionCount: streamPhiScan.redactionCount,
+      });
+      res.write(`data: ${JSON.stringify({ type: 'phiWarning', redactionCount: streamPhiScan.redactionCount })}\n\n`);
     }
 
     res.write(`data: ${JSON.stringify({ type: 'confidence', confidence })}\n\n`);

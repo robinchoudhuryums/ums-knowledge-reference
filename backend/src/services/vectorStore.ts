@@ -41,7 +41,21 @@ function cosineSimilarity(a: number[], b: number[]): number {
  * Tokenize text into terms for BM25 scoring.
  * Preserves hyphenated terms (e.g. "IV-catheter", "bi-level", "CPAP-related")
  * as both the compound term and individual parts to improve medical term recall.
+ * Short medical tokens (IV, O2, HR, etc.) are preserved even though they are <= 2 chars.
  */
+
+// Short tokens that are medically significant and must not be filtered out.
+// These would normally be dropped by the length > 2 filter.
+const MEDICAL_SHORT_TOKENS = new Set([
+  'iv', 'o2', 'hr', 'bp', 'bm', 'gi', 'ue', 'le', 'rx', 'pt', 'ot',
+  'ed', 'er', 'or', 'ic', 'im', 'sq', 'po', 'pr', 'mg', 'ml', 'kg',
+  'lb', 'cm', 'mm', 'cc', 'dl', 'os', 'od', 'ou', 'ac', 'pc', 'hs',
+  'bi', 'ct', 'mr', 'us',
+]);
+
+// Pattern for dosage tokens like "5mg", "10ml", "2l" — number + unit
+const DOSAGE_PATTERN = /^\d+(?:mg|ml|kg|lb|cc|dl|mm|cm|mcg|iu|l)$/;
+
 function tokenize(text: string): string[] {
   const normalized = text
     .toLowerCase()
@@ -51,20 +65,27 @@ function tokenize(text: string): string[] {
     .replace(/\s+/g, ' ')
     .trim();
 
-  const rawTokens = normalized.split(/\s+/).filter(t => t.length > 2);
+  const rawTokens = normalized.split(/\s+/).filter(Boolean);
 
   // For hyphenated terms, emit both the compound and the parts
-  // e.g. "iv-catheter" => ["iv-catheter", "catheter"] (skip parts <= 2 chars)
+  // e.g. "iv-catheter" => ["iv-catheter", "iv", "catheter"]
   const tokens: string[] = [];
   for (const token of rawTokens) {
     // Strip leading/trailing hyphens
     const clean = token.replace(/^-+|-+$/g, '');
-    if (clean.length <= 2) continue;
+    if (!clean) continue;
+
+    // Keep short tokens if they are medically significant or dosages
+    const isShortMedical = clean.length <= 2 && (
+      MEDICAL_SHORT_TOKENS.has(clean) || DOSAGE_PATTERN.test(clean)
+    );
+
+    if (clean.length <= 2 && !isShortMedical) continue;
 
     tokens.push(clean);
     if (clean.includes('-')) {
       for (const part of clean.split('-')) {
-        if (part.length > 2) {
+        if (part.length > 2 || MEDICAL_SHORT_TOKENS.has(part) || DOSAGE_PATTERN.test(part)) {
           tokens.push(part);
         }
       }

@@ -199,6 +199,11 @@ function buildSourceCitations(searchResults: SearchResult[]): SourceCitation[] {
  * When using score-based fallback, considers both the average score and the top score
  * to better reflect retrieval quality (a single strong match is still useful).
  */
+// If retrieval scores are below this threshold, the model's confidence tag
+// is downgraded even if it says HIGH. This prevents the model from being
+// over-confident when the retrieved chunks barely match the query.
+const RECONCILIATION_FLOOR = 0.25;
+
 function parseConfidence(
   rawAnswer: string,
   avgScore: number,
@@ -207,8 +212,22 @@ function parseConfidence(
   const tagMatch = rawAnswer.match(/\[CONFIDENCE:\s*(HIGH|PARTIAL|LOW)\]\s*$/i);
 
   if (tagMatch) {
-    const confidence = tagMatch[1].toLowerCase() as 'high' | 'partial' | 'low';
+    let confidence = tagMatch[1].toLowerCase() as 'high' | 'partial' | 'low';
     const answer = rawAnswer.slice(0, tagMatch.index).trimEnd();
+
+    // Reconciliation: if retrieval scores are very low but the model says HIGH,
+    // the model may be hallucinating or over-extrapolating from weak context.
+    // Downgrade confidence to prevent misleading users.
+    const effectiveScore = topScore !== undefined
+      ? avgScore * 0.6 + topScore * 0.4
+      : avgScore;
+
+    if (confidence === 'high' && effectiveScore < RECONCILIATION_FLOOR) {
+      confidence = 'partial';
+    } else if (confidence !== 'low' && effectiveScore < RECONCILIATION_FLOOR * 0.5) {
+      confidence = 'low';
+    }
+
     return { answer, confidence };
   }
 
@@ -272,11 +291,81 @@ function detectPromptInjection(text: string): { detected: boolean; reason?: stri
   return { detected: false };
 }
 
+/**
+ * Output-side guardrail: detect if the LLM response shows signs of a successful
+ * prompt injection that bypassed input detection. If the response references system
+ * instructions, reveals internal prompts, or deviates from the knowledge-base role,
+ * we replace it with a safe fallback rather than forwarding to the user.
+ */
+function detectOutputAnomaly(responseText: string): { anomaly: boolean; reason?: string } {
+  const lower = responseText.toLowerCase();
+
+  // Check if the model leaked/referenced the system prompt or its instructions
+  const leakPatterns = [
+    /my (?:system |internal )?(?:prompt|instructions?) (?:say|tell|are|is)/i,
+    /here (?:is|are) my (?:system |internal )?(?:prompt|instructions?)/i,
+    /i(?:'m| am) (?:actually |really )?(?:an? )?(?:AI|language model|LLM|chatbot|assistant)(?:,| and| that)/i,
+    /as an? (?:AI|language model|LLM)/i,
+  ];
+
+  for (const pattern of leakPatterns) {
+    if (pattern.test(responseText)) {
+      return { anomaly: true, reason: 'Response may reference internal instructions' };
+    }
+  }
+
+  // Check if the model stopped acting as the UMS Knowledge Base Assistant
+  // (e.g. started writing code, translating, composing emails unrelated to documents)
+  if (lower.includes('here is the python code') ||
+      lower.includes('here is the javascript') ||
+      lower.includes('dear sir/madam') ||
+      lower.includes('as a creative writing exercise')) {
+    return { anomaly: true, reason: 'Response deviates from knowledge base role' };
+  }
+
+  return { anomaly: false };
+}
+
+const OUTPUT_ANOMALY_REPLACEMENT =
+  'I can only answer questions based on the uploaded knowledge base documents. ' +
+  'Please rephrase your question to ask about the documents in the system.';
+
+/**
+ * Validate and sanitize conversation history to prevent abuse.
+ * Limits the number of turns, total character count, and validates structure.
+ */
+const MAX_HISTORY_TURNS = 20;
+const MAX_HISTORY_CHARS = 50_000;
+
+function sanitizeConversationHistory(history?: ConversationTurn[]): ConversationTurn[] {
+  if (!history || !Array.isArray(history)) return [];
+
+  // Limit number of turns
+  const limited = history.slice(-MAX_HISTORY_TURNS);
+
+  // Validate structure and cap individual turn content
+  let totalChars = 0;
+  const valid: ConversationTurn[] = [];
+  for (const turn of limited) {
+    if (!turn || typeof turn.content !== 'string' ||
+        (turn.role !== 'user' && turn.role !== 'assistant')) {
+      continue; // Skip malformed turns
+    }
+    const content = turn.content.slice(0, 5000); // Cap individual turn at 5K chars
+    totalChars += content.length;
+    if (totalChars > MAX_HISTORY_CHARS) break; // Stop if total budget exceeded
+    valid.push({ role: turn.role, content });
+  }
+
+  return valid;
+}
+
 // Standard (non-streaming) query endpoint
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { question: rawQuestion, collectionIds, conversationHistory, topK }: QueryRequest = req.body;
+    const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK }: QueryRequest = req.body;
     const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
+    const conversationHistory = sanitizeConversationHistory(rawHistory);
 
     if (!question) {
       res.status(400).json({ error: 'Question is required' });
@@ -314,7 +403,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     }
 
     // Reformulate follow-up questions for better retrieval
-    const searchQuery = await reformulateQuery(question, conversationHistory || []);
+    const searchQuery = await reformulateQuery(question, conversationHistory);
 
     const embeddingStart = Date.now();
     const queryEmbedding = await generateEmbedding(searchQuery);
@@ -389,7 +478,17 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     const avgScore = searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length;
     const topScore = searchResults.length > 0 ? Math.max(...searchResults.map(r => r.score)) : 0;
-    const { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore);
+    let { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore);
+
+    // Output-side guardrail: detect if the response shows signs of injection bypass
+    const outputCheck = detectOutputAnomaly(answer);
+    if (outputCheck.anomaly) {
+      logger.warn('Output anomaly detected, replacing response', {
+        reason: outputCheck.reason, userId: req.user!.id, traceId,
+      });
+      answer = OUTPUT_ANOMALY_REPLACEMENT;
+      confidence = 'low';
+    }
 
     const sources = buildSourceCitations(searchResults);
     const responseTimeMs = Date.now() - pipelineStart;
@@ -440,8 +539,9 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 // Streaming query endpoint — sends answer tokens as Server-Sent Events
 router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { question: rawQuestion, collectionIds, conversationHistory, topK }: QueryRequest = req.body;
+    const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK }: QueryRequest = req.body;
     const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
+    const conversationHistory = sanitizeConversationHistory(rawHistory);
 
     if (!question) {
       res.status(400).json({ error: 'Question is required' });
@@ -485,7 +585,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     res.flushHeaders();
 
     // Reformulate follow-up questions for better retrieval
-    const searchQuery = await reformulateQuery(question, conversationHistory || []);
+    const searchQuery = await reformulateQuery(question, conversationHistory);
 
     const embeddingStart = Date.now();
     const queryEmbedding = await generateEmbedding(searchQuery);
@@ -571,7 +671,20 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     const generationTimeMs = Date.now() - generationStart;
 
     // Parse confidence from the completed answer
-    const { confidence } = parseConfidence(fullAnswer, avgScore, topScore);
+    let { confidence } = parseConfidence(fullAnswer, avgScore, topScore);
+
+    // Output-side guardrail for streaming: check completed answer for anomalies.
+    // Since text was already streamed, we send a warning event so the frontend can
+    // overlay a caution message rather than silently forwarding a suspicious response.
+    const streamOutputCheck = detectOutputAnomaly(fullAnswer);
+    if (streamOutputCheck.anomaly) {
+      logger.warn('Output anomaly detected in streamed response', {
+        reason: streamOutputCheck.reason, userId: req.user!.id, traceId,
+      });
+      confidence = 'low';
+      res.write(`data: ${JSON.stringify({ type: 'warning', message: OUTPUT_ANOMALY_REPLACEMENT })}\n\n`);
+    }
+
     res.write(`data: ${JSON.stringify({ type: 'confidence', confidence })}\n\n`);
     // Send traceId so frontend can link feedback to this trace
     res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);

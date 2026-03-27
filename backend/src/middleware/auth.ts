@@ -128,8 +128,26 @@ export function revokeToken(jti: string): void {
   setTimeout(() => revokedTokens.delete(jti), 35 * 60 * 1000);
 }
 
+// Track user IDs whose ALL tokens should be rejected (e.g. after password reset).
+// Entries auto-expire after JWT max lifetime to avoid unbounded growth.
+const revokedUserIds = new Set<string>();
+
+/**
+ * Revoke all tokens for a user (used after admin password reset).
+ * Any token with this userId will be rejected until the revocation expires.
+ */
+export function revokeAllUserTokens(userId: string): void {
+  revokedUserIds.add(userId);
+  // Auto-clean after 35 minutes (JWT expiry + buffer)
+  setTimeout(() => revokedUserIds.delete(userId), 35 * 60 * 1000);
+}
+
 function isTokenRevoked(jti: string): boolean {
   return revokedTokens.has(jti);
+}
+
+function isUserRevoked(userId: string): boolean {
+  return revokedUserIds.has(userId);
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +397,7 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
 /**
  * JWT authentication middleware.
  * Accepts token from httpOnly cookie (preferred) or Authorization header (fallback).
- * Checks token validity AND server-side revocation.
+ * Checks token validity, server-side revocation, AND account lockout status.
  */
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
   // Prefer httpOnly cookie (immune to XSS), fall back to Authorization header
@@ -395,14 +413,28 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string; role: 'admin' | 'user'; jti?: string };
 
-    // Check server-side revocation
-    if (decoded.jti && isTokenRevoked(decoded.jti)) {
+    // Check server-side revocation (individual token or all tokens for user)
+    if ((decoded.jti && isTokenRevoked(decoded.jti)) || isUserRevoked(decoded.id)) {
       res.status(401).json({ error: 'Token has been revoked' });
       return;
     }
 
-    req.user = decoded;
-    next();
+    // Check account lockout — a locked user with a valid pre-lockout token
+    // should not be able to make API calls until the lockout expires.
+    // This is async but we handle it via a promise chain to keep the middleware signature.
+    getUsers().then(users => {
+      const user = users.find(u => u.id === decoded.id);
+      if (user && isAccountLocked(user)) {
+        res.status(423).json({ error: 'Account is locked due to too many failed login attempts' });
+        return;
+      }
+      req.user = decoded;
+      next();
+    }).catch(() => {
+      // If user lookup fails, allow the request — don't block on transient S3 errors
+      req.user = decoded;
+      next();
+    });
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
   }

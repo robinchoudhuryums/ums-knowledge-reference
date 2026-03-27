@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { extractDocumentData, BEDROCK_EXTRACTION_MODEL } from '../services/documentExtractor';
 import { listTemplates, getTemplateById } from '../services/extractionTemplates';
@@ -13,6 +14,18 @@ import { validateFileContent } from '../utils/fileValidation';
 import { createJob, getJob, updateJob, getUserJobs } from '../services/jobQueue';
 
 const router = Router();
+
+// Stricter rate limit for extraction endpoints — each call triggers expensive
+// Bedrock API invocations (Sonnet 4.6) and potentially Textract OCR.
+// 10 extractions per 15 minutes per user prevents cost abuse.
+const extractionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  message: { error: 'Too many extraction requests. Please wait before submitting again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // 50 MB upload limit
 const upload = multer({
@@ -56,7 +69,7 @@ router.get('/templates/:id', authenticate, (req, res) => {
  *   - file: the document to extract from
  *   - templateId: which template to use
  */
-router.post('/extract', authenticate, upload.single('file'), async (req, res) => {
+router.post('/extract', authenticate, extractionLimiter, upload.single('file'), async (req, res) => {
   const authReq = req as AuthRequest;
   const file = req.file;
   const templateId = req.body?.templateId;
@@ -135,7 +148,7 @@ router.post('/extract', authenticate, upload.single('file'), async (req, res) =>
  * Accepts the same multipart upload as /extract. Returns 202 with { jobId }.
  * The extraction runs in the background; poll GET /jobs/:id for status.
  */
-router.post('/extract/async', authenticate, upload.single('file'), async (req, res) => {
+router.post('/extract/async', authenticate, extractionLimiter, upload.single('file'), async (req, res) => {
   const authReq = req as AuthRequest;
   const file = req.file;
   const templateId = req.body?.templateId;

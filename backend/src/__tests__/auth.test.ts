@@ -146,11 +146,14 @@ describe('Auth Flow', () => {
     await loginHandler(loginReq, loginRes);
     const token = (loginRes.json as any).mock.calls[0][0].token;
 
-    // Use token in authenticate middleware
+    // Use token in authenticate middleware.
+    // authenticate() now performs an async lockout check (getUsers().then(...)),
+    // so we need to wait for the promise chain to resolve before asserting.
     const req = mockReq({}, { authorization: `Bearer ${token}` }) as AuthRequest;
     const res = mockRes();
     const next = vi.fn();
     authenticate(req, res, next);
+    await new Promise(resolve => setTimeout(resolve, 50));
     expect(next).toHaveBeenCalled();
     expect(req.user).toBeDefined();
     expect(req.user!.username).toBe('admin');

@@ -14,6 +14,29 @@ function stripConfidenceTag(text: string): string {
   return text.replace(/\[CONFIDENCE:\s*(?:HIGH|PARTIAL|LOW)\]\s*$/i, '').trimEnd();
 }
 
+/**
+ * Detect common PHI patterns in user input before submission.
+ * Returns a list of detected PHI types so the user can be warned.
+ * This is a client-side safety net — the backend also redacts PHI in logs.
+ */
+function detectPotentialPhi(text: string): string[] {
+  const detected: string[] = [];
+  // SSN: 123-45-6789 or 123456789
+  if (/\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/.test(text)) detected.push('SSN');
+  // Phone: (555) 123-4567 or 555-123-4567
+  if (/(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/.test(text) && !detected.includes('SSN')) {
+    // Only flag phone if it wasn't already caught as SSN
+    if (/\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/.test(text)) detected.push('Phone number');
+  }
+  // Email
+  if (/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/.test(text)) detected.push('Email address');
+  // DOB with keyword
+  if (/(?:DOB|date\s+of\s+birth|born\s+on)[:\s]*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}/i.test(text)) detected.push('Date of birth');
+  // MRN with keyword
+  if (/(?:MRN|medical\s+record|patient\s+(?:id|number))[:\s#]*[A-Z0-9-]{4,}/i.test(text)) detected.push('Medical record number');
+  return detected;
+}
+
 export function ChatInterface({ collections }: Props) {
   const [conversation, setConversation] = useState<ConversationTurn[]>([]);
   const [question, setQuestion] = useState('');
@@ -45,6 +68,17 @@ export function ChatInterface({ collections }: Props) {
     if (!question.trim() || loading) return;
 
     const userMessage = question.trim();
+
+    // Warn user if their query appears to contain PHI
+    const phiTypes = detectPotentialPhi(userMessage);
+    if (phiTypes.length > 0) {
+      const proceed = window.confirm(
+        `Your query may contain sensitive information (${phiTypes.join(', ')}). ` +
+        `PHI should not be entered in the chat. Do you want to continue anyway?`
+      );
+      if (!proceed) return;
+    }
+
     setQuestion('');
     setFailedQuery(null);
     setConversation(prev => [...prev, { role: 'user', content: userMessage }]);

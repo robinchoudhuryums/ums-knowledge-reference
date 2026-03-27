@@ -22,8 +22,20 @@ import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { validateFileContent } from '../utils/fileValidation';
 import { scanFileForMalware } from '../utils/malwareScan';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
+
+// Rate limit for expensive endpoints (OCR, form review, clinical extraction)
+// that trigger Textract and/or Bedrock API calls. 10 per 15 min per user.
+const expensiveOpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  message: { error: 'Too many processing requests. Please wait before submitting again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Multer config: 50MB limit, memory storage
 const upload = multer({
@@ -550,7 +562,7 @@ const ocrUpload = multer({
 
 router.post(
   '/ocr',
-  authenticate,
+  authenticate, expensiveOpLimiter,
   ocrUpload.single('file'),
   async (req: AuthRequest, res: Response) => {
     try {
@@ -616,7 +628,7 @@ const formReviewUpload = multer({
  */
 router.post(
   '/form-review',
-  authenticate,
+  authenticate, expensiveOpLimiter,
   formReviewUpload.single('file'),
   async (req: AuthRequest, res: Response) => {
     try {
@@ -761,7 +773,7 @@ const batchFormReviewUpload = multer({
  */
 router.post(
   '/form-review/batch',
-  authenticate,
+  authenticate, expensiveOpLimiter,
   batchFormReviewUpload.array('files', 10),
   async (req: AuthRequest, res: Response) => {
     try {
@@ -852,7 +864,7 @@ const clinicalUpload = multer({
  */
 router.post(
   '/clinical-extract',
-  authenticate,
+  authenticate, expensiveOpLimiter,
   clinicalUpload.single('file'),
   async (req: AuthRequest, res: Response) => {
     try {

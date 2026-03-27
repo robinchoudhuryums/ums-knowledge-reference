@@ -13,7 +13,7 @@ export interface Document {
   collectionId: string;
   uploadedBy: string;
   uploadedAt: string;
-  status: 'uploading' | 'processing' | 'ready' | 'error';
+  status: 'uploading' | 'processing' | 'ready' | 'error' | 'replaced';
   errorMessage?: string;
   chunkCount: number;
   version: number;
@@ -74,7 +74,7 @@ export interface AuditLogEntry {
   timestamp: string;
   userId: string;
   username: string;
-  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr' | 'user_create' | 'user_update' | 'user_delete' | 'user_reset_password' | 'data_purge' | 'data_retention';
+  action: 'query' | 'upload' | 'delete' | 'login' | 'collection_create' | 'collection_delete' | 'feedback' | 'ocr' | 'user_create' | 'user_update' | 'user_delete' | 'user_reset_password' | 'data_purge' | 'data_retention' | 'document_replaced';
   details: Record<string, unknown>;
   previousHash?: string;
   entryHash?: string;

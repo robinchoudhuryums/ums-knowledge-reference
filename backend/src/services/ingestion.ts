@@ -12,7 +12,35 @@ import { extractImageDescriptions } from './visionExtractor';
 import { chunkDocument } from './chunker';
 import { generateEmbeddingsBatch } from './embeddings';
 import { addChunksToStore, removeDocumentChunks } from './vectorStore';
+import { logAuditEvent } from './audit';
 import { logger } from '../utils/logger';
+
+// Allowed file extensions for uploaded documents
+const ALLOWED_EXTENSIONS = new Set([
+  'pdf', 'docx', 'doc', 'xlsx', 'xls', 'csv', 'txt', 'md', 'html', 'htm',
+]);
+
+// Mutex lock to prevent concurrent document index updates from corrupting state.
+// Without this, two simultaneous uploads could both read the same index,
+// each append their document, and the second save would overwrite the first.
+let indexMutexPromise: Promise<void> | null = null;
+
+async function withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
+  // Wait for any in-flight index operation to finish
+  while (indexMutexPromise) {
+    await indexMutexPromise;
+  }
+
+  let resolve: () => void;
+  indexMutexPromise = new Promise<void>(r => { resolve = r; });
+
+  try {
+    return await fn();
+  } finally {
+    indexMutexPromise = null;
+    resolve!();
+  }
+}
 
 export interface UploadResult {
   document: Document;
@@ -21,12 +49,16 @@ export interface UploadResult {
 
 /**
  * Full document ingestion pipeline:
- * 1. Upload original file to S3
- * 2. Extract text
- * 3. Chunk text
- * 4. Generate embeddings
- * 5. Store in vector store
- * 6. Update document index
+ * 1. Validate file extension
+ * 2. Upload original file to S3
+ * 3. Extract text
+ * 4. Chunk text
+ * 5. Generate embeddings
+ * 6. Store in vector store
+ * 7. Update document index (with mutex lock)
+ * 8. Log audit trail for version replacements
+ *
+ * On failure after vector store insertion, chunks are rolled back to prevent orphans.
  */
 export async function ingestDocument(
   fileBuffer: Buffer,
@@ -36,9 +68,16 @@ export async function ingestDocument(
   uploadedBy: string
 ): Promise<UploadResult> {
   const documentId = uuidv4();
-  const extension = originalName.split('.').pop() || '';
+  const extension = (originalName.split('.').pop() || '').toLowerCase();
   const filename = `${documentId}.${extension}`;
   const s3Key = `${S3_PREFIXES.documents}${collectionId}/${filename}`;
+
+  // Step 0: Validate file extension to prevent unexpected file types
+  if (extension && !ALLOWED_EXTENSIONS.has(extension)) {
+    throw new Error(
+      `Unsupported file extension: .${extension}. Allowed: ${[...ALLOWED_EXTENSIONS].join(', ')}`
+    );
+  }
 
   // Check if this is a re-upload (same name in same collection)
   const existingDocs = await getDocumentsIndex();
@@ -63,6 +102,9 @@ export async function ingestDocument(
     previousVersionId: existingDoc?.id,
     contentHash: createHash('sha256').update(fileBuffer).digest('hex'),
   };
+
+  // Track whether chunks were added to the vector store (for rollback on error)
+  let chunksAddedToStore = false;
 
   try {
     // Step 1: Upload original file to S3
@@ -103,28 +145,47 @@ export async function ingestDocument(
     // Step 5: Store in vector store
     logger.info('Ingestion: Adding to vector store', { documentId });
     await addChunksToStore(chunks, embeddings);
+    chunksAddedToStore = true;
 
-    // Step 6: If re-uploading, remove old document chunks
-    if (existingDoc) {
-      logger.info('Ingestion: Removing previous version chunks', {
-        documentId,
-        previousVersionId: existingDoc.id,
-      });
-      await removeDocumentChunks(existingDoc.id);
+    // Step 6 & 7: Update document index atomically under mutex lock
+    // This prevents concurrent uploads from reading stale index, both appending,
+    // and the second save overwriting the first document's entry.
+    await withIndexLock(async () => {
+      // Re-read index inside the lock to get the latest state
+      const freshDocs = await getDocumentsIndex();
 
-      // Mark old version as replaced
-      const idx = existingDocs.findIndex(d => d.id === existingDoc.id);
-      if (idx !== -1) {
-        existingDocs[idx].status = 'error';
-        existingDocs[idx].errorMessage = `Replaced by version ${document.version} (${documentId})`;
+      // If re-uploading, remove old document chunks and mark as replaced
+      if (existingDoc) {
+        logger.info('Ingestion: Removing previous version chunks', {
+          documentId,
+          previousVersionId: existingDoc.id,
+        });
+        await removeDocumentChunks(existingDoc.id);
+
+        // Mark old version as replaced in the fresh index
+        const idx = freshDocs.findIndex(d => d.id === existingDoc.id);
+        if (idx !== -1) {
+          freshDocs[idx].status = 'replaced';
+          freshDocs[idx].errorMessage = `Replaced by version ${document.version} (${documentId})`;
+        }
+
+        // Log audit trail for document replacement
+        logAuditEvent(uploadedBy, uploadedBy, 'document_replaced', {
+          documentId,
+          previousVersionId: existingDoc.id,
+          previousVersion: existingDoc.version,
+          newVersion: document.version,
+          originalName,
+          collectionId,
+        }).catch(err => logger.warn('Failed to log replacement audit event', { error: String(err) }));
       }
-    }
 
-    // Step 7: Update document index
-    document.status = 'ready';
-    document.chunkCount = chunks.length;
-    existingDocs.push(document);
-    await saveDocumentsIndex(existingDocs);
+      // Append new document to index
+      document.status = 'ready';
+      document.chunkCount = chunks.length;
+      freshDocs.push(document);
+      await saveDocumentsIndex(freshDocs);
+    });
 
     logger.info('Ingestion: Complete', {
       documentId,
@@ -135,13 +196,28 @@ export async function ingestDocument(
 
     return { document, chunkCount: chunks.length };
   } catch (error) {
+    // Roll back vector store chunks if they were added before the failure
+    if (chunksAddedToStore) {
+      try {
+        logger.info('Ingestion: Rolling back vector store chunks after failure', { documentId });
+        await removeDocumentChunks(documentId);
+      } catch (rollbackError) {
+        logger.error('Ingestion: Failed to roll back chunks — orphaned chunks may exist', {
+          documentId,
+          rollbackError: String(rollbackError),
+        });
+      }
+    }
+
     document.status = 'error';
     document.errorMessage = error instanceof Error ? error.message : String(error);
 
-    // Save the failed document record so users can see what happened
-    const docs = await getDocumentsIndex();
-    docs.push(document);
-    await saveDocumentsIndex(docs);
+    // Save the failed document record so users can see what happened (under lock)
+    await withIndexLock(async () => {
+      const docs = await getDocumentsIndex();
+      docs.push(document);
+      await saveDocumentsIndex(docs);
+    });
 
     logger.error('Ingestion failed', {
       documentId,

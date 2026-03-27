@@ -46,21 +46,45 @@ export async function extractText(buffer: Buffer, mimeType: string, filename: st
 }
 
 // Minimum characters from pdf-parse before we consider it a real text PDF.
-// Below this threshold the PDF is likely scanned/image-based and we try OCR.
+// Below this threshold the PDF is likely scanned/image-based and we fall back to OCR.
 const OCR_FALLBACK_THRESHOLD = 50;
 
-async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
-  // Run both pdf-parse (text layer) and Textract OCR (captures text in images) in parallel.
-  // This ensures we don't miss text embedded in images, diagrams, or charts.
-  const [pdfResult, ocrResult] = await Promise.allSettled([
-    pdfParse(buffer),
-    extractTextWithOcr(buffer, 'document.pdf'),
-  ]);
+// If pdf-parse yields a strong text layer above this threshold, skip OCR entirely
+// to save Textract API calls and processing time (~500ms-1s per document).
+const OCR_SKIP_THRESHOLD = 500;
 
-  const pdfText = pdfResult.status === 'fulfilled' ? pdfResult.value.text : '';
-  const ocrText = ocrResult.status === 'fulfilled' ? ocrResult.value.text : '';
+async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
+  // Phase 1: Try pdf-parse first (fast, free, no API call)
+  let pdfText = '';
+  let pdfParsed: Awaited<ReturnType<typeof pdfParse>> | null = null;
+  try {
+    pdfParsed = await pdfParse(buffer);
+    pdfText = pdfParsed!.text;
+  } catch (err) {
+    logger.warn('pdf-parse failed, will try OCR', { error: String(err) });
+  }
 
   const trimmedPdf = pdfText.replace(/\s+/g, ' ').trim();
+
+  // Phase 2: Only call OCR if pdf-parse yielded insufficient text.
+  // For text-native PDFs with a strong text layer, this avoids unnecessary Textract calls.
+  let ocrText = '';
+  if (trimmedPdf.length < OCR_SKIP_THRESHOLD) {
+    logger.info('PDF text layer below threshold, running OCR', {
+      pdfParseChars: trimmedPdf.length,
+      threshold: OCR_SKIP_THRESHOLD,
+    });
+
+    try {
+      const ocrResult = await extractTextWithOcr(buffer, 'document.pdf');
+      ocrText = ocrResult.text;
+    } catch (err) {
+      logger.warn('OCR extraction failed', { error: String(err) });
+    }
+  } else {
+    logger.info('PDF has strong text layer, skipping OCR', { pdfParseChars: trimmedPdf.length });
+  }
+
   const trimmedOcr = ocrText.replace(/\s+/g, ' ').trim();
 
   // If pdf-parse got almost nothing, use OCR
@@ -82,8 +106,8 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
   }
 
   // pdf-parse has good text with page breaks — prefer it for better formatting
-  if (pdfResult.status === 'fulfilled') {
-    const pages = pdfResult.value.text.split(/\f/);
+  if (pdfParsed) {
+    const pages = pdfParsed.text.split(/\f/);
     const pageBreaks: number[] = [];
     let offset = 0;
     for (let i = 0; i < pages.length - 1; i++) {
@@ -91,7 +115,7 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
       pageBreaks.push(offset);
       offset += 1;
     }
-    return { text: pdfResult.value.text, pageBreaks };
+    return { text: pdfParsed.text, pageBreaks };
   }
 
   // Both failed — nothing we can do

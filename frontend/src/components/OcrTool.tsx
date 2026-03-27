@@ -672,8 +672,8 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 8px rgba(230, 81, 0, 0.25)', cursor: 'pointer',
   },
   uploadButtonLoading: {
-    display: 'inline-block', padding: '11px 24px', background: '#5F7A8F',
-    color: 'white', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'wait',
+    display: 'inline-block', padding: '11px 24px', background: 'var(--ums-text-muted)',
+    color: 'var(--ums-bg-surface)', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'wait',
   },
 
   // Loading
@@ -691,7 +691,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'linear-gradient(90deg, #E65100, #FF8F00, #E65100)',
     backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite',
   },
-  hint: { fontSize: '12px', color: '#5F7A8F', marginTop: '8px' },
+  hint: { fontSize: '12px', color: 'var(--ums-text-muted)', marginTop: '8px' },
   error: {
     marginTop: '16px', padding: '12px 16px', background: '#fef2f2',
     color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca',
@@ -704,12 +704,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   resultHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '14px 18px', background: '#F7FAFD', borderBottom: '1px solid #E8EFF5',
+    padding: '14px 18px', background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid var(--ums-border-light)',
   },
   resultMetaRow: { display: 'flex', alignItems: 'center', gap: '8px' },
-  resultFilename: { fontSize: '13px', fontWeight: 600, color: '#0D2137' },
+  resultFilename: { fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-primary)' },
   metaBadge: {
-    fontSize: '11px', color: '#1B6FC9', background: '#E3F2FD',
+    fontSize: '11px', color: 'var(--ums-brand-primary)', background: 'var(--ums-brand-light)',
     padding: '3px 8px', borderRadius: '6px', fontWeight: 500,
   },
   metaBadgeRed: {
@@ -728,13 +728,13 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #DDD6FE',
   },
   copyButton: {
-    padding: '6px 14px', background: 'white', border: '1px solid #D6E4F0',
-    borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 500, color: '#4A6274',
+    padding: '6px 14px', background: 'var(--ums-bg-surface)', border: '1px solid var(--ums-border)',
+    borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 500, color: 'var(--ums-text-muted)',
   },
   resultText: {
     padding: '18px', margin: 0, fontSize: '13px', lineHeight: '1.7',
     whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '400px',
-    overflowY: 'auto', fontFamily: 'inherit', color: '#3D5A73', background: '#ffffff',
+    overflowY: 'auto', fontFamily: 'inherit', color: '#3D5A73', background: 'var(--ums-bg-surface)',
   },
 
   // Form Review results
@@ -746,18 +746,18 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '18px 20px', background: '#FFF8F0', borderBottom: '1px solid #FFE0B2',
   },
   formResultTitle: {
-    margin: '0 0 8px', fontSize: '16px', fontWeight: 700, color: '#0D2137',
+    margin: '0 0 8px', fontSize: '16px', fontWeight: 700, color: 'var(--ums-text-primary)',
   },
   formMetaRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const },
 
   // Form type detection
   formTypeSection: {
-    padding: '12px 20px', background: '#F0F7FF', borderBottom: '1px solid #E8EFF5',
+    padding: '12px 20px', background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid var(--ums-border-light)',
     display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const,
   },
-  formTypeLabel: { fontSize: '12px', color: '#6B8299', fontWeight: 500 },
-  formTypeName: { fontSize: '13px', fontWeight: 700, color: '#1565C0' },
-  formTypeDesc: { fontSize: '12px', color: '#6B8299', fontStyle: 'italic' },
+  formTypeLabel: { fontSize: '12px', color: 'var(--ums-text-muted)', fontWeight: 500 },
+  formTypeName: { fontSize: '13px', fontWeight: 700, color: 'var(--ums-brand-primary)' },
+  formTypeDesc: { fontSize: '12px', color: 'var(--ums-text-muted)', fontStyle: 'italic' },
 
   // Required fields alert
   requiredAlert: {

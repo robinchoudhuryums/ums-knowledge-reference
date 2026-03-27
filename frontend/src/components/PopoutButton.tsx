@@ -29,9 +29,9 @@ export function PopoutButton() {
 const styles: Record<string, React.CSSProperties> = {
   button: {
     padding: '6px 14px',
-    background: '#F0F7FF',
-    color: '#1B6FC9',
-    border: '1px solid #D6E4F0',
+    background: 'var(--ums-bg-surface-alt)',
+    color: 'var(--ums-brand-primary)',
+    border: '1px solid var(--ums-border)',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',

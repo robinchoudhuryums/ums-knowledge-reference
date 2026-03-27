@@ -380,7 +380,7 @@ export function OcrTool() {
           {/* Interactive Annotation Editor */}
           {showInteractiveViewer && selectedFile && (
             <div style={styles.interactiveViewerSection}>
-              <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: '#6B8299' }}>Loading annotation editor...</div>}>
+              <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: 'var(--ums-text-muted)' }}>Loading annotation editor...</div>}>
                 <AnnotatedPdfViewer
                   file={selectedFile}
                   emptyFields={formResult.emptyFields}
@@ -620,11 +620,11 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', maxWidth: '960px', background: '#ffffff', height: '100%', overflowY: 'auto' },
+  container: { padding: '28px', maxWidth: '960px', background: 'var(--ums-bg-surface)', height: '100%', overflowY: 'auto' },
   headerSection: { display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'flex-start' },
   iconBg: {
     width: '48px', height: '48px', borderRadius: '14px',
-    background: 'linear-gradient(135deg, #E3F2FD, #BBDEFB)',
+    background: 'linear-gradient(135deg, var(--ums-brand-light), var(--ums-border))',
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   iconBgForm: {
@@ -633,8 +633,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   icon: { fontSize: '24px' },
-  title: { margin: '0 0 4px', fontSize: '18px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.2px' },
-  description: { margin: 0, fontSize: '14px', color: '#6B8299', lineHeight: '1.5' },
+  title: { margin: '0 0 4px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
+  description: { margin: 0, fontSize: '14px', color: 'var(--ums-text-muted)', lineHeight: '1.5' },
 
   // Mode toggle
   toggleRow: {
@@ -643,17 +643,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   toggleActive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'white', color: '#1565C0', fontSize: '13px', fontWeight: 600,
+    background: 'var(--ums-bg-surface)', color: 'var(--ums-brand-primary)', fontSize: '13px', fontWeight: 600,
     cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
   toggleActiveForm: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'white', color: '#E65100', fontSize: '13px', fontWeight: 600,
+    background: 'var(--ums-bg-surface)', color: '#E65100', fontSize: '13px', fontWeight: 600,
     cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
   toggleInactive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'transparent', color: '#5F7A8F', fontSize: '13px', fontWeight: 500,
+    background: 'transparent', color: 'var(--ums-text-muted)', fontSize: '13px', fontWeight: 500,
     cursor: 'pointer',
   },
 
@@ -661,7 +661,7 @@ const styles: Record<string, React.CSSProperties> = {
   uploadLabel: { display: 'inline-block', cursor: 'pointer' },
   uploadButton: {
     display: 'inline-block', padding: '11px 24px',
-    background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white',
+    background: 'var(--ums-brand-gradient)', color: 'var(--ums-bg-surface)',
     borderRadius: '10px', fontSize: '14px', fontWeight: 500,
     boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)', cursor: 'pointer',
   },
@@ -672,18 +672,18 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 8px rgba(230, 81, 0, 0.25)', cursor: 'pointer',
   },
   uploadButtonLoading: {
-    display: 'inline-block', padding: '11px 24px', background: '#5F7A8F',
-    color: 'white', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'wait',
+    display: 'inline-block', padding: '11px 24px', background: 'var(--ums-text-muted)',
+    color: 'var(--ums-bg-surface)', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'wait',
   },
 
   // Loading
   loadingBar: {
     marginTop: '16px', height: '4px', borderRadius: '2px',
-    background: '#E8EFF5', overflow: 'hidden',
+    background: 'var(--ums-border-light)', overflow: 'hidden',
   },
   loadingBarFill: {
     height: '100%', width: '40%', borderRadius: '2px',
-    background: 'linear-gradient(90deg, #1B6FC9, #42A5F5, #1B6FC9)',
+    background: 'linear-gradient(90deg, var(--ums-brand-primary), #42A5F5, var(--ums-brand-primary))',
     backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite',
   },
   loadingBarFillForm: {
@@ -691,7 +691,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'linear-gradient(90deg, #E65100, #FF8F00, #E65100)',
     backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite',
   },
-  hint: { fontSize: '12px', color: '#5F7A8F', marginTop: '8px' },
+  hint: { fontSize: '12px', color: 'var(--ums-text-muted)', marginTop: '8px' },
   error: {
     marginTop: '16px', padding: '12px 16px', background: '#fef2f2',
     color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca',
@@ -699,17 +699,17 @@ const styles: Record<string, React.CSSProperties> = {
 
   // OCR results
   resultContainer: {
-    marginTop: '24px', border: '1px solid #E8EFF5', borderRadius: '14px',
+    marginTop: '24px', border: '1px solid var(--ums-border-light)', borderRadius: '14px',
     overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
   },
   resultHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '14px 18px', background: '#F7FAFD', borderBottom: '1px solid #E8EFF5',
+    padding: '14px 18px', background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid var(--ums-border-light)',
   },
   resultMetaRow: { display: 'flex', alignItems: 'center', gap: '8px' },
-  resultFilename: { fontSize: '13px', fontWeight: 600, color: '#0D2137' },
+  resultFilename: { fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-primary)' },
   metaBadge: {
-    fontSize: '11px', color: '#1B6FC9', background: '#E3F2FD',
+    fontSize: '11px', color: 'var(--ums-brand-primary)', background: 'var(--ums-brand-light)',
     padding: '3px 8px', borderRadius: '6px', fontWeight: 500,
   },
   metaBadgeRed: {
@@ -728,36 +728,36 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #DDD6FE',
   },
   copyButton: {
-    padding: '6px 14px', background: 'white', border: '1px solid #D6E4F0',
-    borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 500, color: '#4A6274',
+    padding: '6px 14px', background: 'var(--ums-bg-surface)', border: '1px solid var(--ums-border)',
+    borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 500, color: 'var(--ums-text-muted)',
   },
   resultText: {
     padding: '18px', margin: 0, fontSize: '13px', lineHeight: '1.7',
     whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '400px',
-    overflowY: 'auto', fontFamily: 'inherit', color: '#3D5A73', background: '#ffffff',
+    overflowY: 'auto', fontFamily: 'inherit', color: '#3D5A73', background: 'var(--ums-bg-surface)',
   },
 
   // Form Review results
   formResultContainer: {
-    marginTop: '24px', border: '1px solid #E8EFF5', borderRadius: '14px',
+    marginTop: '24px', border: '1px solid var(--ums-border-light)', borderRadius: '14px',
     overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
   },
   formResultHeader: {
     padding: '18px 20px', background: '#FFF8F0', borderBottom: '1px solid #FFE0B2',
   },
   formResultTitle: {
-    margin: '0 0 8px', fontSize: '16px', fontWeight: 700, color: '#0D2137',
+    margin: '0 0 8px', fontSize: '16px', fontWeight: 700, color: 'var(--ums-text-primary)',
   },
   formMetaRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const },
 
   // Form type detection
   formTypeSection: {
-    padding: '12px 20px', background: '#F0F7FF', borderBottom: '1px solid #E8EFF5',
+    padding: '12px 20px', background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid var(--ums-border-light)',
     display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const,
   },
-  formTypeLabel: { fontSize: '12px', color: '#6B8299', fontWeight: 500 },
-  formTypeName: { fontSize: '13px', fontWeight: 700, color: '#1565C0' },
-  formTypeDesc: { fontSize: '12px', color: '#6B8299', fontStyle: 'italic' },
+  formTypeLabel: { fontSize: '12px', color: 'var(--ums-text-muted)', fontWeight: 500 },
+  formTypeName: { fontSize: '13px', fontWeight: 700, color: 'var(--ums-brand-primary)' },
+  formTypeDesc: { fontSize: '12px', color: 'var(--ums-text-muted)', fontStyle: 'italic' },
 
   // Required fields alert
   requiredAlert: {
@@ -778,13 +778,13 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #FECACA', display: 'inline-flex', alignItems: 'center', gap: '4px',
   },
   sectionTag: {
-    fontSize: '10px', background: '#E3F2FD', color: '#1565C0', padding: '2px 5px',
+    fontSize: '10px', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', padding: '2px 5px',
     borderRadius: '3px', fontWeight: 600,
   },
 
   // Downloads
   downloadSection: {
-    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid #E8EFF5',
+    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid var(--ums-border-light)',
   },
   downloadLabel: {
     margin: '0 0 10px', fontSize: '13px', fontWeight: 600, color: '#374151',
@@ -797,8 +797,8 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 6px rgba(230,81,0,0.2)',
   },
   downloadBtnOriginal: {
-    padding: '10px 20px', border: '1px solid #D6E4F0', borderRadius: '10px',
-    background: 'white', color: '#374151',
+    padding: '10px 20px', border: '1px solid var(--ums-border)', borderRadius: '10px',
+    background: 'var(--ums-bg-surface)', color: '#374151',
     fontSize: '13px', fontWeight: 600, cursor: 'pointer',
   },
   previewBtn: {
@@ -813,17 +813,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   downloadBtnDisabled: {
     padding: '10px 20px', border: 'none', borderRadius: '10px',
-    background: '#5F7A8F', color: 'white',
+    background: 'var(--ums-text-muted)', color: 'var(--ums-bg-surface)',
     fontSize: '13px', fontWeight: 600, cursor: 'wait',
   },
   downloadHint: {
-    margin: '10px 0 0', fontSize: '12px', color: '#5F7A8F', lineHeight: '1.5',
+    margin: '10px 0 0', fontSize: '12px', color: 'var(--ums-text-muted)', lineHeight: '1.5',
     fontStyle: 'italic',
   },
 
   // PDF Preview
   previewSection: {
-    borderBottom: '1px solid #E8EFF5',
+    borderBottom: '1px solid var(--ums-border-light)',
   },
   previewHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -832,22 +832,22 @@ const styles: Record<string, React.CSSProperties> = {
   previewTitle: { fontSize: '13px', fontWeight: 600, color: '#6D28D9' },
   previewClose: {
     padding: '4px 12px', border: '1px solid #C4B5FD', borderRadius: '6px',
-    background: 'white', color: '#6D28D9', fontSize: '12px', cursor: 'pointer',
+    background: 'var(--ums-bg-surface)', color: '#6D28D9', fontSize: '12px', cursor: 'pointer',
   },
   previewIframe: {
     width: '100%', height: '600px', border: 'none',
   },
   interactiveViewerSection: {
-    height: '700px', borderBottom: '1px solid #E8EFF5',
+    height: '700px', borderBottom: '1px solid var(--ums-border-light)',
   },
 
   // Completion bar
   completionSection: {
     padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px',
-    borderBottom: '1px solid #E8EFF5',
+    borderBottom: '1px solid var(--ums-border-light)',
   },
   completionBarBg: {
-    flex: 1, height: '8px', borderRadius: '4px', background: '#E8EFF5', overflow: 'hidden',
+    flex: 1, height: '8px', borderRadius: '4px', background: 'var(--ums-border-light)', overflow: 'hidden',
   },
   completionBarFill: {
     height: '100%', borderRadius: '4px',
@@ -857,7 +857,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Low confidence section
   lowConfSection: {
-    padding: '16px 20px', borderBottom: '1px solid #E8EFF5',
+    padding: '16px 20px', borderBottom: '1px solid var(--ums-border-light)',
     background: '#FFFBEB',
   },
   lowConfTitle: {
@@ -884,7 +884,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // Field lists
-  fieldSection: { padding: '16px 20px', borderBottom: '1px solid #E8EFF5' },
+  fieldSection: { padding: '16px 20px', borderBottom: '1px solid var(--ums-border-light)' },
   fieldSectionTitle: {
     margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#DC2626',
     textTransform: 'uppercase' as const, letterSpacing: '0.3px',
@@ -906,8 +906,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   fieldItemFilled: {
     display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '8px 12px', background: '#F7FAFD', borderRadius: '8px',
-    border: '1px solid #E8EFF5',
+    padding: '8px 12px', background: 'var(--ums-bg-surface-alt)', borderRadius: '8px',
+    border: '1px solid var(--ums-border-light)',
   },
   fieldNumber: {
     fontSize: '11px', fontWeight: 700, color: '#DC2626',
@@ -919,12 +919,12 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#DC2626', padding: '2px 6px', borderRadius: '4px', minWidth: '28px',
     textAlign: 'center' as const,
   },
-  fieldKey: { fontSize: '13px', fontWeight: 600, color: '#0D2137', flex: 1, display: 'flex', alignItems: 'center', gap: '6px' },
+  fieldKey: { fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: '6px' },
   fieldValue: {
-    fontSize: '12px', color: '#6B8299', maxWidth: '200px',
+    fontSize: '12px', color: 'var(--ums-text-muted)', maxWidth: '200px',
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
-  fieldPage: { fontSize: '11px', color: '#5F7A8F' },
+  fieldPage: { fontSize: '11px', color: 'var(--ums-text-muted)' },
   checkboxTag: {
     fontSize: '10px', background: '#E5E7EB', color: '#6B7280', padding: '1px 5px',
     borderRadius: '3px', fontWeight: 500,
@@ -934,13 +934,13 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%', padding: '0 0 10px', border: 'none', background: 'none',
     cursor: 'pointer',
   },
-  expandArrow: { fontSize: '11px', color: '#5F7A8F' },
+  expandArrow: { fontSize: '11px', color: 'var(--ums-text-muted)' },
 
   // New review
   newReviewRow: { padding: '16px 20px', textAlign: 'center' as const },
   newReviewButton: {
-    padding: '10px 24px', border: '1px solid #D6E4F0', borderRadius: '10px',
-    background: 'white', color: '#374151', fontSize: '13px', fontWeight: 600,
+    padding: '10px 24px', border: '1px solid var(--ums-border)', borderRadius: '10px',
+    background: 'var(--ums-bg-surface)', color: '#374151', fontSize: '13px', fontWeight: 600,
     cursor: 'pointer',
   },
 
@@ -953,8 +953,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   batchTh: {
     padding: '10px 12px', textAlign: 'left' as const, fontSize: '11px',
-    fontWeight: 700, color: '#6B8299', textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px', borderBottom: '2px solid #E8EFF5', background: '#F7FAFD',
+    fontWeight: 700, color: 'var(--ums-text-muted)', textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px', borderBottom: '2px solid var(--ums-border-light)', background: 'var(--ums-bg-surface-alt)',
   },
   batchTr: {
     cursor: 'pointer', transition: 'background 0.15s',
@@ -963,20 +963,20 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer', background: '#FFF8F0',
   },
   batchTd: {
-    padding: '10px 12px', borderBottom: '1px solid #E8EFF5',
+    padding: '10px 12px', borderBottom: '1px solid var(--ums-border-light)',
   },
   batchTdCenter: {
-    padding: '10px 12px', borderBottom: '1px solid #E8EFF5', textAlign: 'center' as const,
+    padding: '10px 12px', borderBottom: '1px solid var(--ums-border-light)', textAlign: 'center' as const,
   },
   batchFilename: {
-    fontWeight: 600, color: '#0D2137', fontSize: '12px',
+    fontWeight: 600, color: 'var(--ums-text-primary)', fontSize: '12px',
   },
   cachedDot: {
     display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
     background: '#7C3AED', marginLeft: '6px', verticalAlign: 'middle',
   },
   batchFormType: {
-    fontSize: '11px', color: '#6B8299',
+    fontSize: '11px', color: 'var(--ums-text-muted)',
   },
   batchMissingBad: {
     color: '#DC2626', fontWeight: 700,
@@ -989,7 +989,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '2px 6px', borderRadius: '4px', fontSize: '12px',
   },
   batchBarBg: {
-    height: '6px', borderRadius: '3px', background: '#E8EFF5', overflow: 'hidden',
+    height: '6px', borderRadius: '3px', background: 'var(--ums-border-light)', overflow: 'hidden',
     display: 'inline-block', width: '60px', verticalAlign: 'middle',
   },
   batchBarFill: {
@@ -1013,10 +1013,10 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Batch detail
   batchDetail: {
-    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid #E8EFF5',
+    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid var(--ums-border-light)',
   },
   batchDetailTitle: {
-    margin: '0 0 10px', fontSize: '14px', fontWeight: 700, color: '#0D2137',
+    margin: '0 0 10px', fontSize: '14px', fontWeight: 700, color: 'var(--ums-text-primary)',
   },
   batchDetailComplete: {
     margin: 0, fontSize: '13px', color: '#059669', fontWeight: 600,

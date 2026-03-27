@@ -329,7 +329,7 @@ export function generateSeatingEvaluation(
     pmdBase: isScooter ? 'Scooter (POV)' : 'Power Wheelchair',
     features,
     cushions,
-    comments: topRec ? `Recommended: ${topRec.hcpcsCode} — ${topRec.description}` : '',
+    comments: topRec?.hcpcsCode ? `Recommended: ${topRec.hcpcsCode} — ${topRec.description || 'N/A'}` : '',
   };
 }
 

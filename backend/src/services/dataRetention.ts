@@ -58,16 +58,21 @@ export interface RetentionSummary {
   feedbackDeleted: number;
 }
 
-// Date pattern: YYYY-MM-DD
-const DATE_REGEX = /(\d{4}-\d{2}-\d{2})/;
+// Date pattern: YYYY-MM-DD with valid month (01-12) and day (01-31) ranges.
+// The old regex /(\d{4}-\d{2}-\d{2})/ matched invalid dates like "2024-13-45".
+const DATE_REGEX = /(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))/;
 
 /**
  * Extract the first YYYY-MM-DD date found in an S3 key.
- * Returns null if no date is found.
+ * Returns null if no date is found or the date is not valid.
  */
 function extractDateFromKey(key: string): string | null {
   const match = key.match(DATE_REGEX);
-  return match ? match[1] : null;
+  if (!match) return null;
+  // Double-check that JavaScript can parse this as a valid date
+  const d = new Date(match[1] + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return null;
+  return match[1];
 }
 
 /**

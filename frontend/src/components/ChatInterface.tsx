@@ -45,7 +45,12 @@ export function ChatInterface({ collections }: Props) {
   const [streamingSources, setStreamingSources] = useState<SourceCitation[]>([]);
   const [streamingConfidence, setStreamingConfidence] = useState<'high' | 'partial' | 'low' | null>(null);
   const [, setStreamingTraceId] = useState<string | null>(null);
-  const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
+  const [selectedCollections, setSelectedCollections] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('ums-selected-collections');
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  });
   const [expandedSource, setExpandedSource] = useState<SourceCitation | null>(null);
   const [feedbackTarget, setFeedbackTarget] = useState<{ question: string; answer: string; sources: SourceCitation[]; traceId?: string } | null>(null);
   const [thumbsVoted, setThumbsVoted] = useState<Record<string, 'up' | 'down'>>({});
@@ -57,6 +62,22 @@ export function ChatInterface({ collections }: Props) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversation, streamingText]);
+
+  // Persist collection selection to localStorage so it survives page refreshes
+  useEffect(() => {
+    try { localStorage.setItem('ums-selected-collections', JSON.stringify(selectedCollections)); } catch {}
+  }, [selectedCollections]);
+
+  // Filter out deleted collections from selection when collection list updates
+  useEffect(() => {
+    if (collections.length > 0) {
+      setSelectedCollections(prev => {
+        const validIds = new Set(collections.map(c => c.id));
+        const filtered = prev.filter(id => validIds.has(id));
+        return filtered.length !== prev.length ? filtered : prev;
+      });
+    }
+  }, [collections]);
 
   // Auto-focus input on mount
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { authenticate, requireAdmin, AuthRequest, getUsers, saveUsers } from '../middleware/auth';
+import { authenticate, requireAdmin, AuthRequest, getUsers, saveUsers, revokeAllUserTokens } from '../middleware/auth';
 import { logAuditEvent } from '../services/audit';
 import { logger } from '../utils/logger';
 
@@ -164,6 +164,10 @@ router.post('/:id/reset-password', async (req: AuthRequest, res: Response) => {
     user.lockedUntil = undefined;
 
     await saveUsers(users);
+
+    // Revoke all existing sessions for this user — their old tokens should
+    // no longer be valid after an admin password reset.
+    revokeAllUserTokens(id);
 
     await logAuditEvent(req.user!.id, req.user!.username, 'user_reset_password', {
       targetUserId: id,

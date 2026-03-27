@@ -218,12 +218,21 @@ export async function queryKnowledgeBaseStream(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  // Safety cap: if the SSE buffer grows beyond 2MB without being consumed,
+  // something is wrong (malformed response, missing newlines, etc.)
+  const MAX_BUFFER_SIZE = 2 * 1024 * 1024;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
+
+    if (buffer.length > MAX_BUFFER_SIZE) {
+      onError('Response stream too large — connection terminated for safety');
+      reader.cancel();
+      return;
+    }
 
     // Parse SSE events from buffer
     const lines = buffer.split('\n');

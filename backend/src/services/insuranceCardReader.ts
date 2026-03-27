@@ -9,6 +9,8 @@
 import { InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
 import { extractTextWithOcr } from './ocr';
+import { logAuditEvent } from './audit';
+import { redactPhi } from '../utils/phiRedactor';
 import { logger } from '../utils/logger';
 
 export interface InsuranceCardFields {
@@ -52,7 +54,7 @@ Rules:
 - If the card shows both front and back, extract from both sides.
 - Do not guess or fabricate any information.`;
 
-export async function readInsuranceCard(imageBuffer: Buffer, filename: string): Promise<InsuranceCardFields> {
+export async function readInsuranceCard(imageBuffer: Buffer, filename: string, userId?: string): Promise<InsuranceCardFields> {
   // Step 1: OCR the image
   logger.info('Insurance card OCR starting', { filename, sizeBytes: imageBuffer.length });
 
@@ -69,7 +71,17 @@ export async function readInsuranceCard(imageBuffer: Buffer, filename: string): 
     throw new Error('Could not extract sufficient text from the image. Please ensure the insurance card is clearly visible.');
   }
 
+  // Log only the redacted text length — raw OCR text contains PII (member IDs, names, DOBs)
   logger.info('Insurance card OCR complete', { textLength: rawText.length });
+
+  // Audit trail: log that a user accessed insurance card data (HIPAA requirement)
+  if (userId) {
+    logAuditEvent(userId, userId, 'ocr', {
+      action: 'insurance_card_read',
+      filename: filename,
+      textLength: rawText.length,
+    }).catch(err => logger.warn('Failed to log insurance card audit event', { error: String(err) }));
+  }
 
   // Step 2: Use Claude to extract structured fields
   try {
@@ -98,6 +110,12 @@ export async function readInsuranceCard(imageBuffer: Buffer, filename: string): 
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
+
+    // Redact PHI from the raw OCR text before including in response.
+    // The structured fields are intentionally NOT redacted since they are
+    // the purpose of this function, but rawText could contain extra PII.
+    const redactedRawText = redactPhi(rawText).text;
+
     return {
       insuranceName: parsed.insuranceName || null,
       memberId: parsed.memberId || null,
@@ -112,11 +130,11 @@ export async function readInsuranceCard(imageBuffer: Buffer, filename: string): 
       payerId: parsed.payerId || null,
       phoneNumber: parsed.phoneNumber || null,
       address: parsed.address || null,
-      rawText,
+      rawText: redactedRawText,
     };
   } catch (err) {
     logger.error('Insurance card field extraction failed', { error: String(err) });
-    return { ...emptyFields(), rawText };
+    return { ...emptyFields(), rawText: redactPhi(rawText).text };
   }
 }
 

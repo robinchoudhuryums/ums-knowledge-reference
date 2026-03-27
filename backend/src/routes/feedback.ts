@@ -37,7 +37,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         notes: notes || undefined,
         userId: req.user!.id,
         username: req.user!.username,
-      }).catch(() => {});
+      }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     }
 
     await logAuditEvent(req.user!.id, req.user!.username, 'feedback', {

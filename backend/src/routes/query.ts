@@ -3,7 +3,7 @@ import { authenticate, AuthRequest, getUserAllowedCollections } from '../middlew
 import { generateEmbedding } from '../services/embeddings';
 import { searchVectorStore } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
-import { checkAndRecordQuery } from '../services/usage';
+import { checkAndRecordQuery, rollbackQuery } from '../services/usage';
 import { logQuery } from '../services/queryLog';
 import { generateTraceId, logRagTrace } from '../services/ragTrace';
 import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';
@@ -98,9 +98,13 @@ function buildSystemBlocks(): Array<{ type: 'text'; text: string; cache_control?
   ];
 }
 
-// Minimum average similarity score to consider results relevant
-const LOW_CONFIDENCE_THRESHOLD = 0.3;
-const PARTIAL_CONFIDENCE_THRESHOLD = 0.5;
+// Score-based confidence thresholds for fallback when model doesn't output a confidence tag.
+// Tuned for hybrid search (0.7 semantic + 0.3 keyword) where typical score ranges are:
+// - Strong match: 0.55+ (query terms appear in text AND embedding is very similar)
+// - Moderate match: 0.40-0.55 (good semantic match but partial keyword overlap)
+// - Weak match: <0.40 (tangentially related content)
+const LOW_CONFIDENCE_THRESHOLD = 0.35;
+const PARTIAL_CONFIDENCE_THRESHOLD = 0.45;
 
 /**
  * Summarize older conversation turns into a compact context string.
@@ -145,9 +149,11 @@ function buildMessages(
   }
 
   // Current question with retrieved context
+  // Use XML-style tags to clearly delineate context from user query,
+  // making it harder for injected content in documents to be treated as instructions
   messages.push({
     role: 'user',
-    content: `Here are the relevant document excerpts to reference:\n\n${context}\n\n---\n\nQuestion: ${question}`,
+    content: `<document_context>\n${context}\n</document_context>\n\n<user_question>\n${question}\n</user_question>`,
   });
 
   return messages;
@@ -190,10 +196,13 @@ function buildSourceCitations(searchResults: SearchResult[]): SourceCitation[] {
 /**
  * Parse the confidence tag from the LLM response and strip it from the visible answer.
  * Falls back to score-based confidence if no tag is found.
+ * When using score-based fallback, considers both the average score and the top score
+ * to better reflect retrieval quality (a single strong match is still useful).
  */
 function parseConfidence(
   rawAnswer: string,
-  avgScore: number
+  avgScore: number,
+  topScore?: number
 ): { answer: string; confidence: 'high' | 'partial' | 'low' } {
   const tagMatch = rawAnswer.match(/\[CONFIDENCE:\s*(HIGH|PARTIAL|LOW)\]\s*$/i);
 
@@ -203,10 +212,16 @@ function parseConfidence(
     return { answer, confidence };
   }
 
-  // Fallback: use retrieval scores
+  // Fallback: use retrieval scores with blended signal.
+  // Blend average and top score — a single strong match should lift confidence,
+  // but uniformly weak results should pull it down.
+  const effectiveScore = topScore !== undefined
+    ? avgScore * 0.6 + topScore * 0.4
+    : avgScore;
+
   let confidence: 'high' | 'partial' | 'low';
-  if (avgScore >= PARTIAL_CONFIDENCE_THRESHOLD) confidence = 'high';
-  else if (avgScore >= LOW_CONFIDENCE_THRESHOLD) confidence = 'partial';
+  if (effectiveScore >= PARTIAL_CONFIDENCE_THRESHOLD) confidence = 'high';
+  else if (effectiveScore >= LOW_CONFIDENCE_THRESHOLD) confidence = 'partial';
   else confidence = 'low';
 
   return { answer: rawAnswer, confidence };
@@ -220,6 +235,43 @@ function sanitizeInput(text: string, maxLength: number = 2000): string {
   return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim().slice(0, maxLength);
 }
 
+/**
+ * Detect potential prompt injection attempts in user queries.
+ * Returns true if the query contains suspicious patterns that attempt to
+ * override system instructions or manipulate the LLM's behavior.
+ */
+function detectPromptInjection(text: string): { detected: boolean; reason?: string } {
+  // Patterns that attempt to override or ignore system instructions
+  const injectionPatterns: Array<{ pattern: RegExp; reason: string }> = [
+    { pattern: /ignore\s+(all\s+)?(previous|prior|above|earlier|system)\s+(instructions?|prompts?|rules?|guidelines?)/i, reason: 'Attempts to override system instructions' },
+    { pattern: /disregard\s+(all\s+)?(previous|prior|above|earlier|system)\s+(instructions?|prompts?|rules?|guidelines?)/i, reason: 'Attempts to override system instructions' },
+    { pattern: /forget\s+(all\s+)?(previous|prior|above|earlier|system)\s+(instructions?|prompts?|rules?|guidelines?)/i, reason: 'Attempts to override system instructions' },
+    { pattern: /you\s+are\s+now\s+(a|an|the|my)\s+/i, reason: 'Role reassignment attempt' },
+    { pattern: /new\s+instructions?:\s*/i, reason: 'Instruction injection attempt' },
+    { pattern: /system\s*prompt\s*[:=]/i, reason: 'System prompt manipulation attempt' },
+    { pattern: /\bdo\s+not\s+follow\s+(the\s+)?(system|above|previous)\b/i, reason: 'Instruction override attempt' },
+    { pattern: /pretend\s+(you('re|\s+are)\s+)?(not\s+)?(a|an|the)\s+/i, reason: 'Role manipulation attempt' },
+    { pattern: /act\s+as\s+(if\s+)?(you('re|\s+are)\s+)?(a|an|the|my)\s+/i, reason: 'Role manipulation attempt' },
+    { pattern: /\[system\]|\[inst\]|\[\/inst\]|<\|system\|>|<\|user\|>|<\|assistant\|>/i, reason: 'Chat template injection' },
+    { pattern: /```\s*(system|instruction|prompt)/i, reason: 'Code block instruction injection' },
+    { pattern: /override\s+(the\s+)?(system|safety|content)\s+(prompt|filter|policy)/i, reason: 'Safety override attempt' },
+  ];
+
+  for (const { pattern, reason } of injectionPatterns) {
+    if (pattern.test(text)) {
+      return { detected: true, reason };
+    }
+  }
+
+  // Check for excessive special delimiters that may try to break context framing
+  const delimiterCount = (text.match(/---+|===+|####+|\*\*\*+/g) || []).length;
+  if (delimiterCount > 5) {
+    return { detected: true, reason: 'Excessive delimiters may indicate context manipulation' };
+  }
+
+  return { detected: false };
+}
+
 // Standard (non-streaming) query endpoint
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -228,6 +280,14 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     if (!question) {
       res.status(400).json({ error: 'Question is required' });
+      return;
+    }
+
+    // Detect prompt injection attempts before processing
+    const injectionCheck = detectPromptInjection(question);
+    if (injectionCheck.detected) {
+      logger.warn('Prompt injection detected', { userId: req.user!.id, reason: injectionCheck.reason });
+      res.status(400).json({ error: 'Your query contains patterns that cannot be processed. Please rephrase your question.' });
       return;
     }
 
@@ -277,17 +337,17 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         confidence: 'low',
         traceId,
       };
-      // Log trace for zero-result queries too
+      // Log trace for zero-result queries too (redact PHI from logged text)
       logRagTrace({
         traceId, timestamp: new Date().toISOString(),
         userId: req.user!.id, username: req.user!.username,
-        queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+        queryText: redactPhi(question).text, reformulatedQuery: searchQuery !== question ? redactPhi(searchQuery).text : undefined,
         retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
         chunksPassedToModel: 0, modelId: BEDROCK_GENERATION_MODEL,
         responseText: response.answer, confidence: 'low',
         responseTimeMs, embeddingTimeMs, retrievalTimeMs,
         collectionIds, streamed: false,
-      }).catch(() => {});
+      }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
       res.json(response);
       return;
     }
@@ -328,7 +388,8 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const outputTokens = responseBody.usage?.output_tokens;
 
     const avgScore = searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length;
-    const { answer, confidence } = parseConfidence(rawAnswer, avgScore);
+    const topScore = searchResults.length > 0 ? Math.max(...searchResults.map(r => r.score)) : 0;
+    const { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore);
 
     const sources = buildSourceCitations(searchResults);
     const responseTimeMs = Date.now() - pipelineStart;
@@ -349,10 +410,12 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     await logQuery(req.user!.id, req.user!.username, question, answer, confidence, sources, collectionIds);
 
     // Log RAG trace asynchronously (fire-and-forget)
+    // Redact reformulated query — it may contain PHI expanded from conversation context
+    const redactedReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
     logRagTrace({
       traceId, timestamp: new Date().toISOString(),
       userId: req.user!.id, username: req.user!.username,
-      queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+      queryText: redactPhi(question).text, reformulatedQuery: redactedReformulated,
       retrievedChunkIds: searchResults.map(r => r.chunk.id),
       retrievalScores: searchResults.map(r => r.score),
       avgRetrievalScore: avgScore,
@@ -362,12 +425,14 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
       collectionIds, streamed: false,
       inputTokens, outputTokens,
-    }).catch(() => {});
+    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
 
     const response: QueryResponse = { answer, sources, confidence, traceId };
     res.json(response);
   } catch (error) {
     logger.error('Query failed', { error: String(error) });
+    // Roll back usage so users don't lose quota on failed queries
+    rollbackQuery(req.user!.id).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     res.status(500).json({ error: 'Query processing failed' });
   }
 });
@@ -380,6 +445,14 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
 
     if (!question) {
       res.status(400).json({ error: 'Question is required' });
+      return;
+    }
+
+    // Detect prompt injection attempts before processing
+    const injectionCheck = detectPromptInjection(question);
+    if (injectionCheck.detected) {
+      logger.warn('Prompt injection detected in stream', { userId: req.user!.id, reason: injectionCheck.reason });
+      res.status(400).json({ error: 'Your query contains patterns that cannot be processed. Please rephrase your question.' });
       return;
     }
 
@@ -428,6 +501,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     const avgScore = searchResults.length > 0
       ? searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length
       : 0;
+    const topScore = searchResults.length > 0 ? Math.max(...searchResults.map(r => r.score)) : 0;
 
     // Send sources and initial confidence hint
     const sources = buildSourceCitations(searchResults);
@@ -444,13 +518,13 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       logRagTrace({
         traceId, timestamp: new Date().toISOString(),
         userId: req.user!.id, username: req.user!.username,
-        queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+        queryText: redactPhi(question).text, reformulatedQuery: searchQuery !== question ? redactPhi(searchQuery).text : undefined,
         retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
         chunksPassedToModel: 0, modelId: BEDROCK_GENERATION_MODEL,
         responseText: noResultAnswer, confidence: 'low',
         responseTimeMs: Date.now() - pipelineStart, embeddingTimeMs, retrievalTimeMs,
         collectionIds, streamed: true,
-      }).catch(() => {});
+      }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
       return;
     }
 
@@ -497,7 +571,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
     const generationTimeMs = Date.now() - generationStart;
 
     // Parse confidence from the completed answer
-    const { confidence } = parseConfidence(fullAnswer, avgScore);
+    const { confidence } = parseConfidence(fullAnswer, avgScore, topScore);
     res.write(`data: ${JSON.stringify({ type: 'confidence', confidence })}\n\n`);
     // Send traceId so frontend can link feedback to this trace
     res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
@@ -516,15 +590,17 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       confidence,
       streamed: true,
       traceId,
-    }).catch(() => {});
+    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     // Log query for analytics / CSV export
-    const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore);
-    logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(() => {});
+    const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore, topScore);
+    logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     // Log RAG trace (fire and forget)
+    // Redact query and reformulated query — may contain PHI from conversation context
+    const redactedStreamReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
     logRagTrace({
       traceId, timestamp: new Date().toISOString(),
       userId: req.user!.id, username: req.user!.username,
-      queryText: question, reformulatedQuery: searchQuery !== question ? searchQuery : undefined,
+      queryText: redactPhi(question).text, reformulatedQuery: redactedStreamReformulated,
       retrievedChunkIds: searchResults.map(r => r.chunk.id),
       retrievalScores: searchResults.map(r => r.score),
       avgRetrievalScore: avgScore,
@@ -534,9 +610,11 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
       collectionIds, streamed: true,
       inputTokens: streamInputTokens, outputTokens: streamOutputTokens,
-    }).catch(() => {});
+    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
   } catch (error) {
     logger.error('Streaming query failed', { error: String(error) });
+    // Roll back usage so users don't lose quota on failed queries
+    rollbackQuery(req.user!.id).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     if (res.headersSent) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: 'Query processing failed' })}\n\n`);
       res.end();

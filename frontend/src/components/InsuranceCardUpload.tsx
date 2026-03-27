@@ -4,7 +4,7 @@
  * Sends to backend OCR endpoint and returns extracted fields.
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 interface ExtractedFields {
   insuranceName: string | null;
@@ -87,11 +87,12 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
     }
   }, []);
 
-  // Global paste listener
-  useState(() => {
+  // Global paste listener — must use useEffect (not useState) so the cleanup
+  // runs on unmount and the listener is properly re-attached if handlePaste changes.
+  useEffect(() => {
     document.addEventListener('paste', handlePaste as EventListener);
     return () => document.removeEventListener('paste', handlePaste as EventListener);
-  });
+  }, [handlePaste]);
 
   const handleOcr = async () => {
     if (images.length === 0) return;

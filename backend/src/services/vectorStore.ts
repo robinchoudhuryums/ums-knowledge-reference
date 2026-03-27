@@ -39,13 +39,39 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 /**
  * Tokenize text into terms for BM25 scoring.
+ * Preserves hyphenated terms (e.g. "IV-catheter", "bi-level", "CPAP-related")
+ * as both the compound term and individual parts to improve medical term recall.
  */
 function tokenize(text: string): string[] {
-  return text
+  const normalized = text
     .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
-    .split(/\s+/)
-    .filter(t => t.length > 2);
+    // Remove punctuation except hyphens between word characters
+    .replace(/[^\w\s-]/g, ' ')
+    // Collapse whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const rawTokens = normalized.split(/\s+/).filter(t => t.length > 2);
+
+  // For hyphenated terms, emit both the compound and the parts
+  // e.g. "iv-catheter" => ["iv-catheter", "catheter"] (skip parts <= 2 chars)
+  const tokens: string[] = [];
+  for (const token of rawTokens) {
+    // Strip leading/trailing hyphens
+    const clean = token.replace(/^-+|-+$/g, '');
+    if (clean.length <= 2) continue;
+
+    tokens.push(clean);
+    if (clean.includes('-')) {
+      for (const part of clean.split('-')) {
+        if (part.length > 2) {
+          tokens.push(part);
+        }
+      }
+    }
+  }
+
+  return tokens;
 }
 
 /**
@@ -288,15 +314,34 @@ export async function searchVectorStore(
 
   if (candidates.length === 0) return [];
 
+  // Validate embedding dimensions match stored chunks
+  if (candidates.length > 0 && candidates[0].embedding.length !== queryEmbedding.length) {
+    const stored = candidates[0].embedding.length;
+    const query = queryEmbedding.length;
+    logger.error('Embedding dimension mismatch', { storedDimensions: stored, queryDimensions: query });
+    throw new Error(
+      `Embedding dimension mismatch: query has ${query} dimensions but stored chunks have ${stored}. ` +
+      `This may indicate an embedding model change. Re-index documents to fix.`
+    );
+  }
+
   // Build IDF map from full corpus
   const idf = getIdfMap(cachedIndex!.chunks);
 
   // Score all candidates with IDF-enhanced BM25
-  const scored = candidates.map(chunk => {
+  // First pass: compute raw scores
+  const rawScored = candidates.map(chunk => {
     const semanticScore = cosineSimilarity(queryEmbedding, chunk.embedding);
     const keywordScore = bm25Score(queryText, chunk.text, idf);
-    // Normalize BM25 to 0-1 range
-    const normalizedKeyword = Math.min(keywordScore / 10, 1);
+    return { chunk, semanticScore, keywordScore };
+  });
+
+  // Dynamic BM25 normalization: divide by the max BM25 score in this result set
+  // This adapts to the actual score distribution rather than using a hardcoded divisor
+  const maxBm25 = rawScored.reduce((max, r) => Math.max(max, r.keywordScore), 0);
+
+  const scored = rawScored.map(({ chunk, semanticScore, keywordScore }) => {
+    const normalizedKeyword = maxBm25 > 0 ? keywordScore / maxBm25 : 0;
     const combinedScore = semanticWeight * semanticScore + keywordWeight * normalizedKeyword;
 
     return {

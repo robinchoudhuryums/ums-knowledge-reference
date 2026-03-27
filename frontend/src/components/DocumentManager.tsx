@@ -197,10 +197,16 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === documents.length) {
+    // Check if all items on the current page are selected
+    const allPageSelected = pagedDocuments.length > 0 &&
+      pagedDocuments.every(d => selectedIds.has(d.id));
+
+    if (allPageSelected) {
+      // Deselect all (entire list, not just page)
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(documents.map(d => d.id)));
+      // Select all documents across ALL pages (not just current page)
+      setSelectedIds(new Set(sortedDocuments.map(d => d.id)));
     }
   };
 
@@ -405,8 +411,9 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                   <th style={{ ...styles.th, width: '40px', textAlign: 'center' }}>
                     <input
                       type="checkbox"
-                      checked={documents.length > 0 && selectedIds.size === documents.length}
+                      checked={pagedDocuments.length > 0 && pagedDocuments.every(d => selectedIds.has(d.id))}
                       onChange={toggleSelectAll}
+                      title={selectedIds.size > 0 ? `${selectedIds.size} of ${sortedDocuments.length} selected` : `Select all ${sortedDocuments.length} documents`}
                       aria-label="Select all documents"
                     />
                   </th>

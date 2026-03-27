@@ -1,5 +1,6 @@
 import { UsageRecord, UsageLimits } from '../types';
 import { loadMetadata, saveMetadata } from './s3Storage';
+import { logger } from '../utils/logger';
 
 const USAGE_PREFIX = 'usage/';
 const LIMITS_KEY = 'usage-limits.json';
@@ -140,6 +141,21 @@ export async function recordQuery(userId: string): Promise<void> {
 
   // Persist periodically (not every single query — S3 writes are not free)
   await persistRecord();
+}
+
+/**
+ * Roll back a recorded query for a user (e.g. when query processing fails after recording).
+ * This prevents users from losing quota on failed queries.
+ */
+export async function rollbackQuery(userId: string): Promise<void> {
+  const record = await ensureTodayRecord();
+  const userRecord = record.users[userId];
+  if (userRecord && userRecord.queryCount > 0) {
+    userRecord.queryCount--;
+    record.totalQueries = Math.max(0, record.totalQueries - 1);
+    await persistRecord();
+    logger.info('Usage rolled back for failed query', { userId });
+  }
 }
 
 /**

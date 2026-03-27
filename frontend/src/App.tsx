@@ -146,7 +146,7 @@ export default function App() {
         </div>
       )}
 
-      <main style={styles.main}>
+      <main style={{ ...styles.main, ...(showWarning && remainingSeconds <= 30 ? styles.warningOverlay : {}) }}>
         <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
           {activeTab === 'chat' && <ChatInterface collections={collections} />}
           {activeTab === 'search' && <DocumentSearch collections={collections} />}
@@ -325,5 +325,11 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center' as const,
     zIndex: 20,
     flexShrink: 0,
+  },
+  // Applied to main content when session is about to expire (last 30 seconds).
+  // Reduces opacity and blocks clicks to prevent actions that would fail mid-submit.
+  warningOverlay: {
+    opacity: 0.5,
+    pointerEvents: 'none' as const,
   },
 };

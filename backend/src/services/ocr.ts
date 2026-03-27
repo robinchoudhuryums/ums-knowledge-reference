@@ -99,38 +99,16 @@ async function extractTextWithAsyncOcr(buffer: Buffer, filename: string): Promis
 
     logger.info('Async OCR job started', { jobId, filename });
 
-    // Poll for completion
-    let allBlocks: Array<{ BlockType?: string; Text?: string; Confidence?: number; Page?: number }> = [];
-    let nextToken: string | undefined;
+    // Phase 1: Poll until job completes (IN_PROGRESS → SUCCEEDED or FAILED)
     let jobStatus = 'IN_PROGRESS';
-
     for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
       await sleep(POLL_INTERVAL_MS);
 
-      const getCommand = new GetDocumentTextDetectionCommand({
-        JobId: jobId,
-        NextToken: nextToken,
-      });
-
+      const getCommand = new GetDocumentTextDetectionCommand({ JobId: jobId });
       const getResponse = await textractClient.send(getCommand);
       jobStatus = getResponse.JobStatus || 'FAILED';
 
-      if (jobStatus === 'SUCCEEDED') {
-        // Collect blocks from this page of results
-        if (getResponse.Blocks) {
-          allBlocks = allBlocks.concat(getResponse.Blocks);
-        }
-
-        // If there are more pages of results, fetch them
-        if (getResponse.NextToken) {
-          nextToken = getResponse.NextToken;
-          // Don't wait — immediately fetch next page
-          attempt--;
-          continue;
-        }
-
-        break;
-      }
+      if (jobStatus === 'SUCCEEDED') break;
 
       if (jobStatus === 'FAILED') {
         const statusMessage = getResponse.StatusMessage || 'Unknown error';
@@ -142,6 +120,28 @@ async function extractTextWithAsyncOcr(buffer: Buffer, filename: string): Promis
 
     if (jobStatus !== 'SUCCEEDED') {
       throw new Error('Textract job timed out after polling');
+    }
+
+    // Phase 2: Paginate through all result pages (separate from polling to prevent infinite loop).
+    // Cap pagination to a safe maximum to prevent runaway loops from malformed NextToken responses.
+    const MAX_RESULT_PAGES = 200;
+    let allBlocks: Array<{ BlockType?: string; Text?: string; Confidence?: number; Page?: number }> = [];
+    let nextToken: string | undefined;
+
+    for (let page = 0; page < MAX_RESULT_PAGES; page++) {
+      const getCommand = new GetDocumentTextDetectionCommand({
+        JobId: jobId,
+        NextToken: nextToken,
+      });
+
+      const getResponse = await textractClient.send(getCommand);
+
+      if (getResponse.Blocks) {
+        allBlocks = allBlocks.concat(getResponse.Blocks);
+      }
+
+      if (!getResponse.NextToken) break;
+      nextToken = getResponse.NextToken;
     }
 
     return parseTextractBlocks(allBlocks, filename);

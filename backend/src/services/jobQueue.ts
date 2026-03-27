@@ -1,12 +1,17 @@
 /**
- * Job Queue Service — simple in-memory job queue for async document processing.
+ * Job Queue Service — async document processing with S3 persistence.
  *
- * Jobs are stored in memory (Map) and cleaned up automatically.
- * Completed/failed jobs older than 1 hour are removed every 10 minutes.
+ * Jobs are stored in memory (Map) for fast access and periodically persisted
+ * to S3 so they survive server restarts. On startup, any persisted jobs are
+ * reloaded. Completed/failed jobs older than 1 hour are cleaned up every 10 min.
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { loadMetadata, saveMetadata } from './s3Storage';
 import { logger } from '../utils/logger';
+
+const JOBS_S3_KEY = 'job-queue.json';
+const PERSIST_INTERVAL_MS = 30_000; // persist every 30s at most
 
 export interface Job {
   id: string;
@@ -24,6 +29,68 @@ export interface Job {
 const jobs = new Map<string, Job>();
 
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let lastPersist = 0;
+let dirty = false;
+
+/**
+ * Schedule an S3 persist if not already pending. Debounces writes to at most
+ * one every PERSIST_INTERVAL_MS to avoid excessive S3 API calls.
+ */
+function schedulePersist(): void {
+  dirty = true;
+  if (persistTimer) return;
+  const elapsed = Date.now() - lastPersist;
+  const delay = Math.max(0, PERSIST_INTERVAL_MS - elapsed);
+  persistTimer = setTimeout(async () => {
+    persistTimer = null;
+    if (!dirty) return;
+    dirty = false;
+    await persistJobs();
+  }, delay);
+}
+
+/**
+ * Persist current job state to S3.
+ */
+async function persistJobs(): Promise<void> {
+  try {
+    // Only persist non-expired jobs (skip already-cleaned-up ones)
+    const jobArray = Array.from(jobs.values());
+    await saveMetadata(JOBS_S3_KEY, jobArray);
+    lastPersist = Date.now();
+  } catch (err) {
+    logger.warn('Failed to persist job queue to S3', { error: String(err) });
+  }
+}
+
+/**
+ * Load persisted jobs from S3 on startup. In-progress jobs are marked as
+ * failed since the server restarted before they could complete.
+ */
+export async function loadPersistedJobs(): Promise<void> {
+  try {
+    const persisted = await loadMetadata<Job[]>(JOBS_S3_KEY);
+    if (!persisted || persisted.length === 0) return;
+
+    let recovered = 0;
+    let markedFailed = 0;
+    for (const job of persisted) {
+      // In-progress jobs can't resume after restart — mark them failed
+      if (job.status === 'pending' || job.status === 'processing') {
+        job.status = 'failed';
+        job.error = 'Server restarted during processing';
+        job.completedAt = new Date().toISOString();
+        markedFailed++;
+      }
+      jobs.set(job.id, job);
+      recovered++;
+    }
+    logger.info('Job queue restored from S3', { recovered, markedFailed });
+  } catch (err) {
+    logger.warn('Failed to load persisted job queue', { error: String(err) });
+  }
+}
 
 /**
  * Create a new job and return it.
@@ -39,6 +106,7 @@ export function createJob(type: Job['type'], userId: string, input: Record<strin
     progress: 0,
   };
   jobs.set(job.id, job);
+  schedulePersist();
   logger.info('Job created', { jobId: job.id, type, userId });
   return job;
 }
@@ -61,6 +129,7 @@ export function updateJob(id: string, updates: Partial<Job>): void {
   }
   Object.assign(job, updates);
   jobs.set(id, job);
+  schedulePersist();
 }
 
 /**
@@ -94,8 +163,17 @@ export function cleanupOldJobs(): void {
     }
   }
   if (removed > 0) {
+    schedulePersist();
     logger.info('Job cleanup removed old jobs', { removed, remaining: jobs.size });
   }
+}
+
+/**
+ * Flush job queue to S3 immediately (call on graceful shutdown).
+ */
+export async function flushJobs(): Promise<void> {
+  dirty = true;
+  await persistJobs();
 }
 
 /**

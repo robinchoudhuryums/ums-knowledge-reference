@@ -80,17 +80,20 @@ export function DocumentExtractor() {
 
   const handleExportCsv = () => {
     if (!templateDetail) return;
-    const headers = templateDetail.fields.map(f => f.label);
-    const values = templateDetail.fields.map(f => {
-      const val = editedData[f.key];
-      if (val === null || val === undefined) return '';
-      const str = String(val);
-      // Escape CSV: wrap in quotes if contains comma, quote, or newline
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+
+    // CSV-escape a single field value: wrap in quotes if it contains
+    // commas, double quotes, newlines, or carriage returns (RFC 4180).
+    const escapeCsvField = (raw: unknown): string => {
+      if (raw === null || raw === undefined) return '';
+      const str = String(raw);
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
         return `"${str.replace(/"/g, '""')}"`;
       }
       return str;
-    });
+    };
+
+    const headers = templateDetail.fields.map(f => escapeCsvField(f.label));
+    const values = templateDetail.fields.map(f => escapeCsvField(editedData[f.key]));
     const csv = headers.join(',') + '\n' + values.join(',');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);

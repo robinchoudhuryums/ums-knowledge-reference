@@ -45,7 +45,28 @@ export interface EmailOptions {
   bcc?: string;
 }
 
+/**
+ * Validate that a string looks like a valid email address.
+ * Rejects addresses with newlines/control chars to prevent header injection.
+ */
+function isValidEmail(email: string): boolean {
+  if (!email || email.length > 254) return false;
+  // Reject control characters and newlines (header injection prevention)
+  if (/[\x00-\x1F\x7F\r\n]/.test(email)) return false;
+  // Basic RFC-compliant pattern
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+}
+
 export async function sendEmail(options: EmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  // Validate email addresses before passing to nodemailer to prevent header injection
+  if (!isValidEmail(options.to)) {
+    return { success: false, error: `Invalid recipient email address: ${options.to}` };
+  }
+  if (options.bcc && !isValidEmail(options.bcc)) {
+    logger.warn('Invalid BCC email address, skipping BCC', { bcc: options.bcc });
+    options.bcc = undefined;
+  }
+
   const transport = getTransporter();
   if (!transport) {
     return { success: false, error: 'Email not configured. Set SMTP_USER and SMTP_PASS environment variables.' };

@@ -41,9 +41,19 @@ export function clearAuthCookie(res: Response): void {
   });
 }
 
-// Warn at startup if using the default JWT secret
+// Enforce secure JWT_SECRET in production — refuse to start with the default
 if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    logger.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start in production with default secret.');
+    process.exit(1);
+  }
   logger.warn('[SECURITY WARNING] JWT_SECRET not set — using insecure default. Set JWT_SECRET in production!');
+} else if (process.env.JWT_SECRET.length < 32) {
+  if (process.env.NODE_ENV === 'production') {
+    logger.error('FATAL: JWT_SECRET must be at least 32 characters in production.');
+    process.exit(1);
+  }
+  logger.warn('[SECURITY WARNING] JWT_SECRET is shorter than 32 characters — use a stronger secret in production.');
 }
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -118,8 +128,26 @@ export function revokeToken(jti: string): void {
   setTimeout(() => revokedTokens.delete(jti), 35 * 60 * 1000);
 }
 
+// Track user IDs whose ALL tokens should be rejected (e.g. after password reset).
+// Entries auto-expire after JWT max lifetime to avoid unbounded growth.
+const revokedUserIds = new Set<string>();
+
+/**
+ * Revoke all tokens for a user (used after admin password reset).
+ * Any token with this userId will be rejected until the revocation expires.
+ */
+export function revokeAllUserTokens(userId: string): void {
+  revokedUserIds.add(userId);
+  // Auto-clean after 35 minutes (JWT expiry + buffer)
+  setTimeout(() => revokedUserIds.delete(userId), 35 * 60 * 1000);
+}
+
 function isTokenRevoked(jti: string): boolean {
   return revokedTokens.has(jti);
+}
+
+function isUserRevoked(userId: string): boolean {
+  return revokedUserIds.has(userId);
 }
 
 // ---------------------------------------------------------------------------
@@ -170,12 +198,20 @@ export async function initializeAuth(): Promise<void> {
       mustChangePassword: true,
     };
     await saveUsers([adminUser]);
-    // Log the temporary password once — admin must change on first login
-    logger.warn('Default admin user created (username: admin) — INITIAL PASSWORD (change immediately):', { initialPassword });
-    logger.warn('╔══════════════════════════════════════════════════════════════╗');
-    logger.warn(`║  Admin initial password: ${initialPassword.padEnd(34)} ║`);
-    logger.warn('║  This password MUST be changed on first login.             ║');
-    logger.warn('╚══════════════════════════════════════════════════════════════╝');
+    // Write the temporary password to a secure file instead of logging it.
+    // Plaintext passwords in logs violate HIPAA and could be captured by log aggregators.
+    const passwordFilePath = '/tmp/ums-admin-initial-password.txt';
+    try {
+      const { writeFileSync } = require('fs');
+      writeFileSync(passwordFilePath, `Admin initial password: ${initialPassword}\nThis password MUST be changed on first login.\n`, { mode: 0o600 });
+      logger.warn('Default admin user created (username: admin). Initial password written to: ' + passwordFilePath);
+      logger.warn('Read the password from that file, then delete it immediately.');
+    } catch {
+      // If file write fails (e.g. read-only filesystem), fall back to stdout only (not the structured logger)
+      process.stdout.write(`\n[ADMIN SETUP] Initial password for admin: ${initialPassword}\n`);
+      process.stdout.write('[ADMIN SETUP] Change this password immediately on first login.\n\n');
+      logger.warn('Default admin user created (username: admin). Initial password printed to stdout.');
+    }
   }
 }
 
@@ -361,7 +397,7 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
 /**
  * JWT authentication middleware.
  * Accepts token from httpOnly cookie (preferred) or Authorization header (fallback).
- * Checks token validity AND server-side revocation.
+ * Checks token validity, server-side revocation, AND account lockout status.
  */
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
   // Prefer httpOnly cookie (immune to XSS), fall back to Authorization header
@@ -377,14 +413,28 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string; role: 'admin' | 'user'; jti?: string };
 
-    // Check server-side revocation
-    if (decoded.jti && isTokenRevoked(decoded.jti)) {
+    // Check server-side revocation (individual token or all tokens for user)
+    if ((decoded.jti && isTokenRevoked(decoded.jti)) || isUserRevoked(decoded.id)) {
       res.status(401).json({ error: 'Token has been revoked' });
       return;
     }
 
-    req.user = decoded;
-    next();
+    // Check account lockout — a locked user with a valid pre-lockout token
+    // should not be able to make API calls until the lockout expires.
+    // This is async but we handle it via a promise chain to keep the middleware signature.
+    getUsers().then(users => {
+      const user = users.find(u => u.id === decoded.id);
+      if (user && isAccountLocked(user)) {
+        res.status(423).json({ error: 'Account is locked due to too many failed login attempts' });
+        return;
+      }
+      req.user = decoded;
+      next();
+    }).catch(() => {
+      // If user lookup fails, allow the request — don't block on transient S3 errors
+      req.user = decoded;
+      next();
+    });
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
   }

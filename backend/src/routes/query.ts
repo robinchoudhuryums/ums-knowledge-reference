@@ -241,8 +241,6 @@ function sanitizeInput(text: string, maxLength: number = 2000): string {
  * override system instructions or manipulate the LLM's behavior.
  */
 function detectPromptInjection(text: string): { detected: boolean; reason?: string } {
-  const lower = text.toLowerCase();
-
   // Patterns that attempt to override or ignore system instructions
   const injectionPatterns: Array<{ pattern: RegExp; reason: string }> = [
     { pattern: /ignore\s+(all\s+)?(previous|prior|above|earlier|system)\s+(instructions?|prompts?|rules?|guidelines?)/i, reason: 'Attempts to override system instructions' },
@@ -349,7 +347,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         responseText: response.answer, confidence: 'low',
         responseTimeMs, embeddingTimeMs, retrievalTimeMs,
         collectionIds, streamed: false,
-      }).catch(() => {});
+      }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
       res.json(response);
       return;
     }
@@ -427,14 +425,14 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
       collectionIds, streamed: false,
       inputTokens, outputTokens,
-    }).catch(() => {});
+    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
 
     const response: QueryResponse = { answer, sources, confidence, traceId };
     res.json(response);
   } catch (error) {
     logger.error('Query failed', { error: String(error) });
     // Roll back usage so users don't lose quota on failed queries
-    rollbackQuery(req.user!.id).catch(() => {});
+    rollbackQuery(req.user!.id).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     res.status(500).json({ error: 'Query processing failed' });
   }
 });
@@ -526,7 +524,7 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
         responseText: noResultAnswer, confidence: 'low',
         responseTimeMs: Date.now() - pipelineStart, embeddingTimeMs, retrievalTimeMs,
         collectionIds, streamed: true,
-      }).catch(() => {});
+      }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
       return;
     }
 
@@ -592,10 +590,10 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       confidence,
       streamed: true,
       traceId,
-    }).catch(() => {});
+    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     // Log query for analytics / CSV export
     const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore, topScore);
-    logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(() => {});
+    logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     // Log RAG trace (fire and forget)
     // Redact query and reformulated query — may contain PHI from conversation context
     const redactedStreamReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
@@ -612,11 +610,11 @@ router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => 
       responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
       collectionIds, streamed: true,
       inputTokens: streamInputTokens, outputTokens: streamOutputTokens,
-    }).catch(() => {});
+    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
   } catch (error) {
     logger.error('Streaming query failed', { error: String(error) });
     // Roll back usage so users don't lose quota on failed queries
-    rollbackQuery(req.user!.id).catch(() => {});
+    rollbackQuery(req.user!.id).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
     if (res.headersSent) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: 'Query processing failed' })}\n\n`);
       res.end();

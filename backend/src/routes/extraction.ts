@@ -52,10 +52,11 @@ router.get('/templates', authenticate, (_req, res) => {
 /**
  * GET /api/extraction/templates/:id — get full template details (fields, etc.)
  */
-router.get('/templates/:id', authenticate, (req, res) => {
+router.get('/templates/:id', authenticate, (req, res): void => {
   const template = getTemplateById(req.params.id);
   if (!template) {
-    return res.status(404).json({ error: 'Template not found' });
+    res.status(404).json({ error: 'Template not found' });
+    return;
   }
   // Return template info without the system prompt (internal)
   const { systemPrompt: _systemPrompt, ...publicTemplate } = template;
@@ -69,35 +70,40 @@ router.get('/templates/:id', authenticate, (req, res) => {
  *   - file: the document to extract from
  *   - templateId: which template to use
  */
-router.post('/extract', authenticate, extractionLimiter, upload.single('file'), async (req, res) => {
+router.post('/extract', authenticate, extractionLimiter, upload.single('file'), async (req, res): Promise<void> => {
   const authReq = req as AuthRequest;
   const file = req.file;
   const templateId = req.body?.templateId;
 
   if (!file) {
-    return res.status(400).json({ error: 'No file uploaded' });
+    res.status(400).json({ error: 'No file uploaded' });
+    return;
   }
 
   if (!templateId) {
-    return res.status(400).json({ error: 'templateId is required' });
+    res.status(400).json({ error: 'templateId is required' });
+    return;
   }
 
   const template = getTemplateById(templateId);
   if (!template) {
-    return res.status(400).json({ error: `Unknown template: ${templateId}` });
+    res.status(400).json({ error: `Unknown template: ${templateId}` });
+    return;
   }
 
   // Validate mime type
   if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    return res.status(400).json({
+    res.status(400).json({
       error: `Unsupported file type: ${file.mimetype}. Supported: PDF, PNG, JPEG, TIFF, DOCX, TXT`,
     });
+    return;
   }
 
   // Validate file content matches claimed MIME type (magic bytes check)
   const contentError = validateFileContent(file.buffer, file.mimetype, file.originalname);
   if (contentError) {
-    return res.status(400).json({ error: contentError });
+    res.status(400).json({ error: contentError });
+    return;
   }
 
   try {
@@ -148,35 +154,40 @@ router.post('/extract', authenticate, extractionLimiter, upload.single('file'), 
  * Accepts the same multipart upload as /extract. Returns 202 with { jobId }.
  * The extraction runs in the background; poll GET /jobs/:id for status.
  */
-router.post('/extract/async', authenticate, extractionLimiter, upload.single('file'), async (req, res) => {
+router.post('/extract/async', authenticate, extractionLimiter, upload.single('file'), async (req, res): Promise<void> => {
   const authReq = req as AuthRequest;
   const file = req.file;
   const templateId = req.body?.templateId;
 
   if (!file) {
-    return res.status(400).json({ error: 'No file uploaded' });
+    res.status(400).json({ error: 'No file uploaded' });
+    return;
   }
 
   if (!templateId) {
-    return res.status(400).json({ error: 'templateId is required' });
+    res.status(400).json({ error: 'templateId is required' });
+    return;
   }
 
   const template = getTemplateById(templateId);
   if (!template) {
-    return res.status(400).json({ error: `Unknown template: ${templateId}` });
+    res.status(400).json({ error: `Unknown template: ${templateId}` });
+    return;
   }
 
   // Validate mime type
   if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    return res.status(400).json({
+    res.status(400).json({
       error: `Unsupported file type: ${file.mimetype}. Supported: PDF, PNG, JPEG, TIFF, DOCX, TXT`,
     });
+    return;
   }
 
   // Validate file content matches claimed MIME type (magic bytes check)
   const contentError = validateFileContent(file.buffer, file.mimetype, file.originalname);
   if (contentError) {
-    return res.status(400).json({ error: contentError });
+    res.status(400).json({ error: contentError });
+    return;
   }
 
   // Create the job
@@ -266,17 +277,19 @@ router.post('/extract/async', authenticate, extractionLimiter, upload.single('fi
 /**
  * GET /api/extraction/jobs/:id — get job status and result
  */
-router.get('/jobs/:id', authenticate, (req, res) => {
+router.get('/jobs/:id', authenticate, (req, res): void => {
   const authReq = req as AuthRequest;
   const job = getJob(req.params.id);
 
   if (!job) {
-    return res.status(404).json({ error: 'Job not found' });
+    res.status(404).json({ error: 'Job not found' });
+    return;
   }
 
   // Users can only see their own jobs
   if (job.userId !== authReq.user!.id) {
-    return res.status(404).json({ error: 'Job not found' });
+    res.status(404).json({ error: 'Job not found' });
+    return;
   }
 
   res.json({ job });

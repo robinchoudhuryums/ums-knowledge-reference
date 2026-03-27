@@ -107,8 +107,14 @@ export async function loadMetadata<T>(key: string): Promise<T | null> {
     if (!body) return null;
     return JSON.parse(body) as T;
   } catch (error: unknown) {
-    const err = error as { name?: string };
-    if (err.name === 'NoSuchKey') return null;
+    const err = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+    // Handle "object doesn't exist" gracefully — AWS SDK uses different error
+    // names depending on the operation and SDK version
+    if (err.name === 'NoSuchKey' || err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+      return null;
+    }
+    // Log unexpected S3 errors before re-throwing for easier debugging
+    logger.error('Unexpected S3 error loading metadata', { key, errorName: err.name, error: String(error) });
     throw error;
   }
 }
@@ -178,8 +184,11 @@ export async function loadVectorIndex(): Promise<VectorStoreIndex | null> {
     if (!body) return null;
     return JSON.parse(body) as VectorStoreIndex;
   } catch (error: unknown) {
-    const err = error as { name?: string };
-    if (err.name === 'NoSuchKey') return null;
+    const err = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (err.name === 'NoSuchKey' || err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+      return null;
+    }
+    logger.error('Unexpected S3 error loading vector index', { errorName: err.name, error: String(error) });
     throw error;
   }
 }

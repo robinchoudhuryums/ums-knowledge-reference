@@ -1,3 +1,5 @@
+import { PMD_CATALOG, getProductByHcpcs } from './pmdCatalog';
+
 /**
  * PPD (Patient Provided Data) Questionnaire Service
  *
@@ -156,8 +158,6 @@ export function getPpdQuestionById(id: string): PpdQuestion | undefined {
  * Ported from the original filterRecommendations.gs Apps Script logic.
  */
 export function determinePmdRecommendations(responses: PpdResponse[]): PmdRecommendation[] {
-  const { PMD_CATALOG, getProductByHcpcs } = require('./pmdCatalog');
-
   // ─── 1. Data Gathering ─────────────────────────────────────────────
   const get = (id: string): string => {
     const r = responses.find(r => r.questionId === id);

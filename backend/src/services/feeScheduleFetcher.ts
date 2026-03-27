@@ -160,7 +160,8 @@ function processFeeScheduleCsv(csvContent: string): { text: string; recordCount:
     recordCount++;
     const code = hcpcsIdx >= 0 ? fields[hcpcsIdx]?.trim() : '';
     const desc = descIdx >= 0 ? fields[descIdx]?.trim() : '';
-    const _fee = feeIdx >= 0 ? fields[feeIdx]?.trim() : '';
+    const fee = feeIdx >= 0 ? fields[feeIdx]?.trim() : '';
+    void fee; // fee column parsed but not currently displayed
     const mod = modIdx >= 0 ? fields[modIdx]?.trim() : '';
 
     // Group by HCPCS code for better chunking

@@ -342,7 +342,9 @@ export async function searchVectorStore(
 
   const scored = rawScored.map(({ chunk, semanticScore, keywordScore }) => {
     const normalizedKeyword = maxBm25 > 0 ? keywordScore / maxBm25 : 0;
-    const combinedScore = semanticWeight * semanticScore + keywordWeight * normalizedKeyword;
+    const rawCombined = semanticWeight * semanticScore + keywordWeight * normalizedKeyword;
+    // Guard against NaN from degenerate inputs (e.g. zero-length embeddings producing NaN cosine)
+    const combinedScore = isNaN(rawCombined) ? 0 : rawCombined;
 
     return {
       chunk,

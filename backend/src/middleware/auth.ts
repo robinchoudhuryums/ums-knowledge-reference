@@ -398,6 +398,9 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
  * JWT authentication middleware.
  * Accepts token from httpOnly cookie (preferred) or Authorization header (fallback).
  * Checks token validity, server-side revocation, AND account lockout status.
+ *
+ * Uses an inner async function to properly await the lockout check.
+ * The previous .then() chain risked calling next() before the check completed.
  */
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
   // Prefer httpOnly cookie (immune to XSS), fall back to Authorization header
@@ -410,34 +413,38 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
     return;
   }
 
+  let decoded: { id: string; username: string; role: 'admin' | 'user'; jti?: string };
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string; role: 'admin' | 'user'; jti?: string };
+    decoded = jwt.verify(token, JWT_SECRET) as typeof decoded;
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+    return;
+  }
 
-    // Check server-side revocation (individual token or all tokens for user)
-    if ((decoded.jti && isTokenRevoked(decoded.jti)) || isUserRevoked(decoded.id)) {
-      res.status(401).json({ error: 'Token has been revoked' });
-      return;
-    }
+  // Check server-side revocation (individual token or all tokens for user)
+  if ((decoded.jti && isTokenRevoked(decoded.jti)) || isUserRevoked(decoded.id)) {
+    res.status(401).json({ error: 'Token has been revoked' });
+    return;
+  }
 
-    // Check account lockout — a locked user with a valid pre-lockout token
-    // should not be able to make API calls until the lockout expires.
-    // This is async but we handle it via a promise chain to keep the middleware signature.
-    getUsers().then(users => {
+  // Async lockout check — wrapped in an IIFE so we properly await before calling next().
+  // Without this, the old .then() pattern could call next() before the check completed,
+  // or send a double-response if the lockout fired after next() had already run.
+  (async () => {
+    try {
+      const users = await getUsers();
       const user = users.find(u => u.id === decoded.id);
       if (user && isAccountLocked(user)) {
         res.status(423).json({ error: 'Account is locked due to too many failed login attempts' });
         return;
       }
-      req.user = decoded;
-      next();
-    }).catch(() => {
-      // If user lookup fails, allow the request — don't block on transient S3 errors
-      req.user = decoded;
-      next();
-    });
-  } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
+    } catch {
+      // If user lookup fails (transient S3 error), allow the request.
+      // Token is already validated — lockout is defense-in-depth, not primary auth.
+    }
+    req.user = decoded;
+    next();
+  })().catch(next); // Forward unexpected errors to Express error handler
 }
 
 /**

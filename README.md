@@ -5,10 +5,10 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 ## Features
 
 ### Knowledge Base & RAG
-- **Document ingestion** — Upload PDFs, DOCX, XLSX, CSV, TXT, and HTML files. Text extraction uses pdf-parse, AWS Textract OCR, and Claude vision (for images/diagrams in PDFs).
-- **RAG chat** — Ask questions and get cited answers grounded in your documents. Streaming SSE responses with markdown rendering. Auto-enriched with structured HCPCS/ICD-10/coverage data when relevant.
+- **Document ingestion** — Upload PDFs, DOCX, XLSX, CSV, TXT, and HTML files. Text extraction uses pdf-parse with conditional Textract OCR (skipped for text-native PDFs), and Claude vision (for images/diagrams). Mutex-protected index updates, chunk rollback on failure, file extension whitelist.
+- **RAG chat** — Ask questions and get cited answers grounded in your documents. Streaming SSE responses with markdown rendering. Auto-enriched with structured HCPCS/ICD-10/coverage data when relevant. Prompt injection detection with XML context framing.
 - **Conversation memory** — Follow-up questions are reformulated into standalone queries. Older turns are summarized automatically.
-- **Hybrid search** — Cosine similarity + IDF-enhanced BM25 keyword scoring with post-retrieval re-ranking.
+- **Hybrid search** — Cosine similarity + dynamically-normalized BM25 keyword scoring (adapts to corpus) with medical-term-aware tokenizer and post-retrieval re-ranking. Embedding dimension validation prevents silent failures on model changes.
 
 ### DME Reference Data (integrated into RAG)
 - **HCPCS code lookup** — 332 real DME codes across 25 categories (power wheelchairs, oxygen, CPAP supplies, catheters, incontinence, ventilators, bed/wheelchair accessories, respiratory supplies).
@@ -34,19 +34,23 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 - **Form review** — CMN form type auto-detection with required-field rules and confidence-based PDF annotations.
 
 ### HIPAA Compliance
-- PHI redaction on all logs (SSN, DOB, MRN, phone, email, addresses, Medicare/Medicaid IDs)
-- JWT auth with httpOnly cookies, 30-minute expiry, 15-minute idle timeout
-- Account lockout (5 attempts, 15-minute cooldown), password history (last 5)
-- Audit logging with SHA-256 hash chaining (tamper-evident)
-- Automated data retention (audit 7yr, query logs 1yr, traces 90d)
+- PHI redaction on all logs (SSN, DOB, MRN, phone, email, addresses, Medicare/Medicaid IDs, natural language DOB patterns)
+- JWT auth with httpOnly cookies, 30-minute expiry, 15-minute idle timeout with interaction blocking
+- Account lockout (5 attempts, 15-minute cooldown) enforced in both login and API middleware, password history (last 5)
+- Audit logging with SHA-256 hash chaining (mutex-protected for concurrent writes, auto-PHI-redacted details)
+- Automated data retention with hard-coded HIPAA minimum floors (audit ≥ 6yr, configurable above that)
 - HTTPS enforcement with HSTS, CSRF protection, SSRF prevention
+- Prompt injection detection (12 patterns) with XML context framing
+- JWT_SECRET strength enforcement in production (fail-fast on missing/weak secret)
+- Client-side PHI detection warning before query submission
 - Non-root Docker container
 
 ### Admin & Analytics
 - RAG observability dashboard, query quality metrics, FAQ analytics
 - Query log viewer with CSV export, audit log export with chain verification
-- User management (CRUD, role assignment, password reset)
-- Email sending via Gmail SMTP for form submissions
+- User management (CRUD, role assignment, password reset with session revocation)
+- Server metrics endpoint (`/api/metrics`) with per-route latency percentiles, error rates, memory usage
+- Email sending via Gmail SMTP for form submissions with address validation and rate limiting
 
 ## Architecture
 

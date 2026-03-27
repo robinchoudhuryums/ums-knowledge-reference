@@ -174,6 +174,20 @@ export async function queryKnowledgeBase(
 }
 
 // Query (streaming via SSE)
+// Active streaming AbortController — allows cancellation from outside (e.g. on logout)
+let activeStreamController: AbortController | null = null;
+
+/**
+ * Cancel any in-flight streaming query. Called on logout to prevent
+ * orphaned SSE connections that would fail with 401 after token invalidation.
+ */
+export function cancelActiveStream(): void {
+  if (activeStreamController) {
+    activeStreamController.abort();
+    activeStreamController = null;
+  }
+}
+
 export async function queryKnowledgeBaseStream(
   question: string,
   collectionIds: string[] | undefined,
@@ -185,9 +199,15 @@ export async function queryKnowledgeBaseStream(
   onError: (error: string) => void,
   onTraceId?: (traceId: string) => void,
 ): Promise<void> {
+  // Cancel any previous stream before starting a new one
+  cancelActiveStream();
+  const controller = new AbortController();
+  activeStreamController = controller;
+
   const legacyToken = getLegacyToken();
   const csrfToken = getCsrfToken();
   const response = await fetch(`${API_BASE}/query/stream`, {
+    signal: controller.signal,
     method: 'POST',
     credentials: 'same-origin',
     headers: {
@@ -259,6 +279,11 @@ export async function queryKnowledgeBaseStream(
         // Skip malformed lines
       }
     }
+  }
+
+  // Clean up the controller reference when streaming completes naturally
+  if (activeStreamController === controller) {
+    activeStreamController = null;
   }
 }
 

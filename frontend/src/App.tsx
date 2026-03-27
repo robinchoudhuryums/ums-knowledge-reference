@@ -146,7 +146,14 @@ export default function App() {
         </div>
       )}
 
-      <main style={{ ...styles.main, ...(showWarning && remainingSeconds <= 30 ? styles.warningOverlay : {}) }}>
+      {/* Full-viewport interaction blocker in the last 30 seconds of idle timeout.
+          Rendered as a fixed overlay so it covers modals, tooltips, and portals
+          that sit outside the <main> element. */}
+      {showWarning && remainingSeconds <= 30 && (
+        <div style={styles.idleBlockerOverlay} aria-hidden="true" />
+      )}
+
+      <main style={styles.main}>
         <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
           {activeTab === 'chat' && <ChatInterface collections={collections} />}
           {activeTab === 'search' && <DocumentSearch collections={collections} />}
@@ -326,10 +333,17 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 20,
     flexShrink: 0,
   },
-  // Applied to main content when session is about to expire (last 30 seconds).
-  // Reduces opacity and blocks clicks to prevent actions that would fail mid-submit.
-  warningOverlay: {
-    opacity: 0.5,
-    pointerEvents: 'none' as const,
+  // Full-viewport overlay that blocks ALL interactions in the last 30 seconds
+  // of idle timeout. Uses position:fixed and z-index:9999 to sit above everything
+  // including modals, tooltips, and React portals.
+  idleBlockerOverlay: {
+    position: 'fixed' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
+    zIndex: 9999,
+    cursor: 'not-allowed',
   },
 };

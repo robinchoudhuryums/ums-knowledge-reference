@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Document, Collection } from '../types';
+import { LoadingSkeleton } from './LoadingSkeleton';
 import {
   listDocuments,
   uploadDocument,
@@ -51,12 +52,17 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
   const { addToast } = useToast();
   const { confirm } = useConfirm();
 
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+
   const loadDocuments = async () => {
+    setDocumentsLoading(true);
     try {
       const result = await listDocuments(selectedCollection || undefined);
       setDocuments(result.documents);
     } catch {
       setError('Failed to load documents');
+    } finally {
+      setDocumentsLoading(false);
     }
   };
 
@@ -197,16 +203,24 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
   };
 
   const toggleSelectAll = () => {
-    // Check if all items on the current page are selected
+    const allDocsSelected = sortedDocuments.length > 0 &&
+      sortedDocuments.every(d => selectedIds.has(d.id));
     const allPageSelected = pagedDocuments.length > 0 &&
       pagedDocuments.every(d => selectedIds.has(d.id));
 
-    if (allPageSelected) {
-      // Deselect all (entire list, not just page)
+    if (allDocsSelected) {
+      // Everything selected → deselect all
       setSelectedIds(new Set());
-    } else {
-      // Select all documents across ALL pages (not just current page)
+    } else if (allPageSelected) {
+      // Current page fully selected → extend to all pages
       setSelectedIds(new Set(sortedDocuments.map(d => d.id)));
+    } else {
+      // Select all on current page first
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        for (const d of pagedDocuments) next.add(d.id);
+        return next;
+      });
     }
   };
 
@@ -411,9 +425,21 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                   <th style={{ ...styles.th, width: '40px', textAlign: 'center' }}>
                     <input
                       type="checkbox"
-                      checked={pagedDocuments.length > 0 && pagedDocuments.every(d => selectedIds.has(d.id))}
+                      checked={sortedDocuments.length > 0 && sortedDocuments.every(d => selectedIds.has(d.id))}
+                      ref={(el) => {
+                        if (el) {
+                          // Indeterminate when some (but not all) are selected
+                          el.indeterminate = selectedIds.size > 0 && !sortedDocuments.every(d => selectedIds.has(d.id));
+                        }
+                      }}
                       onChange={toggleSelectAll}
-                      title={selectedIds.size > 0 ? `${selectedIds.size} of ${sortedDocuments.length} selected` : `Select all ${sortedDocuments.length} documents`}
+                      title={
+                        sortedDocuments.every(d => selectedIds.has(d.id))
+                          ? `All ${sortedDocuments.length} selected — click to deselect`
+                          : pagedDocuments.every(d => selectedIds.has(d.id))
+                            ? `Page selected — click to select all ${sortedDocuments.length}`
+                            : `Select ${pagedDocuments.length} on this page`
+                      }
                       aria-label="Select all documents"
                     />
                   </th>
@@ -512,7 +538,14 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                   )}
                 </tr>
               ))}
-              {documents.length === 0 && (
+              {documentsLoading && documents.length === 0 && (
+                <tr>
+                  <td colSpan={isAdmin ? 9 : 7} style={{ padding: '12px' }}>
+                    <LoadingSkeleton rows={5} widths={[100, 95, 90, 85, 92]} />
+                  </td>
+                </tr>
+              )}
+              {!documentsLoading && documents.length === 0 && (
                 <tr>
                   <td colSpan={isAdmin ? 9 : 7} style={{ ...styles.td, textAlign: 'center', color: '#5F7A8F', padding: '40px 12px' }}>
                     No documents uploaded yet

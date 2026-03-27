@@ -71,7 +71,12 @@ export async function readInsuranceCard(imageBuffer: Buffer, filename: string, u
     throw new Error('Could not extract sufficient text from the image. Please ensure the insurance card is clearly visible.');
   }
 
-  // Log only the redacted text length — raw OCR text contains PII (member IDs, names, DOBs)
+  // Redact PHI from rawText IMMEDIATELY after OCR, before any other processing.
+  // This minimizes the window where unredacted PII exists in memory.
+  // The unredacted text is still passed to Claude for field extraction (it needs
+  // the original text to parse IDs correctly), but the stored/returned rawText is redacted.
+  const redactedRawText = redactPhi(rawText).text;
+
   logger.info('Insurance card OCR complete', { textLength: rawText.length });
 
   // Audit trail: log that a user accessed insurance card data (HIPAA requirement)
@@ -106,15 +111,10 @@ export async function readInsuranceCard(imageBuffer: Buffer, filename: string, u
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       logger.warn('Insurance card extraction: no JSON in response');
-      return { ...emptyFields(), rawText };
+      return { ...emptyFields(), rawText: redactedRawText };
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
-
-    // Redact PHI from the raw OCR text before including in response.
-    // The structured fields are intentionally NOT redacted since they are
-    // the purpose of this function, but rawText could contain extra PII.
-    const redactedRawText = redactPhi(rawText).text;
 
     return {
       insuranceName: parsed.insuranceName || null,
@@ -134,7 +134,7 @@ export async function readInsuranceCard(imageBuffer: Buffer, filename: string, u
     };
   } catch (err) {
     logger.error('Insurance card field extraction failed', { error: String(err) });
-    return { ...emptyFields(), rawText: redactPhi(rawText).text };
+    return { ...emptyFields(), rawText: redactedRawText };
   }
 }
 

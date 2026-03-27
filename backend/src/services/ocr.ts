@@ -28,6 +28,8 @@ export interface OcrResult {
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 120; // 4 minutes max
+const OCR_TIMEOUT_MS = 5 * 60 * 1000; // 5-minute hard timeout for entire OCR operation
+const MAX_TRANSIENT_RETRIES = 3; // Retry transient errors (HTTP 500) up to 3 times
 
 /**
  * Determine whether to use async Textract (multi-page PDFs) or sync (single-page images / small PDFs).
@@ -40,13 +42,17 @@ export async function extractTextWithOcr(buffer: Buffer, filename: string): Prom
   const ext = filename.split('.').pop()?.toLowerCase() || '';
   const isPdf = ext === 'pdf';
 
-  if (isPdf) {
-    // PDFs may be multi-page — always use async API via S3 to be safe
-    return extractTextWithAsyncOcr(buffer, filename);
-  }
+  // Wrap in a hard timeout to prevent indefinite hangs if Textract is unresponsive.
+  // Without this, a stuck job could block the request forever.
+  const ocrPromise = isPdf
+    ? extractTextWithAsyncOcr(buffer, filename)
+    : extractTextWithSyncOcr(buffer, filename);
 
-  // Images (PNG, JPEG, TIFF) — use fast sync API
-  return extractTextWithSyncOcr(buffer, filename);
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`OCR timed out after ${OCR_TIMEOUT_MS / 1000}s`)), OCR_TIMEOUT_MS)
+  );
+
+  return Promise.race([ocrPromise, timeoutPromise]);
 }
 
 /**
@@ -99,13 +105,31 @@ async function extractTextWithAsyncOcr(buffer: Buffer, filename: string): Promis
 
     logger.info('Async OCR job started', { jobId, filename });
 
-    // Phase 1: Poll until job completes (IN_PROGRESS → SUCCEEDED or FAILED)
+    // Phase 1: Poll until job completes (IN_PROGRESS → SUCCEEDED or FAILED).
+    // Transient errors (network/HTTP 500) are retried up to MAX_TRANSIENT_RETRIES
+    // times per poll attempt instead of being treated as permanent failures.
     let jobStatus = 'IN_PROGRESS';
+    let transientRetries = 0;
     for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
       await sleep(POLL_INTERVAL_MS);
 
-      const getCommand = new GetDocumentTextDetectionCommand({ JobId: jobId });
-      const getResponse = await textractClient.send(getCommand);
+      let getResponse;
+      try {
+        const getCommand = new GetDocumentTextDetectionCommand({ JobId: jobId });
+        getResponse = await textractClient.send(getCommand);
+        transientRetries = 0; // Reset on success
+      } catch (pollError: unknown) {
+        // Transient network/server errors — retry a few times before giving up
+        transientRetries++;
+        if (transientRetries <= MAX_TRANSIENT_RETRIES) {
+          logger.warn('Textract poll transient error, retrying', {
+            jobId, attempt, transientRetries, error: String(pollError),
+          });
+          continue;
+        }
+        throw new Error(`Textract polling failed after ${MAX_TRANSIENT_RETRIES} retries: ${String(pollError)}`);
+      }
+
       jobStatus = getResponse.JobStatus || 'FAILED';
 
       if (jobStatus === 'SUCCEEDED') break;

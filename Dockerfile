@@ -28,6 +28,9 @@ RUN cd backend && npm ci --omit=dev
 
 COPY --from=backend-build /app/backend/dist ./backend/dist
 
+# Copy database migration files (SQL scripts applied on startup)
+COPY backend/migrations ./backend/migrations
+
 # Copy frontend build
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 

@@ -95,7 +95,7 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1,
     flexShrink: 0,
   },
-  divider: { height: '1px', background: '#E8EFF5', margin: '18px 0' },
+  divider: { height: '1px', background: 'var(--ums-border-light)', margin: '18px 0' },
   label: { fontSize: '11px', fontWeight: 600, color: 'var(--ums-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' },
   textContent: {
     padding: '18px',

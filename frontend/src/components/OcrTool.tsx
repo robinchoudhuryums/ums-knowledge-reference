@@ -380,7 +380,7 @@ export function OcrTool() {
           {/* Interactive Annotation Editor */}
           {showInteractiveViewer && selectedFile && (
             <div style={styles.interactiveViewerSection}>
-              <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: '#6B8299' }}>Loading annotation editor...</div>}>
+              <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: 'var(--ums-text-muted)' }}>Loading annotation editor...</div>}>
                 <AnnotatedPdfViewer
                   file={selectedFile}
                   emptyFields={formResult.emptyFields}
@@ -679,11 +679,11 @@ const styles: Record<string, React.CSSProperties> = {
   // Loading
   loadingBar: {
     marginTop: '16px', height: '4px', borderRadius: '2px',
-    background: '#E8EFF5', overflow: 'hidden',
+    background: 'var(--ums-border-light)', overflow: 'hidden',
   },
   loadingBarFill: {
     height: '100%', width: '40%', borderRadius: '2px',
-    background: 'linear-gradient(90deg, #1B6FC9, #42A5F5, #1B6FC9)',
+    background: 'linear-gradient(90deg, var(--ums-brand-primary), #42A5F5, var(--ums-brand-primary))',
     backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite',
   },
   loadingBarFillForm: {
@@ -699,7 +699,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // OCR results
   resultContainer: {
-    marginTop: '24px', border: '1px solid #E8EFF5', borderRadius: '14px',
+    marginTop: '24px', border: '1px solid var(--ums-border-light)', borderRadius: '14px',
     overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
   },
   resultHeader: {
@@ -739,7 +739,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Form Review results
   formResultContainer: {
-    marginTop: '24px', border: '1px solid #E8EFF5', borderRadius: '14px',
+    marginTop: '24px', border: '1px solid var(--ums-border-light)', borderRadius: '14px',
     overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
   },
   formResultHeader: {
@@ -784,7 +784,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Downloads
   downloadSection: {
-    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid #E8EFF5',
+    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid var(--ums-border-light)',
   },
   downloadLabel: {
     margin: '0 0 10px', fontSize: '13px', fontWeight: 600, color: '#374151',
@@ -823,7 +823,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // PDF Preview
   previewSection: {
-    borderBottom: '1px solid #E8EFF5',
+    borderBottom: '1px solid var(--ums-border-light)',
   },
   previewHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -838,16 +838,16 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%', height: '600px', border: 'none',
   },
   interactiveViewerSection: {
-    height: '700px', borderBottom: '1px solid #E8EFF5',
+    height: '700px', borderBottom: '1px solid var(--ums-border-light)',
   },
 
   // Completion bar
   completionSection: {
     padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px',
-    borderBottom: '1px solid #E8EFF5',
+    borderBottom: '1px solid var(--ums-border-light)',
   },
   completionBarBg: {
-    flex: 1, height: '8px', borderRadius: '4px', background: '#E8EFF5', overflow: 'hidden',
+    flex: 1, height: '8px', borderRadius: '4px', background: 'var(--ums-border-light)', overflow: 'hidden',
   },
   completionBarFill: {
     height: '100%', borderRadius: '4px',
@@ -857,7 +857,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Low confidence section
   lowConfSection: {
-    padding: '16px 20px', borderBottom: '1px solid #E8EFF5',
+    padding: '16px 20px', borderBottom: '1px solid var(--ums-border-light)',
     background: '#FFFBEB',
   },
   lowConfTitle: {
@@ -884,7 +884,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // Field lists
-  fieldSection: { padding: '16px 20px', borderBottom: '1px solid #E8EFF5' },
+  fieldSection: { padding: '16px 20px', borderBottom: '1px solid var(--ums-border-light)' },
   fieldSectionTitle: {
     margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#DC2626',
     textTransform: 'uppercase' as const, letterSpacing: '0.3px',
@@ -906,8 +906,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   fieldItemFilled: {
     display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '8px 12px', background: '#F7FAFD', borderRadius: '8px',
-    border: '1px solid #E8EFF5',
+    padding: '8px 12px', background: 'var(--ums-bg-surface-alt)', borderRadius: '8px',
+    border: '1px solid var(--ums-border-light)',
   },
   fieldNumber: {
     fontSize: '11px', fontWeight: 700, color: '#DC2626',
@@ -924,7 +924,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px', color: 'var(--ums-text-muted)', maxWidth: '200px',
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
-  fieldPage: { fontSize: '11px', color: '#5F7A8F' },
+  fieldPage: { fontSize: '11px', color: 'var(--ums-text-muted)' },
   checkboxTag: {
     fontSize: '10px', background: '#E5E7EB', color: '#6B7280', padding: '1px 5px',
     borderRadius: '3px', fontWeight: 500,
@@ -934,13 +934,13 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%', padding: '0 0 10px', border: 'none', background: 'none',
     cursor: 'pointer',
   },
-  expandArrow: { fontSize: '11px', color: '#5F7A8F' },
+  expandArrow: { fontSize: '11px', color: 'var(--ums-text-muted)' },
 
   // New review
   newReviewRow: { padding: '16px 20px', textAlign: 'center' as const },
   newReviewButton: {
-    padding: '10px 24px', border: '1px solid #D6E4F0', borderRadius: '10px',
-    background: 'white', color: '#374151', fontSize: '13px', fontWeight: 600,
+    padding: '10px 24px', border: '1px solid var(--ums-border)', borderRadius: '10px',
+    background: 'var(--ums-bg-surface)', color: '#374151', fontSize: '13px', fontWeight: 600,
     cursor: 'pointer',
   },
 
@@ -953,8 +953,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   batchTh: {
     padding: '10px 12px', textAlign: 'left' as const, fontSize: '11px',
-    fontWeight: 700, color: '#6B8299', textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px', borderBottom: '2px solid #E8EFF5', background: '#F7FAFD',
+    fontWeight: 700, color: 'var(--ums-text-muted)', textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px', borderBottom: '2px solid var(--ums-border-light)', background: 'var(--ums-bg-surface-alt)',
   },
   batchTr: {
     cursor: 'pointer', transition: 'background 0.15s',
@@ -963,20 +963,20 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer', background: '#FFF8F0',
   },
   batchTd: {
-    padding: '10px 12px', borderBottom: '1px solid #E8EFF5',
+    padding: '10px 12px', borderBottom: '1px solid var(--ums-border-light)',
   },
   batchTdCenter: {
-    padding: '10px 12px', borderBottom: '1px solid #E8EFF5', textAlign: 'center' as const,
+    padding: '10px 12px', borderBottom: '1px solid var(--ums-border-light)', textAlign: 'center' as const,
   },
   batchFilename: {
-    fontWeight: 600, color: '#0D2137', fontSize: '12px',
+    fontWeight: 600, color: 'var(--ums-text-primary)', fontSize: '12px',
   },
   cachedDot: {
     display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
     background: '#7C3AED', marginLeft: '6px', verticalAlign: 'middle',
   },
   batchFormType: {
-    fontSize: '11px', color: '#6B8299',
+    fontSize: '11px', color: 'var(--ums-text-muted)',
   },
   batchMissingBad: {
     color: '#DC2626', fontWeight: 700,
@@ -989,7 +989,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '2px 6px', borderRadius: '4px', fontSize: '12px',
   },
   batchBarBg: {
-    height: '6px', borderRadius: '3px', background: '#E8EFF5', overflow: 'hidden',
+    height: '6px', borderRadius: '3px', background: 'var(--ums-border-light)', overflow: 'hidden',
     display: 'inline-block', width: '60px', verticalAlign: 'middle',
   },
   batchBarFill: {
@@ -1013,10 +1013,10 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Batch detail
   batchDetail: {
-    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid #E8EFF5',
+    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid var(--ums-border-light)',
   },
   batchDetailTitle: {
-    margin: '0 0 10px', fontSize: '14px', fontWeight: 700, color: '#0D2137',
+    margin: '0 0 10px', fontSize: '14px', fontWeight: 700, color: 'var(--ums-text-primary)',
   },
   batchDetailComplete: {
     margin: 0, fontSize: '13px', color: '#059669', fontWeight: 600,

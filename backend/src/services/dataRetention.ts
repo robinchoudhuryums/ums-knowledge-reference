@@ -19,22 +19,35 @@ const MIN_RETENTION_QUERY_LOG_DAYS = 180;  // 6 months minimum for operational l
 const MIN_RETENTION_RAG_TRACE_DAYS = 30;   // 30 days minimum for troubleshooting
 const MIN_RETENTION_FEEDBACK_DAYS = 180;   // 6 months minimum
 
+/**
+ * Parse an integer from an env var with a safe fallback.
+ * Returns the fallback if the env var is missing, empty, or non-numeric.
+ * This prevents NaN from propagating into retention period comparisons,
+ * which would silently break the entire retention cleanup process.
+ */
+function safeParseInt(envValue: string | undefined, fallback: number): number {
+  if (!envValue) return fallback;
+  const parsed = parseInt(envValue, 10);
+  return isNaN(parsed) ? fallback : parsed;
+}
+
 // Retention periods in days, configurable via environment variables.
 // The configured value is clamped to be at least the HIPAA minimum floor.
+// If the env var is non-numeric (e.g. "invalid"), the default is used.
 const RETENTION_AUDIT_DAYS = Math.max(
-  parseInt(process.env.RETENTION_AUDIT_DAYS || '2555', 10),
+  safeParseInt(process.env.RETENTION_AUDIT_DAYS, 2555),
   MIN_RETENTION_AUDIT_DAYS
 );
 const RETENTION_QUERY_LOG_DAYS = Math.max(
-  parseInt(process.env.RETENTION_QUERY_LOG_DAYS || '365', 10),
+  safeParseInt(process.env.RETENTION_QUERY_LOG_DAYS, 365),
   MIN_RETENTION_QUERY_LOG_DAYS
 );
 const RETENTION_RAG_TRACE_DAYS = Math.max(
-  parseInt(process.env.RETENTION_RAG_TRACE_DAYS || '90', 10),
+  safeParseInt(process.env.RETENTION_RAG_TRACE_DAYS, 90),
   MIN_RETENTION_RAG_TRACE_DAYS
 );
 const RETENTION_FEEDBACK_DAYS = Math.max(
-  parseInt(process.env.RETENTION_FEEDBACK_DAYS || '365', 10),
+  safeParseInt(process.env.RETENTION_FEEDBACK_DAYS, 365),
   MIN_RETENTION_FEEDBACK_DAYS
 );
 
@@ -45,16 +58,21 @@ export interface RetentionSummary {
   feedbackDeleted: number;
 }
 
-// Date pattern: YYYY-MM-DD
-const DATE_REGEX = /(\d{4}-\d{2}-\d{2})/;
+// Date pattern: YYYY-MM-DD with valid month (01-12) and day (01-31) ranges.
+// The old regex /(\d{4}-\d{2}-\d{2})/ matched invalid dates like "2024-13-45".
+const DATE_REGEX = /(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))/;
 
 /**
  * Extract the first YYYY-MM-DD date found in an S3 key.
- * Returns null if no date is found.
+ * Returns null if no date is found or the date is not valid.
  */
 function extractDateFromKey(key: string): string | null {
   const match = key.match(DATE_REGEX);
-  return match ? match[1] : null;
+  if (!match) return null;
+  // Double-check that JavaScript can parse this as a valid date
+  const d = new Date(match[1] + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return null;
+  return match[1];
 }
 
 /**

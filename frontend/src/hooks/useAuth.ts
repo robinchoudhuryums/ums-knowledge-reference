@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { AuthState } from '../types';
-import { login as apiLogin, logoutServer } from '../services/api';
+import { login as apiLogin, logoutServer, cancelActiveStream } from '../services/api';
 
 export function useAuth() {
   const [auth, setAuth] = useState<AuthState>(() => {
@@ -18,6 +18,8 @@ export function useAuth() {
   const [mustChangePassword, setMustChangePassword] = useState(false);
 
   const logout = useCallback(async () => {
+    // Cancel any in-flight streaming query before invalidating the session
+    cancelActiveStream();
     // Revoke token server-side + clear httpOnly cookie (fire-and-forget)
     try { await logoutServer(); } catch { /* ignore if already expired */ }
     localStorage.removeItem('isLoggedIn');

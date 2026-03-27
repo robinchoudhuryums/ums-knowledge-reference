@@ -49,9 +49,11 @@ export async function extractText(buffer: Buffer, mimeType: string, filename: st
 // Below this threshold the PDF is likely scanned/image-based and we fall back to OCR.
 const OCR_FALLBACK_THRESHOLD = 50;
 
-// If pdf-parse yields a strong text layer above this threshold, skip OCR entirely
-// to save Textract API calls and processing time (~500ms-1s per document).
-const OCR_SKIP_THRESHOLD = 500;
+// Minimum WORD count (not character count) from pdf-parse to skip OCR.
+// Using word count avoids false positives from whitespace inflation (page breaks, \f,
+// excessive newlines) that inflate character counts without representing real content.
+// 100 words ≈ a paragraph of real text; below that, the PDF likely has minimal text.
+const OCR_SKIP_WORD_COUNT = 100;
 
 async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
   // Phase 1: Try pdf-parse first (fast, free, no API call)
@@ -65,14 +67,18 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
   }
 
   const trimmedPdf = pdfText.replace(/\s+/g, ' ').trim();
+  // Use word count for the skip decision to avoid whitespace inflation (page breaks, \f).
+  // A PDF with 500 chars but only 10 real words shouldn't skip OCR.
+  const pdfWordCount = trimmedPdf.split(/\s+/).filter(w => w.length > 0).length;
 
   // Phase 2: Only call OCR if pdf-parse yielded insufficient text.
   // For text-native PDFs with a strong text layer, this avoids unnecessary Textract calls.
   let ocrText = '';
-  if (trimmedPdf.length < OCR_SKIP_THRESHOLD) {
-    logger.info('PDF text layer below threshold, running OCR', {
+  if (pdfWordCount < OCR_SKIP_WORD_COUNT) {
+    logger.info('PDF text layer below word threshold, running OCR', {
       pdfParseChars: trimmedPdf.length,
-      threshold: OCR_SKIP_THRESHOLD,
+      pdfWordCount,
+      threshold: OCR_SKIP_WORD_COUNT,
     });
 
     try {
@@ -82,7 +88,7 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
       logger.warn('OCR extraction failed', { error: String(err) });
     }
   } else {
-    logger.info('PDF has strong text layer, skipping OCR', { pdfParseChars: trimmedPdf.length });
+    logger.info('PDF has strong text layer, skipping OCR', { pdfParseChars: trimmedPdf.length, pdfWordCount });
   }
 
   const trimmedOcr = ocrText.replace(/\s+/g, ' ').trim();

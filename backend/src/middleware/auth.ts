@@ -116,6 +116,27 @@ function getLockoutRemainingSeconds(user: User): number {
 }
 
 // ---------------------------------------------------------------------------
+// In-memory lockout cache — populated from S3 on every successful getUsers() call,
+// used as fallback when S3 is unavailable so locked accounts stay locked.
+// Without this, a transient S3 failure would let a locked account through.
+const lockedAccountCache = new Map<string, string>(); // userId → lockedUntil ISO string
+
+function updateLockoutCache(users: User[]): void {
+  lockedAccountCache.clear();
+  for (const u of users) {
+    if (u.lockedUntil) {
+      lockedAccountCache.set(u.id, u.lockedUntil);
+    }
+  }
+}
+
+function isAccountLockedFromCache(userId: string): boolean {
+  const lockedUntil = lockedAccountCache.get(userId);
+  if (!lockedUntil) return false;
+  return new Date(lockedUntil).getTime() > Date.now();
+}
+
+// ---------------------------------------------------------------------------
 // Server-side token revocation
 // In-memory set of revoked JWT IDs. Cleared on server restart (acceptable since
 // JWTs are short-lived at 30min). For multi-instance deployments, move to Redis.
@@ -398,6 +419,9 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
  * JWT authentication middleware.
  * Accepts token from httpOnly cookie (preferred) or Authorization header (fallback).
  * Checks token validity, server-side revocation, AND account lockout status.
+ *
+ * Uses an inner async function to properly await the lockout check.
+ * The previous .then() chain risked calling next() before the check completed.
  */
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
   // Prefer httpOnly cookie (immune to XSS), fall back to Authorization header
@@ -410,34 +434,47 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
     return;
   }
 
+  let decoded: { id: string; username: string; role: 'admin' | 'user'; jti?: string };
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; username: string; role: 'admin' | 'user'; jti?: string };
+    decoded = jwt.verify(token, JWT_SECRET) as typeof decoded;
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+    return;
+  }
 
-    // Check server-side revocation (individual token or all tokens for user)
-    if ((decoded.jti && isTokenRevoked(decoded.jti)) || isUserRevoked(decoded.id)) {
-      res.status(401).json({ error: 'Token has been revoked' });
-      return;
-    }
+  // Check server-side revocation (individual token or all tokens for user)
+  if ((decoded.jti && isTokenRevoked(decoded.jti)) || isUserRevoked(decoded.id)) {
+    res.status(401).json({ error: 'Token has been revoked' });
+    return;
+  }
 
-    // Check account lockout — a locked user with a valid pre-lockout token
-    // should not be able to make API calls until the lockout expires.
-    // This is async but we handle it via a promise chain to keep the middleware signature.
-    getUsers().then(users => {
+  // Async lockout check — wrapped in an IIFE so we properly await before calling next().
+  // Without this, the old .then() pattern could call next() before the check completed,
+  // or send a double-response if the lockout fired after next() had already run.
+  (async () => {
+    try {
+      const users = await getUsers();
+      // Update the in-memory lockout cache so it stays fresh
+      updateLockoutCache(users);
       const user = users.find(u => u.id === decoded.id);
       if (user && isAccountLocked(user)) {
         res.status(423).json({ error: 'Account is locked due to too many failed login attempts' });
         return;
       }
-      req.user = decoded;
-      next();
-    }).catch(() => {
-      // If user lookup fails, allow the request — don't block on transient S3 errors
-      req.user = decoded;
-      next();
-    });
-  } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
+    } catch {
+      // S3 unavailable — check the in-memory lockout cache as fallback.
+      // This ensures locked accounts stay locked even during transient S3 failures,
+      // rather than failing open and allowing all requests through.
+      if (isAccountLockedFromCache(decoded.id)) {
+        res.status(423).json({ error: 'Account is locked due to too many failed login attempts' });
+        return;
+      }
+      // If not in lockout cache either, allow the request.
+      // Token is already validated — lockout is defense-in-depth, not primary auth.
+    }
+    req.user = decoded;
+    next();
+  })().catch(next); // Forward unexpected errors to Express error handler
 }
 
 /**

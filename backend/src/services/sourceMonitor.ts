@@ -424,7 +424,8 @@ export async function checkAllDueSources(): Promise<{
       })
     );
 
-    for (const settled of batchResults) {
+    for (let j = 0; j < batchResults.length; j++) {
+      const settled = batchResults[j];
       if (settled.status === 'fulfilled') {
         const { source, result } = settled.value;
         results.push({
@@ -438,7 +439,8 @@ export async function checkAllDueSources(): Promise<{
         if (result.ingested) ingested++;
         if (!result.ingested && result.changed) errors++;
       } else {
-        const source = batch[batchResults.indexOf(settled)];
+        // Use index j directly — indexOf() could return wrong index for duplicate objects
+        const source = batch[j];
         errors++;
         results.push({
           sourceId: source.id,

@@ -118,6 +118,8 @@ export interface QueryResponse {
   sources: SourceCitation[];
   confidence: 'high' | 'partial' | 'low';
   traceId?: string;
+  /** True if the response was flagged as potentially containing PHI from source documents */
+  phiDetected?: boolean;
 }
 
 export interface FeedbackEntry {

@@ -85,6 +85,19 @@ export async function ingestDocument(
     d => d.originalName === originalName && d.collectionId === collectionId && d.status === 'ready'
   );
 
+  // Content deduplication: if a document with identical content already exists in this
+  // collection (regardless of filename), reject the upload to prevent duplicate chunks.
+  const contentHash = createHash('sha256').update(fileBuffer).digest('hex');
+  const duplicateByContent = existingDocs.find(
+    d => d.contentHash === contentHash && d.collectionId === collectionId && d.status === 'ready' && d.id !== existingDoc?.id
+  );
+  if (duplicateByContent) {
+    throw new Error(
+      `A document with identical content already exists in this collection: "${duplicateByContent.originalName}". ` +
+      `Delete the existing document first if you want to re-upload.`
+    );
+  }
+
   // Create document record
   const document: Document = {
     id: documentId,
@@ -100,7 +113,7 @@ export async function ingestDocument(
     chunkCount: 0,
     version: existingDoc ? existingDoc.version + 1 : 1,
     previousVersionId: existingDoc?.id,
-    contentHash: createHash('sha256').update(fileBuffer).digest('hex'),
+    contentHash,
   };
 
   // Track whether chunks were added to the vector store (for rollback on error)

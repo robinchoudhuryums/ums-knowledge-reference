@@ -170,7 +170,11 @@ export function determinePmdRecommendations(responses: PpdResponse[]): PmdRecomm
     return val.includes('yes') || val === 'true';
   };
 
-  const weight = parseInt(get('q38').replace(/\D/g, ''), 10) || 0;
+  // Parse weight and clamp to realistic range (70-700 lbs).
+  // Values outside this range are likely data entry errors (e.g. "12" from a
+  // mistyped height, or "5000" from a keyboard slip). Treat as 0 (unknown).
+  const rawWeight = parseInt(get('q38').replace(/\D/g, ''), 10) || 0;
+  const weight = (rawWeight >= 70 && rawWeight <= 700) ? rawWeight : 0;
   const neuroCondition = get('q43');
   const numbnessAnswer = get('q25');
   const amputationStatus = get('q34');
@@ -179,12 +183,17 @@ export function determinePmdRecommendations(responses: PpdResponse[]): PmdRecomm
   const hasSpineCurvature = isPositive('q35');
   const isOnOxygen = isPositive('q44');
   const hasPressureUlcers = isPositive('q33');
-  // Spasticity detection — use explicit keywords rather than "anything that isn't 'no'"
-  // to avoid false positives on ambiguous answers like "maybe" or "mild"
+  // Spasticity detection — use explicit keywords with clinical context.
+  // High-confidence keywords (spasm, spastic, clonus, rigid) match standalone.
+  // Ambiguous keywords (stiff, tight) require a body-part context to avoid
+  // false positives like "tight hamstrings" from normal exercise soreness.
   const spasticityAnswer = get('q32');
-  const spasticityPositiveKeywords = ['yes', 'severe', 'moderate', 'spasm', 'spastic', 'stiff', 'tight', 'rigid', 'clonus'];
+  const highConfidenceKeywords = ['spasm', 'spastic', 'spasticity', 'clonus', 'rigid', 'rigidity'];
+  const contextualKeywords = ['stiff', 'tight']; // Only match near body parts
+  const bodyPartContext = /(?:leg|arm|muscle|limb|joint|hand|foot|knee|hip|shoulder|neck|trunk|back)/i;
   const hasSpasticity = isPositive('q32') ||
-    spasticityPositiveKeywords.some(kw => spasticityAnswer.includes(kw));
+    highConfidenceKeywords.some(kw => spasticityAnswer.includes(kw)) ||
+    (contextualKeywords.some(kw => spasticityAnswer.includes(kw)) && bodyPartContext.test(spasticityAnswer));
   const hasSwelling = isPositive('q36');
   const usesCatheters = isPositive('q30');
 

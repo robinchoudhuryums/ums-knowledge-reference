@@ -106,10 +106,15 @@ export function generateSeatingEvaluation(
   // Determine MRADL level from free-text PPD answers.
   // Returns null if the text doesn't match any known impairment keywords,
   // rather than defaulting to 'cannot_complete' for all non-empty text.
+  // Uses word-boundary matching for "no" to avoid false positives on
+  // "no difficulty" being classified as cannot_accomplish.
   const classifyMradl = (text: string): 'cannot_accomplish' | 'cannot_attempt' | 'cannot_complete' | null => {
     if (!text) return null;
     const lower = text.toLowerCase();
-    if (lower.includes('cannot') || lower.includes('unable') || lower.includes('no ') || lower.includes('impossible')) {
+    // Word-boundary "no" check: must be standalone "no" (e.g. "no, I can't")
+    // not part of "no difficulty" or "normal" or "nothing wrong"
+    const hasStandaloneNo = /\bno\b/.test(lower) && !/\bno\s+(difficulty|problem|issue|concern|limitation)/i.test(lower);
+    if (lower.includes('cannot') || lower.includes('unable') || (hasStandaloneNo && lower.length < 20) || lower.includes('impossible')) {
       return 'cannot_accomplish';
     }
     if (lower.includes('risk') || lower.includes('danger') || lower.includes('unsafe') || lower.includes('fear')) {
@@ -232,9 +237,9 @@ export function generateSeatingEvaluation(
     pelvisIssues.push('Obliquity');
   }
 
-  // PMD Selection from recommendations
-  const topRec = recommendations[0];
-  const hcpcsNum = topRec ? parseInt(topRec.hcpcsCode.replace(/\D/g, ''), 10) : 0;
+  // PMD Selection from recommendations — guard against empty array
+  const topRec = recommendations.length > 0 ? recommendations[0] : null;
+  const hcpcsNum = topRec ? parseInt(topRec.hcpcsCode.replace(/\D/g, ''), 10) || 0 : 0;
   const isScooter = hcpcsNum >= 800 && hcpcsNum <= 801;
   const isSPO = (hcpcsNum >= 835 && hcpcsNum <= 843) || (hcpcsNum >= 856 && hcpcsNum <= 859);
   const isMPO = (hcpcsNum >= 840 && hcpcsNum <= 843) || (hcpcsNum >= 861 && hcpcsNum <= 864);
@@ -286,7 +291,8 @@ export function generateSeatingEvaluation(
     painLE: { locations: painLocationsLE, scale: painLocationsLE.length > 0 ? String(Math.min(painLocationsLE.length * 2, 10)) : '' },
 
     rulesOutCaneWalker: true,  // Always true for PMD patients
-    rulesOutManualWheelchair: armStrength <= '3' || painLocationsUE.length >= 2,
+    // Parse armStrength as number for comparison — string comparison ('10' <= '3') is wrong
+    rulesOutManualWheelchair: parseInt(armStrength.split('-')[0], 10) <= 3 || painLocationsUE.length >= 2,
     rulesOutScooterPOV: isYes('q35') || isYes('q33') || !isYes('q7'),
 
     // Cognitive status inferred from PPD responses rather than hardcoded.
@@ -323,7 +329,7 @@ export function generateSeatingEvaluation(
     pmdBase: isScooter ? 'Scooter (POV)' : 'Power Wheelchair',
     features,
     cushions,
-    comments: topRec ? `Recommended: ${topRec.hcpcsCode} — ${topRec.description}` : '',
+    comments: topRec?.hcpcsCode ? `Recommended: ${topRec.hcpcsCode} — ${topRec.description || 'N/A'}` : '',
   };
 }
 

@@ -95,7 +95,9 @@ export function DocumentExtractor() {
     const headers = templateDetail.fields.map(f => escapeCsvField(f.label));
     const values = templateDetail.fields.map(f => escapeCsvField(editedData[f.key]));
     const csv = headers.join(',') + '\n' + values.join(',');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // Prepend UTF-8 BOM (\uFEFF) so Excel on Windows correctly interprets the file
+    // as UTF-8 instead of ANSI, which would corrupt non-ASCII characters.
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

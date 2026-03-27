@@ -24,7 +24,6 @@ import {
   ChatBubbleLeftRightIcon,
   MagnifyingGlassIcon,
   DocumentTextIcon,
-  ClipboardDocumentListIcon,
   DocumentDuplicateIcon,
   CameraIcon,
   FolderOpenIcon,
@@ -33,17 +32,19 @@ import {
   MoonIcon,
   ArrowRightStartOnRectangleIcon,
 } from '@heroicons/react/24/outline';
+import { Brain, Stethoscope } from 'lucide-react';
 import clsx from 'clsx';
 
 type Tab = 'chat' | 'search' | 'extract' | 'intake' | 'forms' | 'documents' | 'ocr' | 'admin';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
-const tabIcons: Record<Tab, React.ComponentType<React.SVGProps<SVGSVGElement>>> = {
+// Tab icons: Heroicons for standard UI, Lucide for medical-specific icons
+const tabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
   chat: ChatBubbleLeftRightIcon,
   search: MagnifyingGlassIcon,
   extract: DocumentTextIcon,
-  intake: ClipboardDocumentListIcon,
+  intake: Stethoscope,
   forms: DocumentDuplicateIcon,
   ocr: CameraIcon,
   documents: FolderOpenIcon,
@@ -144,7 +145,7 @@ export default function App() {
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.logoGroup}>
-            <div style={styles.logoMark}>+</div>
+            <div style={styles.logoMark}><Brain size={20} /></div>
             <h1 style={styles.logo}>UMS Knowledge Base</h1>
           </div>
           <nav style={styles.nav}>

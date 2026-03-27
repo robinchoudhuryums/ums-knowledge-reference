@@ -620,11 +620,11 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', maxWidth: '960px', background: '#ffffff', height: '100%', overflowY: 'auto' },
+  container: { padding: '28px', maxWidth: '960px', background: 'var(--ums-bg-surface)', height: '100%', overflowY: 'auto' },
   headerSection: { display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'flex-start' },
   iconBg: {
     width: '48px', height: '48px', borderRadius: '14px',
-    background: 'linear-gradient(135deg, #E3F2FD, #BBDEFB)',
+    background: 'linear-gradient(135deg, var(--ums-brand-light), var(--ums-border))',
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   iconBgForm: {
@@ -633,8 +633,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   icon: { fontSize: '24px' },
-  title: { margin: '0 0 4px', fontSize: '18px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.2px' },
-  description: { margin: 0, fontSize: '14px', color: '#6B8299', lineHeight: '1.5' },
+  title: { margin: '0 0 4px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
+  description: { margin: 0, fontSize: '14px', color: 'var(--ums-text-muted)', lineHeight: '1.5' },
 
   // Mode toggle
   toggleRow: {
@@ -643,17 +643,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   toggleActive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'white', color: '#1565C0', fontSize: '13px', fontWeight: 600,
+    background: 'var(--ums-bg-surface)', color: 'var(--ums-brand-primary)', fontSize: '13px', fontWeight: 600,
     cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
   toggleActiveForm: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'white', color: '#E65100', fontSize: '13px', fontWeight: 600,
+    background: 'var(--ums-bg-surface)', color: '#E65100', fontSize: '13px', fontWeight: 600,
     cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
   },
   toggleInactive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'transparent', color: '#5F7A8F', fontSize: '13px', fontWeight: 500,
+    background: 'transparent', color: 'var(--ums-text-muted)', fontSize: '13px', fontWeight: 500,
     cursor: 'pointer',
   },
 
@@ -661,7 +661,7 @@ const styles: Record<string, React.CSSProperties> = {
   uploadLabel: { display: 'inline-block', cursor: 'pointer' },
   uploadButton: {
     display: 'inline-block', padding: '11px 24px',
-    background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: 'white',
+    background: 'var(--ums-brand-gradient)', color: 'var(--ums-bg-surface)',
     borderRadius: '10px', fontSize: '14px', fontWeight: 500,
     boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)', cursor: 'pointer',
   },

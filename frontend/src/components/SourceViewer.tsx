@@ -17,8 +17,8 @@ export function SourceViewer({ source, onClose }: Props) {
   }, [handleKeyDown]);
 
   const relevancePct = Math.round(source.score * 100);
-  const relevanceColor = relevancePct >= 70 ? '#166534' : relevancePct >= 40 ? '#c2410c' : '#5F7A8F';
-  const relevanceBg = relevancePct >= 70 ? '#dcfce7' : relevancePct >= 40 ? '#fff7ed' : '#F7FAFD';
+  const relevanceColor = relevancePct >= 70 ? '#166534' : relevancePct >= 40 ? '#c2410c' : 'var(--ums-text-muted)';
+  const relevanceBg = relevancePct >= 70 ? '#dcfce7' : relevancePct >= 40 ? '#fff7ed' : 'var(--ums-bg-surface-alt)';
 
   return (
     <div style={styles.overlay} onClick={onClose}>
@@ -66,7 +66,7 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: 'blur(4px)',
   },
   modal: {
-    backgroundColor: 'white',
+    backgroundColor: 'var(--ums-bg-surface)',
     borderRadius: '16px',
     padding: '28px',
     maxWidth: '720px',
@@ -81,27 +81,27 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'flex-start',
     gap: '16px',
   },
-  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.2px' },
+  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
   metaRow: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
-  metaBadge: { fontSize: '12px', color: '#1B6FC9', border: '1px solid #BBDEFB', borderRadius: '6px', padding: '3px 10px', whiteSpace: 'nowrap', background: '#E3F2FD', fontWeight: 500 },
+  metaBadge: { fontSize: '12px', color: 'var(--ums-brand-primary)', border: '1px solid var(--ums-border)', borderRadius: '6px', padding: '3px 10px', whiteSpace: 'nowrap', background: 'var(--ums-brand-light)', fontWeight: 500 },
   closeButton: {
-    background: '#F7FAFD',
-    border: '1px solid #E8EFF5',
+    background: 'var(--ums-bg-surface-alt)',
+    border: '1px solid var(--ums-border-light)',
     fontSize: '16px',
     cursor: 'pointer',
-    color: '#5F7A8F',
+    color: 'var(--ums-text-muted)',
     padding: '6px 10px',
     borderRadius: '8px',
     lineHeight: 1,
     flexShrink: 0,
   },
   divider: { height: '1px', background: '#E8EFF5', margin: '18px 0' },
-  label: { fontSize: '11px', fontWeight: 600, color: '#5F7A8F', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' },
+  label: { fontSize: '11px', fontWeight: 600, color: 'var(--ums-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' },
   textContent: {
     padding: '18px',
-    backgroundColor: '#F7FAFD',
+    backgroundColor: 'var(--ums-bg-surface-alt)',
     borderRadius: '12px',
-    border: '1px solid #E8EFF5',
+    border: '1px solid var(--ums-border-light)',
     fontSize: '14px',
     lineHeight: '1.7',
     whiteSpace: 'pre-wrap',

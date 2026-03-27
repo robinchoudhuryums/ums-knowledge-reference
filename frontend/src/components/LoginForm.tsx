@@ -1,4 +1,5 @@
 import { useState, FormEvent } from 'react';
+import { Brain } from 'lucide-react';
 
 interface Props {
   onLogin: (username: string, password: string) => Promise<void>;
@@ -27,7 +28,7 @@ export function LoginForm({ onLogin }: Props) {
   return (
     <div style={styles.container} className="hex-pattern-strong">
       <div style={styles.card}>
-        <div style={styles.logoMark}>+</div>
+        <div style={styles.logoMark}><Brain size={28} /></div>
         <h1 style={styles.title}>UMS Knowledge Base</h1>
         <p style={styles.subtitle}>Sign in to access the knowledge base</p>
         <form onSubmit={handleSubmit} style={styles.form}>
@@ -77,22 +78,24 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100vh',
-    background: 'linear-gradient(160deg, #E3F2FD 0%, #BBDEFB 40%, #90CAF9 100%)',
+    background: 'var(--ums-bg-app)',
   },
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: 'var(--ums-bg-surface)',
     backdropFilter: 'blur(16px)',
     borderRadius: '20px',
     padding: '48px 40px',
-    boxShadow: '0 8px 40px rgba(21, 101, 192, 0.15), 0 0 0 1px rgba(255,255,255,0.6) inset',
+    boxShadow: 'var(--ums-shadow-md)',
+    border: '1px solid var(--ums-border-light)',
     width: '100%',
     maxWidth: '420px',
+    transition: 'background-color 0.2s ease',
   },
   logoMark: {
     width: '52px',
     height: '52px',
     borderRadius: '14px',
-    background: 'linear-gradient(135deg, #1B6FC9, #42A5F5)',
+    background: 'var(--ums-brand-gradient)',
     color: 'white',
     display: 'flex',
     alignItems: 'center',
@@ -105,13 +108,13 @@ const styles: Record<string, React.CSSProperties> = {
     margin: '0 0 6px',
     fontSize: '22px',
     fontWeight: 700,
-    color: '#0D2137',
+    color: 'var(--ums-text-primary)',
     textAlign: 'center' as const,
     letterSpacing: '-0.3px',
   },
   subtitle: {
     margin: '0 0 28px',
-    color: '#6B8299',
+    color: 'var(--ums-text-muted)',
     textAlign: 'center' as const,
     fontSize: '14px',
   },
@@ -128,19 +131,20 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     fontSize: '13px',
     fontWeight: 500,
-    color: '#4A6274',
+    color: 'var(--ums-text-muted)',
   },
   input: {
     padding: '11px 14px',
-    border: '1px solid #D6E4F0',
+    border: '1px solid var(--ums-border)',
     borderRadius: '10px',
     fontSize: '14px',
-    backgroundColor: '#F7FAFD',
+    backgroundColor: 'var(--ums-bg-input)',
+    color: 'var(--ums-text-secondary)',
     transition: 'all 0.15s ease',
   },
   button: {
     padding: '12px',
-    background: 'linear-gradient(135deg, #1B6FC9, #1565C0)',
+    background: 'var(--ums-brand-gradient)',
     color: 'white',
     border: 'none',
     borderRadius: '10px',
@@ -152,11 +156,11 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.2px',
   },
   error: {
-    color: '#dc2626',
+    color: 'var(--ums-error)',
     fontSize: '13px',
     textAlign: 'center' as const,
     padding: '8px 12px',
-    background: '#fef2f2',
+    background: 'var(--ums-bg-surface-alt)',
     borderRadius: '8px',
     border: '1px solid #fecaca',
   },

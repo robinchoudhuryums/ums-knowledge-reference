@@ -79,9 +79,9 @@ export async function runMigrations(): Promise<void> {
 }
 
 // Allow running directly: npx tsx src/config/migrate.ts
-if (require.main === module) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require('dotenv').config();
+// eslint-disable-next-line no-undef
+if (typeof require !== 'undefined' && require.main === module) {
+  import('dotenv').then(d => d.config());
   runMigrations()
     .then(() => { logger.info('Migrations complete'); process.exit(0); })
     .catch((err) => { logger.error('Migration failed', { error: String(err) }); process.exit(1); })

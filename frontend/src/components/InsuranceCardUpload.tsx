@@ -255,7 +255,7 @@ const sty = {
   uploadTrigger: { color: '#1976d2', cursor: 'pointer', textDecoration: 'underline' as const } as React.CSSProperties,
   statusSuccess: { color: '#28a745', fontWeight: 700, fontSize: 13 } as React.CSSProperties,
   gallery: { display: 'flex', gap: 10, marginTop: 10, overflowX: 'auto' as const, padding: 2 } as React.CSSProperties,
-  thumbWrapper: { position: 'relative' as const, width: 60, height: 60, border: '1px solid #ddd', borderRadius: 6, background: '#fff', flexShrink: 0 } as React.CSSProperties,
+  thumbWrapper: { position: 'relative' as const, width: 60, height: 60, border: '1px solid #ddd', borderRadius: 6, background: 'var(--ums-bg-surface)', flexShrink: 0 } as React.CSSProperties,
   thumbImg: { width: '100%', height: '100%', objectFit: 'cover' as const, borderRadius: 5 } as React.CSSProperties,
   thumbRemove: { position: 'absolute' as const, top: -6, right: -6, background: '#dc3545', color: '#fff', borderRadius: '50%', width: 18, height: 18, textAlign: 'center' as const, lineHeight: '16px', fontSize: 12, cursor: 'pointer', border: '1px solid #fff', fontWeight: 700 } as React.CSSProperties,
   ocrBtn: { marginTop: 10, background: '#2e7d32', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' } as React.CSSProperties,

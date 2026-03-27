@@ -403,7 +403,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                   ...styles.uploadStatusDot,
                   backgroundColor: item.status === 'done' ? '#16a34a' :
                     item.status === 'error' ? '#dc2626' :
-                    item.status === 'uploading' ? '#1B6FC9' : '#5F7A8F',
+                    item.status === 'uploading' ? 'var(--ums-brand-primary)' : 'var(--ums-text-muted)',
                 }} />
                 <span style={styles.uploadFileName}>{item.name}</span>
                 <span style={styles.uploadStatus}>
@@ -484,7 +484,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                       {doc.status}
                     </span>
                   </td>
-                  <td style={{ ...styles.td, color: '#5F7A8F' }}>{formatSize(doc.sizeBytes)}</td>
+                  <td style={{ ...styles.td, color: 'var(--ums-text-muted)' }}>{formatSize(doc.sizeBytes)}</td>
                   <td style={styles.td}>
                     <span style={styles.chunkBadge}>{doc.chunkCount}</span>
                   </td>
@@ -529,8 +529,8 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
                       ) : null}
                     </div>
                   </td>
-                  <td style={{ ...styles.td, color: '#5F7A8F' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
-                  <td style={{ ...styles.td, color: '#5F7A8F' }}>{doc.uploadedBy}</td>
+                  <td style={{ ...styles.td, color: 'var(--ums-text-muted)' }}>{new Date(doc.uploadedAt).toLocaleDateString()}</td>
+                  <td style={{ ...styles.td, color: 'var(--ums-text-muted)' }}>{doc.uploadedBy}</td>
                   {isAdmin && (
                     <td style={styles.td}>
                       <button onClick={() => handleDelete(doc)} style={styles.deleteButton} aria-label={`Delete ${doc.originalName}`}>Delete</button>
@@ -547,7 +547,7 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
               )}
               {!documentsLoading && documents.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 9 : 7} style={{ ...styles.td, textAlign: 'center', color: '#5F7A8F', padding: '40px 12px' }}>
+                  <td colSpan={isAdmin ? 9 : 7} style={{ ...styles.td, textAlign: 'center', color: 'var(--ums-text-muted)', padding: '40px 12px' }}>
                     No documents uploaded yet
                   </td>
                 </tr>
@@ -593,7 +593,7 @@ const styles: Record<string, React.CSSProperties> = {
   colRow: { display: 'flex', alignItems: 'center', gap: '4px' },
   colButton: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', color: 'var(--ums-text-muted)', transition: 'all 0.15s' },
   colButtonActive: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'var(--ums-brand-light)', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#0D47A1' },
-  deleteColButton: { background: 'none', border: 'none', color: '#B0C4D8', cursor: 'pointer', fontSize: '14px', borderRadius: '4px', padding: '4px 8px' },
+  deleteColButton: { background: 'none', border: 'none', color: 'var(--ums-text-placeholder)', cursor: 'pointer', fontSize: '14px', borderRadius: '4px', padding: '4px 8px' },
   addColButton: { padding: '9px 14px', border: '1px dashed #d1d5db', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '13px', color: 'var(--ums-brand-primary)', marginTop: '8px', width: '100%', fontWeight: 500 },
   newColForm: { marginTop: '8px', display: 'flex', flexDirection: 'column' as const, gap: '6px' },
   smallInput: { padding: '8px 10px', border: '1px solid var(--ums-border)', borderRadius: '8px', fontSize: '13px', background: 'var(--ums-bg-surface)' },

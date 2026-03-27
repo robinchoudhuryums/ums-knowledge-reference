@@ -82,7 +82,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 10000,
   },
   dialog: {
-    background: '#ffffff',
+    background: 'var(--ums-bg-surface)',
     borderRadius: '14px',
     padding: '24px',
     maxWidth: '420px',
@@ -93,12 +93,12 @@ const styles: Record<string, React.CSSProperties> = {
     margin: '0 0 8px',
     fontSize: '17px',
     fontWeight: 700,
-    color: '#0D2137',
+    color: 'var(--ums-text-primary)',
   },
   message: {
     margin: '0 0 20px',
     fontSize: '14px',
-    color: '#4A6274',
+    color: 'var(--ums-text-muted)',
     lineHeight: '1.5',
   },
   actions: {
@@ -109,16 +109,16 @@ const styles: Record<string, React.CSSProperties> = {
   cancelButton: {
     padding: '8px 18px',
     background: 'none',
-    border: '1px solid #D6E4F0',
+    border: '1px solid var(--ums-border)',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 500,
-    color: '#4A6274',
+    color: 'var(--ums-text-muted)',
   },
   confirmButton: {
     padding: '8px 18px',
-    background: 'linear-gradient(135deg, #1B6FC9, #1565C0)',
+    background: 'var(--ums-brand-gradient)',
     color: 'white',
     border: 'none',
     borderRadius: '8px',

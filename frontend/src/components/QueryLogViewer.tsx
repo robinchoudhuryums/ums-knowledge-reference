@@ -55,14 +55,14 @@ export function QueryLogViewer() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: '28px', maxWidth: '620px' },
-  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: '#0D2137', letterSpacing: '-0.2px' },
-  description: { margin: '0 0 20px', fontSize: '14px', color: '#6B8299', lineHeight: '1.5' },
+  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
+  description: { margin: '0 0 20px', fontSize: '14px', color: 'var(--ums-text-muted)', lineHeight: '1.5' },
   row: { display: 'flex', alignItems: 'center', gap: '12px' },
-  label: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#4A6274', fontWeight: 500 },
-  dateInput: { padding: '9px 14px', border: '1px solid #D6E4F0', borderRadius: '10px', fontSize: '14px', background: '#F7FAFD' },
+  label: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--ums-text-muted)', fontWeight: 500 },
+  dateInput: { padding: '9px 14px', border: '1px solid var(--ums-border)', borderRadius: '10px', fontSize: '14px', background: 'var(--ums-bg-surface-alt)' },
   downloadButton: {
     padding: '9px 22px',
-    background: 'linear-gradient(135deg, #1B6FC9, #1565C0)',
+    background: 'var(--ums-brand-gradient)',
     color: 'white',
     border: 'none',
     borderRadius: '10px',

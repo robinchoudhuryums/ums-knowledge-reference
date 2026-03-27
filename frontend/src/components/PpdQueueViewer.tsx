@@ -286,17 +286,17 @@ export function PpdQueueViewer() {
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: '28px', maxWidth: '1100px' },
   title: { margin: '0 0 16px', fontSize: '18px', fontWeight: 700, color: '#223b5d', letterSpacing: '-0.2px' },
-  meta: { fontSize: '13px', color: '#6B8299', margin: '0 4px 8px 0', display: 'inline-block' },
+  meta: { fontSize: '13px', color: 'var(--ums-text-muted)', margin: '0 4px 8px 0', display: 'inline-block' },
   error: { marginTop: '12px', padding: '12px 16px', background: '#fef2f2', color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca' },
 
   // Filter bar
   filterBar: { display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' as const },
   filterButton: {
-    padding: '7px 16px', border: '1px solid #D6E4F0', borderRadius: '8px',
-    background: '#F7FAFD', color: '#4A6274', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
+    padding: '7px 16px', border: '1px solid var(--ums-border)', borderRadius: '8px',
+    background: 'var(--ums-bg-surface-alt)', color: 'var(--ums-text-muted)', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
   },
   filterButtonActive: {
-    background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: '#fff', border: '1px solid #1565C0',
+    background: 'var(--ums-brand-gradient)', color: '#fff', border: '1px solid #1565C0',
     boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)',
   },
 
@@ -306,7 +306,7 @@ const styles: Record<string, React.CSSProperties> = {
   th: { textAlign: 'left' as const, padding: '10px 12px', background: '#223b5d', color: '#fff', fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap' as const },
   tr: { borderBottom: '1px solid #E8EFF5' },
   td: { padding: '10px 12px', verticalAlign: 'top' as const },
-  subText: { fontSize: '12px', color: '#6B8299' },
+  subText: { fontSize: '12px', color: 'var(--ums-text-muted)' },
   badge: { display: 'inline-block', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 },
   viewButton: {
     padding: '5px 14px', background: '#1976d2', color: '#fff', border: 'none',
@@ -319,22 +319,22 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, marginBottom: '16px',
   },
   detailHeader: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' as const, marginBottom: '4px' },
-  section: { marginTop: '20px', padding: '16px', background: '#F7FAFD', borderRadius: '10px', border: '1px solid #E8EFF5' },
+  section: { marginTop: '20px', padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid #E8EFF5' },
   sectionTitle: { margin: '0 0 10px', fontSize: '15px', fontWeight: 600, color: '#223b5d' },
   responseRow: { display: 'flex', gap: '8px', padding: '4px 0', fontSize: '13px' },
-  responseLabel: { fontWeight: 600, color: '#4A6274', minWidth: '80px' },
+  responseLabel: { fontWeight: 600, color: 'var(--ums-text-muted)', minWidth: '80px' },
   responseValue: { color: '#223b5d' },
-  productCard: { display: 'flex', gap: '12px', padding: '10px', background: '#fff', borderRadius: '8px', border: '1px solid #E8EFF5', marginBottom: '8px' },
+  productCard: { display: 'flex', gap: '12px', padding: '10px', background: 'var(--ums-bg-surface)', borderRadius: '8px', border: '1px solid #E8EFF5', marginBottom: '8px' },
   productImage: { width: '80px', height: '80px', objectFit: 'cover' as const, borderRadius: '6px', flexShrink: 0 },
-  justification: { fontSize: '12px', color: '#6B8299', marginTop: '4px' },
+  justification: { fontSize: '12px', color: 'var(--ums-text-muted)', marginTop: '4px' },
 
   // Status controls
-  statusControl: { marginTop: '24px', padding: '16px', background: '#F7FAFD', borderRadius: '10px', border: '1px solid #E8EFF5' },
+  statusControl: { marginTop: '24px', padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid #E8EFF5' },
   controlRow: { marginBottom: '10px' },
-  select: { padding: '8px 12px', border: '1px solid #D6E4F0', borderRadius: '8px', fontSize: '14px', background: '#fff' },
-  textarea: { width: '100%', padding: '10px 12px', border: '1px solid #D6E4F0', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical' as const, marginBottom: '10px', boxSizing: 'border-box' as const },
+  select: { padding: '8px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px', fontSize: '14px', background: 'var(--ums-bg-surface)' },
+  textarea: { width: '100%', padding: '10px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical' as const, marginBottom: '10px', boxSizing: 'border-box' as const },
   saveButton: {
-    padding: '9px 22px', background: 'linear-gradient(135deg, #1B6FC9, #1565C0)', color: '#fff',
+    padding: '9px 22px', background: 'var(--ums-brand-gradient)', color: '#fff',
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500,
     boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)',
   },

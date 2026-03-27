@@ -111,8 +111,9 @@ function detectTables(text: string): Array<{ start: number; end: number }> {
     const trimmed = line.trim();
 
     // Detect pipe-delimited table rows (markdown-style): "| col1 | col2 |" or "col1 | col2"
+    // A pipe row has 3+ pipe-separated segments, OR has at least one pipe with word chars and is not a separator line
     const isPipeRow = (trimmed.split('|').length >= 3) ||
-      (trimmed.includes('|') && /\w/.test(trimmed) && !/^[|:\-\s]+$/.test(trimmed) === false);
+      (trimmed.includes('|') && /\w/.test(trimmed) && !/^[|:\-\s]+$/.test(trimmed));
     // Detect separator rows: "|---|---|" or "--- | ---"
     const isSeparator = /^[|:\-\s]+$/.test(trimmed) && trimmed.includes('-');
     // Detect tab-delimited rows with multiple columns

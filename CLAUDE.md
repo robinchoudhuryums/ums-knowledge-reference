@@ -7,21 +7,21 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 
 ### Backend (`backend/`)
 - **Runtime**: Node.js + Express + TypeScript
-- **Entry**: `backend/src/index.ts`
+- **Entry**: `backend/src/server.ts`
 - **Key services** (`backend/src/services/`):
-  - `ingestion.ts` — Full pipeline: upload to S3 → extract text → vision describe images → chunk → embed → store in vector store
-  - `textExtractor.ts` — Extracts text from PDFs (pdf-parse + Textract OCR in parallel), DOCX, XLSX, CSV, HTML
+  - `ingestion.ts` — Full pipeline: upload to S3 → extract text → vision describe images → chunk → embed → store in vector store. Mutex-protected index updates, chunk rollback on failure, content-hash deduplication, file extension whitelist.
+  - `textExtractor.ts` — Extracts text from PDFs (pdf-parse + conditional Textract OCR based on word count), DOCX, XLSX, CSV, HTML
   - `visionExtractor.ts` — Sends PDFs to Haiku 4.5 via Bedrock Converse API to describe images/diagrams
-  - `ocr.ts` — AWS Textract OCR (sync for images, async for multi-page PDFs)
-  - `chunker.ts` — Splits text into overlapping chunks with section header detection
+  - `ocr.ts` — AWS Textract OCR (sync for images, async for multi-page PDFs). 5-minute hard timeout, transient error retry (3 attempts), 100ms pagination delay.
+  - `chunker.ts` — Splits text into overlapping chunks with section header detection and table preservation
   - `embeddings.ts` — Embedding facade (delegates to `EmbeddingProvider`), batch support (parallel batches of 20), retry with exponential backoff
   - `embeddingProvider.ts` — `EmbeddingProvider` interface for swappable embedding models
   - `titanEmbeddingProvider.ts` — Amazon Titan Embed V2 implementation of `EmbeddingProvider`
-  - `vectorStore.ts` — JSON-based vector store on S3 with cosine similarity search + IDF-enhanced BM25 keyword boosting + re-ranking. Tracks embedding model metadata.
-  - `s3Storage.ts` — S3 operations for documents, vectors, metadata
-  - `jobQueue.ts` — In-memory async job queue for long-running extractions, with status polling and auto-cleanup
-  - `audit.ts` — HIPAA audit logging to S3
-  - `usage.ts` — Per-user daily query limits
+  - `vectorStore.ts` — Hybrid vector store: routes to pgvector (PostgreSQL) when DATABASE_URL is configured, falls back to in-memory S3 JSON. Cosine similarity + IDF-enhanced BM25 keyword boosting + re-ranking. Medical-term-aware tokenizer preserves short tokens (IV, O2, 5mg). NaN guards, dimension validation.
+  - `s3Storage.ts` — S3 operations for documents, vectors. Size guards (50MB metadata, 500MB vector index).
+  - `jobQueue.ts` — Async job queue with S3 persistence (survives restarts), status polling, auto-cleanup
+  - `audit.ts` — HIPAA audit logging with SHA-256 hash chaining, mutex-protected writes, deep PHI redaction (recursive traversal of nested objects/arrays)
+  - `usage.ts` — Per-user daily query limits with rollback on failed queries
   - `queryLog.ts` — Query analytics with CSV export
   - `ragTrace.ts` — Per-query RAG observability tracing (retrieval scores, timing, confidence)
   - `faqAnalytics.ts` — FAQ pattern detection from query logs
@@ -31,22 +31,22 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `documentExtractor.ts` — Structured document extraction with templates (PPD, CMN, Prior Auth, General) using Claude Sonnet
   - `extractionTemplates.ts` — Extraction template definitions and field schemas
   - `clinicalNoteExtractor.ts` — AI-assisted clinical note extraction (ICD-10, test results, medical necessity) using Claude Sonnet
-  - `sourceMonitor.ts` — Automated URL monitoring for external document changes (SHA-256 hash comparison)
+  - `sourceMonitor.ts` — Automated URL monitoring for external document changes (SHA-256 hash comparison). Parallel checks with concurrency limit of 3.
   - `feeScheduleFetcher.ts` — CMS DME fee schedule auto-fetch and ingestion
   - `reindexer.ts` — Document change detection and re-ingestion service
   - `hcpcsLookup.ts` — Static HCPCS code database (332 codes, 25 categories) with search, lookup, and category browsing
   - `icd10Mapping.ts` — ICD-10 to HCPCS crosswalk (66 diagnosis codes, 116+ mappings) for DME equipment justification
   - `coverageChecklists.ts` — LCD coverage criteria checklists (8 LCDs) with documentation validation
   - `referenceEnrichment.ts` — Auto-detects HCPCS/ICD-10 codes and coverage keywords in queries, injects structured reference data into RAG context
-  - `ppdQuestionnaire.ts` — PPD (Patient Provided Data) questionnaire (45 questions EN/ES) for Power Mobility Device orders
+  - `ppdQuestionnaire.ts` — PPD (Patient Provided Data) questionnaire (45 questions EN/ES) for Power Mobility Device orders. Weight range validation (70-700 lbs), clinical-context spasticity detection.
   - `pmdCatalog.ts` — PMD product catalog (22 products) with images, brochures, weight capacities, seat types
   - `ppdQueue.ts` — S3-backed PPD submission queue with status workflow (pending → in_review → completed/returned)
-  - `seatingEvaluation.ts` — Auto-fills 2-page Seating Evaluation form from PPD responses (10 sections mapped)
+  - `seatingEvaluation.ts` — Auto-fills 2-page Seating Evaluation form from PPD responses (10 sections mapped). Numeric armStrength comparison, word-boundary MRADL classification, cognitive status inference from diagnoses.
   - `accountCreation.ts` — PMD Account Creation questionnaire (25 questions EN/ES) for sales lead intake
   - `papAccountCreation.ts` — PAP/CPAP Account Creation questionnaire (24 questions EN/ES) with conditional formatting
-  - `emailService.ts` — Gmail SMTP email sending via nodemailer (configurable via SMTP_USER/SMTP_PASS env vars)
-  - `insuranceCardReader.ts` — Insurance card OCR: Textract + Claude extracts structured fields, compares against entered data for mismatch detection
-  - `dataRetention.ts` — HIPAA-compliant automated data retention cleanup (audit 7yr, query logs 1yr, traces 90d, feedback 1yr)
+  - `emailService.ts` — Gmail SMTP email sending via nodemailer with email format validation and header injection prevention
+  - `insuranceCardReader.ts` — Insurance card OCR: Textract + Claude extracts structured fields, immediate PHI redaction, audit trail, mismatch detection
+  - `dataRetention.ts` — HIPAA-compliant automated data retention cleanup with hard-coded minimum floors (audit ≥6yr), NaN-safe parseInt, validated date regex
 - **Routes** (`backend/src/routes/`):
   - `query.ts` — RAG query (non-streaming + streaming SSE), query reformulation for follow-ups
   - `documents.ts` — Document upload, listing, deletion, clinical extraction, fee schedule fetch, reindex
@@ -63,12 +63,14 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `ppd.ts` — PPD questionnaire, PMD recommendations, seating evaluation, submission queue, email
   - `accountCreation.ts` — PMD Account Creation form submission + insurance card OCR
   - `papAccountCreation.ts` — PAP/CPAP Account Creation form submission
-- **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `formRules.ts` (CMN form type rules)
-- **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, account lockout)
+- **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `database.ts` (PostgreSQL connection pool with RDS SSL), `migrate.ts` (SQL migration runner), `formRules.ts` (CMN form type rules)
+- **Database layer** (`backend/src/db/`): Hybrid S3/RDS access layer. `index.ts` routes to PostgreSQL when DATABASE_URL is configured, falls back to S3 JSON. `users.ts` (user CRUD), `documents.ts` (document/collection CRUD with document count aggregation), `vectorStore.ts` (pgvector-backed similarity search with IVFFlat index).
+- **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index)
+- **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, async lockout check in middleware, lockout cache for S3 outage resilience, revokeAllUserTokens on password reset)
 - **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `phiRedactor.ts` (PHI scrubbing with natural language DOB, MRN, SSN, phone, email, address, Medicare/Medicaid), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout), `metrics.ts` (in-memory request metrics with per-route latency percentiles)
-- **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts` — decoupled from S3 for future database migration
+- **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): 205 total tests across 18 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, and more.
+- **Tests** (`backend/src/__tests__/`): 334 total tests across 28 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, and integration tests.
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
@@ -97,19 +99,23 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `AccountCreationForm.tsx` — PMD Account Creation form with section completion badges, progress ring, insurance card OCR upload
   - `PapAccountCreationForm.tsx` — PAP/CPAP Account Creation form with conditional formatting badges, insurance card OCR upload
   - `InsuranceCardUpload.tsx` — Reusable drag-and-drop/paste image upload with Textract OCR, auto-fill, and mismatch detection
-- **Hooks**: `frontend/src/hooks/useAuth.ts`, `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout)
-- **API client**: `frontend/src/services/api.ts`
+  - `LoadingSkeleton.tsx` — Reusable shimmer-animated loading placeholder
+- **Hooks**: `frontend/src/hooks/useAuth.ts` (login/logout with stream cancellation), `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout with full-viewport interaction blocker)
+- **API client**: `frontend/src/services/api.ts` (AbortController-based stream cancellation, 2MB SSE buffer cap)
 - **Types**: `frontend/src/types/index.ts`
-- **Styling**: Inline styles + `index.css` (healthcare blue palette with hexagonal/molecular background pattern)
+- **Styling**: CSS variables design system (`index.css`) with 30+ tokens for light/dark themes. Tailwind CSS v4 for utility classes. Healthcare blue palette with hexagonal/molecular background pattern. Dark mode via `class="dark"` on `<html>` with localStorage persistence and system preference detection.
+- **Icons**: Heroicons (`@heroicons/react/24/outline`) for standard UI, Lucide React (`lucide-react`) for medical icons (Brain logo, Stethoscope for clinical tab)
 
 ### AWS Services Used
-- **S3**: Document storage, vector store, metadata, audit logs, form analysis cache
+- **RDS (PostgreSQL 17)**: Primary database for users, documents, collections, audit logs, query logs, traces, feedback, jobs, PPD submissions. pgvector extension for embedding storage and similarity search.
+- **S3**: Raw document file storage (PDFs, DOCX, images), form analysis cache. Vector index and metadata fall back to S3 JSON when DATABASE_URL is not configured.
 - **Bedrock**: Claude Haiku 4.5 (RAG generation + vision), Claude Sonnet 4.6 (structured extraction + clinical notes), Titan Embed V2 (embeddings)
 - **Textract**: OCR for scanned PDFs and images
 
 ### Deployment
 - Single Docker container via `Dockerfile` (serves both backend API and frontend static build)
-- Configured for Render.com via `render.yaml`
+- **Production**: EC2 behind ALB with ACM SSL certificate. Auto-deploy via GitHub Actions CD pipeline on push to `main`.
+- **Database**: PostgreSQL on shared RDS instance (`ums_knowledge` database), pgvector extension enabled
 - Environment variables in `.env` (see `backend/.env.example`)
 
 ## Development Commands

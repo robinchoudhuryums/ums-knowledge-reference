@@ -62,15 +62,19 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 | **LLM (Extraction)** | Claude Sonnet 4.6 via AWS Bedrock |
 | **Embeddings** | Amazon Titan Embed V2 |
 | **OCR** | AWS Textract |
-| **Storage** | Amazon S3 (documents, vectors, metadata, audit logs) |
-| **Deployment** | Docker (single container), Render.com |
+| **Database** | PostgreSQL 17 on AWS RDS (pgvector for embeddings) |
+| **Storage** | Amazon S3 (raw document files), PostgreSQL (metadata, vectors, audit) |
+| **Icons** | Heroicons (UI) + Lucide React (medical: Brain, Stethoscope) |
+| **Styling** | Tailwind CSS v4 + CSS variables (light/dark themes) |
+| **Deployment** | Docker on EC2 behind ALB, auto-deploy via GitHub Actions |
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+
-- AWS account with S3, Bedrock, and Textract access
-- Docker (optional, for production builds)
+- Node.js 20+
+- AWS account with S3, Bedrock, Textract, and RDS access
+- PostgreSQL 15+ with pgvector extension (AWS RDS recommended)
+- Docker (for production builds)
 
 ### Setup
 
@@ -104,6 +108,7 @@ See `backend/.env.example` for all configuration options:
 - `PPD_BCC_EMAIL` — BCC address for PPD/form emails (optional)
 - `RETENTION_AUDIT_DAYS` — Audit log retention (default: 2555, ~7 years)
 - `RETENTION_QUERY_LOG_DAYS` — Query log retention (default: 365)
+- `DATABASE_URL` — PostgreSQL connection string (enables RDS storage, falls back to S3 JSON when not set)
 
 ### Docker
 
@@ -112,13 +117,28 @@ docker build -t ums-knowledge .
 docker run -p 3001:3001 --env-file backend/.env ums-knowledge
 ```
 
+### Production Deployment (EC2)
+
+The app auto-deploys to EC2 via GitHub Actions when code is pushed to `main`:
+1. CI runs (lint, type-check, 334 tests)
+2. SSHes into EC2 → `git pull` → `docker build` → restart container
+3. Health check verification at `/api/health`
+
+Manual deploy:
+```bash
+cd ~/ums-knowledge-reference && git pull
+docker build -t ums-knowledge .
+docker stop ums-knowledge && docker rm ums-knowledge
+docker run -d --name ums-knowledge --restart unless-stopped --env-file ~/ums-knowledge.env -p 3001:3001 ums-knowledge
+```
+
 ## Development
 
 ```bash
 # Type-check
 cd backend && npx tsc --noEmit
 
-# Run tests (205 tests across 18 test files)
+# Run tests (334 tests across 28 test files)
 cd backend && npm test
 
 # Lint
@@ -159,6 +179,8 @@ The IAM role/user needs:
 | CRUD | `/api/sources/*` | Document source monitoring (admin) |
 | CRUD | `/api/users/*` | User management (admin) |
 | GET | `/api/query-log/*` | Query logs, audit logs, observability (admin) |
+| GET | `/api/health` | Health check (S3, database, vector store) |
+| GET | `/api/metrics` | Server metrics — latency percentiles, error rates (admin) |
 
 ## License
 

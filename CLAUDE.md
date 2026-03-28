@@ -160,6 +160,9 @@ docker build -t ums-knowledge .
 - **Input truncation**: 8K chars for embeddings, 80K for extraction, 2K for user queries
 - **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
 
+## Cross-Project Port Tracking
+When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to track which changes are candidates for porting to the multi-tenant [Observatory QA](https://github.com/robinchoudhuryums/observatory-qa) platform. The log tracks porting status (Ported/Pending/N/A) across security, RAG quality, compliance, and observability categories.
+
 ## Recent Changes (reverse chronological)
 - **Test coverage expansion** (10 new test files, 142 new tests): Added tests for htmlEscape, hcpcsLookup, icd10Mapping, pmdCatalog, coverageChecklists, formRules, accountCreation, papAccountCreation, referenceEnrichment, and faqAnalytics. Total: 391 → 533 tests across 30 → 40 test files.
 - **Security and DevOps hardening**: HTML escaping utility (`htmlEscape.ts`) applied to all email HTML builders (PPD, Account Creation, PAP) to prevent XSS. CRLF sanitization on email subjects. `requireAdmin` added to PPD status update endpoint (was missing authorization). JWT `jti` changed from predictable `user-id-timestamp` to `crypto.randomUUID()`. CORS origin validation prevents `*` with credentials. Rate limiting added to Account Creation and PAP submit endpoints (10/15min) and query endpoints (30/15min). Lockout timing removed from error messages. `.nvmrc` (Node 20), `.github/dependabot.yml` (weekly npm + GitHub Actions updates).

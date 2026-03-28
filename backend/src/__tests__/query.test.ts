@@ -52,14 +52,18 @@ vi.mock('../services/embeddings', () => ({
 }));
 
 // Mock vectorStore
-vi.mock('../services/vectorStore', () => ({
-  searchVectorStore: vi.fn(async () => []),
-  initializeVectorStore: vi.fn(async () => {}),
-  addChunksToStore: vi.fn(async () => {}),
-  removeDocumentChunks: vi.fn(async () => {}),
-  searchChunksByKeyword: vi.fn(async () => []),
-  getVectorStoreStats: vi.fn(() => ({ totalChunks: 0, lastUpdated: null })),
-}));
+vi.mock('../services/vectorStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/vectorStore')>();
+  return {
+    ...actual,
+    searchVectorStore: vi.fn(async () => []),
+    initializeVectorStore: vi.fn(async () => {}),
+    addChunksToStore: vi.fn(async () => {}),
+    removeDocumentChunks: vi.fn(async () => {}),
+    searchChunksByKeyword: vi.fn(async () => []),
+    getVectorStoreStats: vi.fn(() => ({ totalChunks: 0, lastUpdated: null })),
+  };
+});
 
 // Mock Bedrock client
 const mockBedrockSend = vi.fn();
@@ -293,288 +297,65 @@ describe('Query Route', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Vector Store Search Tests — use real scoring logic with in-memory data
+// Vector Store scoring tests have been moved to vectorStore.test.ts where they
+// use REAL exported functions instead of re-implementations. This eliminates
+// the risk of test logic diverging from production scoring code.
+//
+// See: vectorStore.test.ts for comprehensive tests of:
+//   - cosineSimilarity, tokenize, buildIdfMap, bm25Score, reRankResults
+//   - expandQueryWithSynonyms (medical synonym expansion)
+//   - Dynamic avgDocLength, IDF cache invalidation
 // ---------------------------------------------------------------------------
 
-describe('Vector Store Search (in-memory)', () => {
-  // We need the real internal functions. Since they are not exported, we
-  // replicate them here exactly as in vectorStore.ts to test the algorithms.
+// Keeping a minimal integration-style test using real imports
+import {
+  cosineSimilarity as realCosine,
+  buildIdfMap as realBuildIdf,
+  bm25Score as realBm25,
+} from '../services/vectorStore';
 
-  function cosineSimilarity(a: number[], b: number[]): number {
-    let dotProduct = 0, normA = 0, normB = 0;
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-    const d = Math.sqrt(normA) * Math.sqrt(normB);
-    return d === 0 ? 0 : dotProduct / d;
-  }
-
-  function tokenize(text: string): string[] {
-    return text.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(t => t.length > 2);
-  }
-
-  function buildIdfMap(chunks: StoredChunk[]): Map<string, number> {
-    const N = chunks.length;
-    const docFreq = new Map<string, number>();
-    for (const chunk of chunks) {
-      const terms = new Set(tokenize(chunk.text));
-      for (const term of terms) {
-        docFreq.set(term, (docFreq.get(term) || 0) + 1);
-      }
-    }
-    const idf = new Map<string, number>();
-    for (const [term, df] of docFreq) {
-      idf.set(term, Math.log((N - df + 0.5) / (df + 0.5) + 1));
-    }
-    return idf;
-  }
-
-  function bm25Score(query: string, text: string, idf: Map<string, number>): number {
-    const queryTerms = tokenize(query);
-    const docTerms = tokenize(text);
-    const docLength = docTerms.length;
-    const avgDocLength = 500;
-    const k1 = 1.2;
-    const b = 0.75;
-    const tf = new Map<string, number>();
-    for (const term of docTerms) {
-      tf.set(term, (tf.get(term) || 0) + 1);
-    }
-    let score = 0;
-    for (const term of queryTerms) {
-      const termFreq = tf.get(term) || 0;
-      if (termFreq === 0) continue;
-      const idfScore = idf.get(term) || 0;
-      const num = termFreq * (k1 + 1);
-      const den = termFreq + k1 * (1 - b + b * (docLength / avgDocLength));
-      score += idfScore * (num / den);
-    }
-    return score;
-  }
-
-  function reRankResults(
-    results: Array<{ chunk: StoredChunk; document: Document; score: number }>,
-    queryText: string
-  ): Array<{ chunk: StoredChunk; document: Document; score: number }> {
-    const queryTerms = new Set(tokenize(queryText));
-    const docChunkCounts = new Map<string, number>();
-    for (const r of results) {
-      docChunkCounts.set(r.chunk.documentId, (docChunkCounts.get(r.chunk.documentId) || 0) + 1);
-    }
-    return results.map(r => {
-      let boost = 0;
-      if (r.chunk.sectionHeader) {
-        const headerTerms = tokenize(r.chunk.sectionHeader);
-        const matchCount = headerTerms.filter(t => queryTerms.has(t)).length;
-        if (matchCount > 0) {
-          boost += 0.05 * Math.min(matchCount / queryTerms.size, 1);
-        }
-      }
-      const docCount = docChunkCounts.get(r.chunk.documentId) || 1;
-      if (docCount > 1) {
-        boost += 0.02 * Math.min(docCount - 1, 3);
-      }
-      if (r.chunk.text.length < 50) {
-        boost -= 0.1;
-      }
-      return { ...r, score: r.score + boost };
-    });
-  }
-
-  // Helpers to build test data
-
+describe('Vector Store Search (real scoring functions)', () => {
   function makeStoredChunk(overrides: Partial<StoredChunk> = {}): StoredChunk {
     return {
-      id: 'c-1',
-      documentId: 'doc-1',
-      chunkIndex: 0,
+      id: 'c-1', documentId: 'doc-1', chunkIndex: 0,
       text: 'Default chunk text about oxygen supply equipment and procedures for patient care.',
-      tokenCount: 15,
-      startOffset: 0,
-      endOffset: 200,
-      embedding: [0.5, 0.3, 0.1],
+      tokenCount: 15, startOffset: 0, endOffset: 200, embedding: [0.5, 0.3, 0.1],
       ...overrides,
     };
   }
 
-  function makeDocument(overrides: Partial<Document> = {}): Document {
-    return {
-      id: 'doc-1',
-      filename: 'doc.pdf',
-      originalName: 'Document.pdf',
-      mimeType: 'application/pdf',
-      sizeBytes: 1000,
-      s3Key: 'docs/doc.pdf',
-      collectionId: 'col-1',
-      uploadedBy: 'admin',
-      uploadedAt: '2024-01-01',
-      status: 'ready',
-      chunkCount: 1,
-      version: 1,
-      ...overrides,
-    };
-  }
-
-  // -----------------------------------------------------------------------
-  // searchVectorStore integration tests (via the exported function, which
-  // uses the mocked S3 but real scoring). Since the module-level mock
-  // overrides searchVectorStore, we test the scoring algorithms directly.
-  // -----------------------------------------------------------------------
-
-  it('searchVectorStore returns top-K results sorted by score', () => {
-    // Simulate the scoring + sorting pipeline
-    const query = [0.9, 0.1, 0.0]; // query embedding
+  it('scoring pipeline produces correct ranking using real functions', () => {
+    const query = [0.9, 0.1, 0.0];
     const chunks = [
       makeStoredChunk({ id: 'c-1', embedding: [0.9, 0.1, 0.0], text: 'oxygen supply equipment and maintenance' }),
       makeStoredChunk({ id: 'c-2', embedding: [0.1, 0.9, 0.0], text: 'billing and insurance procedures for claims' }),
       makeStoredChunk({ id: 'c-3', embedding: [0.8, 0.2, 0.1], text: 'oxygen concentrator setup instructions manual' }),
-      makeStoredChunk({ id: 'c-4', embedding: [0.0, 0.0, 1.0], text: 'unrelated content about cafeteria lunch menu' }),
     ];
-    const idf = buildIdfMap(chunks);
+    const { idf } = realBuildIdf(chunks);
 
-    const scored = chunks.map(chunk => ({
+    const rawScored = chunks.map(chunk => ({
       chunk,
-      document: makeDocument({ id: chunk.documentId }),
-      score: 0.7 * cosineSimilarity(query, chunk.embedding) + 0.3 * Math.min(bm25Score('oxygen supply', chunk.text, idf) / 10, 1),
+      semanticScore: realCosine(query, chunk.embedding),
+      keywordScore: realBm25('oxygen supply', chunk.text, idf),
+    }));
+
+    const maxBm25 = rawScored.reduce((max, r) => Math.max(max, r.keywordScore), 0);
+    const scored = rawScored.map(({ chunk, semanticScore, keywordScore }) => ({
+      chunk,
+      score: 0.7 * semanticScore + 0.3 * (maxBm25 > 0 ? keywordScore / maxBm25 : 0),
     }));
 
     scored.sort((a, b) => b.score - a.score);
-    const topK = scored.slice(0, 2);
-
-    expect(topK).toHaveLength(2);
-    expect(topK[0].score).toBeGreaterThanOrEqual(topK[1].score);
-    // The chunk most similar to query should be first
-    expect(topK[0].chunk.id).toBe('c-1');
+    expect(scored[0].chunk.id).toBe('c-1'); // Most similar to query
   });
 
-  it('searchVectorStore filters by collectionIds', () => {
-    const docs = [
-      makeDocument({ id: 'doc-A', collectionId: 'col-1' }),
-      makeDocument({ id: 'doc-B', collectionId: 'col-2' }),
-      makeDocument({ id: 'doc-C', collectionId: 'col-1' }),
-    ];
-    const chunks = [
-      makeStoredChunk({ id: 'c-A', documentId: 'doc-A' }),
-      makeStoredChunk({ id: 'c-B', documentId: 'doc-B' }),
-      makeStoredChunk({ id: 'c-C', documentId: 'doc-C' }),
-    ];
-
-    const collectionIds = ['col-1'];
-    const allowedDocIds = new Set(
-      docs.filter(d => collectionIds.includes(d.collectionId)).map(d => d.id)
-    );
-    const filtered = chunks.filter(c => allowedDocIds.has(c.documentId));
-
-    expect(filtered).toHaveLength(2);
-    expect(filtered.map(c => c.id)).toEqual(['c-A', 'c-C']);
+  it('BM25 handles empty query via real function', () => {
+    const chunks = [makeStoredChunk({ text: 'some content here about equipment.' })];
+    const { idf } = realBuildIdf(chunks);
+    expect(realBm25('', chunks[0].text, idf)).toBe(0);
   });
 
-  it('searchVectorStore returns empty array when no candidates match', () => {
-    const docs = [makeDocument({ id: 'doc-1', collectionId: 'col-1' })];
-    const chunks = [makeStoredChunk({ id: 'c-1', documentId: 'doc-1' })];
-    const collectionIds = ['col-nonexistent'];
-    const allowedDocIds = new Set(
-      docs.filter(d => collectionIds.includes(d.collectionId)).map(d => d.id)
-    );
-    const filtered = chunks.filter(c => allowedDocIds.has(c.documentId));
-    expect(filtered).toHaveLength(0);
-  });
-
-  it('reRankResults boosts section header matches', () => {
-    const chunk1 = makeStoredChunk({ id: 'c-1', sectionHeader: 'Oxygen Supply Policy', text: 'Some text about procedures.' });
-    const chunk2 = makeStoredChunk({ id: 'c-2', sectionHeader: 'Billing Procedures', text: 'Some text about billing.' });
-
-    const results = [
-      { chunk: chunk1, document: makeDocument(), score: 0.50 },
-      { chunk: chunk2, document: makeDocument(), score: 0.50 },
-    ];
-
-    const reRanked = reRankResults(results, 'oxygen supply');
-    const oxygenResult = reRanked.find(r => r.chunk.id === 'c-1')!;
-    const billingResult = reRanked.find(r => r.chunk.id === 'c-2')!;
-
-    expect(oxygenResult.score).toBeGreaterThan(billingResult.score);
-  });
-
-  it('reRankResults penalizes short chunks', () => {
-    const shortChunk = makeStoredChunk({ id: 'c-short', text: 'Very short.' });
-    const normalChunk = makeStoredChunk({
-      id: 'c-normal',
-      text: 'This is a normal length chunk with enough content to describe oxygen supply equipment maintenance procedures and guidelines.',
-    });
-
-    const results = [
-      { chunk: shortChunk, document: makeDocument(), score: 0.60 },
-      { chunk: normalChunk, document: makeDocument(), score: 0.60 },
-    ];
-
-    const reRanked = reRankResults(results, 'oxygen');
-    const short = reRanked.find(r => r.chunk.id === 'c-short')!;
-    const normal = reRanked.find(r => r.chunk.id === 'c-normal')!;
-
-    // Short chunk gets -0.1 penalty (both also get +0.02 doc-count boost for sharing a doc)
-    expect(short.score).toBeLessThan(normal.score);
-    expect(short.score).toBeCloseTo(0.52, 2); // 0.60 - 0.10 + 0.02 = 0.52
-  });
-
-  it('hybrid scoring combines semantic and keyword weights correctly', () => {
-    const queryEmb = [1, 0, 0];
-    const chunkEmb = [0.8, 0.6, 0];
-
-    const semanticScore = cosineSimilarity(queryEmb, chunkEmb);
-    const semanticWeight = 0.7;
-    const keywordWeight = 0.3;
-
-    const chunks = [makeStoredChunk({ text: 'oxygen equipment maintenance procedures for patient care' })];
-    const idf = buildIdfMap(chunks);
-    const keyword = bm25Score('oxygen equipment', chunks[0].text, idf);
-    const normalizedKeyword = Math.min(keyword / 10, 1);
-
-    const combined = semanticWeight * semanticScore + keywordWeight * normalizedKeyword;
-
-    // Verify the weights add up correctly
-    expect(combined).toBeCloseTo(semanticWeight * semanticScore + keywordWeight * normalizedKeyword, 10);
-    // Semantic component should dominate with 0.7 weight
-    expect(semanticWeight * semanticScore).toBeGreaterThan(keywordWeight * normalizedKeyword);
-  });
-
-  it('BM25 with IDF weights rare terms higher', () => {
-    const chunks = [
-      makeStoredChunk({ id: 'c-1', text: 'the common words appear in every single document here' }),
-      makeStoredChunk({ id: 'c-2', text: 'the common words also appear in this other document too' }),
-      makeStoredChunk({ id: 'c-3', text: 'wheelchair maintenance is a specialized rare topic not found elsewhere' }),
-    ];
-
-    const idf = buildIdfMap(chunks);
-
-    // "common" appears in 2/3 chunks, "wheelchair" appears in 1/3
-    const commonIdf = idf.get('common') || 0;
-    const wheelchairIdf = idf.get('wheelchair') || 0;
-
-    expect(wheelchairIdf).toBeGreaterThan(commonIdf);
-
-    // A query for "wheelchair" should score higher on the chunk that has it
-    const scoreWithTerm = bm25Score('wheelchair', chunks[2].text, idf);
-    const scoreWithoutTerm = bm25Score('wheelchair', chunks[0].text, idf);
-
-    expect(scoreWithTerm).toBeGreaterThan(0);
-    expect(scoreWithoutTerm).toBe(0);
-  });
-
-  it('searchVectorStore handles empty query gracefully', () => {
-    const chunks = [
-      makeStoredChunk({ id: 'c-1', embedding: [0.5, 0.3, 0.1], text: 'some content here about equipment.' }),
-    ];
-    const idf = buildIdfMap(chunks);
-
-    // Empty query: tokenize returns empty, BM25 should be 0
-    const bm25 = bm25Score('', chunks[0].text, idf);
-    expect(bm25).toBe(0);
-
-    // Cosine sim with zero vector also returns 0
-    const sim = cosineSimilarity([0, 0, 0], chunks[0].embedding);
-    expect(sim).toBe(0);
+  it('cosine similarity handles zero vector via real function', () => {
+    expect(realCosine([0, 0, 0], [0.5, 0.3, 0.1])).toBe(0);
   });
 });

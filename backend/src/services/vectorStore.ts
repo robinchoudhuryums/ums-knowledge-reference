@@ -10,14 +10,118 @@ let cachedIndex: VectorStoreIndex | null = null;
 // Initialization lock to prevent concurrent initializeVectorStore() calls
 let initPromise: Promise<void> | null = null;
 
-// IDF cache — rebuilt when index changes
+// IDF cache — rebuilt when index changes.
+// Uses a version counter (incremented on every add/remove) instead of chunk count,
+// so the cache is correctly invalidated even when a delete+add results in the same count.
 let idfCache: Map<string, number> | null = null;
-let idfChunkCount = 0;
+let idfVersion = 0;
+let currentIdfVersion = -1;
+
+// Corpus-level average document (chunk) length in tokens, computed alongside IDF.
+// Used by BM25 for length normalization instead of a hardcoded constant.
+let cachedAvgDocLength = 0;
+
+// ---------------------------------------------------------------------------
+// Medical synonym map for query expansion.
+// When a user searches for one form, we also match the other forms.
+// This improves BM25 recall for domain-specific abbreviations and aliases.
+// Each key maps to its known synonyms/aliases (bidirectional).
+// ---------------------------------------------------------------------------
+const MEDICAL_SYNONYMS: ReadonlyMap<string, readonly string[]> = new Map([
+  // Equipment synonyms
+  ['wheelchair', ['wc', 'w/c', 'power wheelchair', 'manual wheelchair']],
+  ['cpap', ['continuous positive airway pressure', 'c-pap']],
+  ['bipap', ['bilevel', 'bi-pap', 'bilevel positive airway pressure', 'bpap']],
+  ['oxygen', ['o2', 'supplemental oxygen']],
+  ['concentrator', ['oxygen concentrator', 'poc', 'portable oxygen concentrator']],
+  ['nebulizer', ['neb', 'aerosol therapy']],
+  ['catheter', ['cath', 'foley', 'intermittent catheter']],
+  ['hospital bed', ['hospital bed', 'semi-electric bed', 'full-electric bed']],
+  ['walker', ['rollator', 'rolling walker']],
+  ['scooter', ['pov', 'power operated vehicle', 'mobility scooter']],
+  ['pmd', ['power mobility device', 'power wheelchair', 'power chair']],
+
+  // Clinical abbreviations
+  ['copd', ['chronic obstructive pulmonary disease']],
+  ['chf', ['congestive heart failure']],
+  ['osa', ['obstructive sleep apnea']],
+  ['als', ['amyotrophic lateral sclerosis', 'lou gehrig']],
+  ['cva', ['cerebrovascular accident', 'stroke']],
+  ['dvt', ['deep vein thrombosis']],
+  ['uti', ['urinary tract infection']],
+  ['bmi', ['body mass index']],
+  ['abn', ['advance beneficiary notice']],
+  ['cmn', ['certificate of medical necessity']],
+  ['lcd', ['local coverage determination']],
+  ['dme', ['durable medical equipment']],
+  ['hme', ['home medical equipment']],
+  ['snf', ['skilled nursing facility']],
+  ['alf', ['assisted living facility']],
+  ['f2f', ['face to face', 'face-to-face']],
+  ['spo2', ['oxygen saturation', 'pulse oximetry']],
+  ['abg', ['arterial blood gas']],
+  ['pft', ['pulmonary function test']],
+
+  // Billing/insurance terms
+  ['prior auth', ['prior authorization', 'pa']],
+  ['prior authorization', ['prior auth', 'pa']],
+  ['deductible', ['ded']],
+  ['coinsurance', ['coins']],
+  ['allowable', ['allowed amount', 'fee schedule']],
+]);
+
+// Build reverse lookup: for any synonym, find its group
+const synonymIndex = new Map<string, string[]>();
+for (const [key, synonyms] of MEDICAL_SYNONYMS) {
+  const group = [key, ...synonyms];
+  for (const term of group) {
+    const lower = term.toLowerCase();
+    if (!synonymIndex.has(lower)) {
+      synonymIndex.set(lower, []);
+    }
+    // Add all OTHER terms in the group
+    for (const other of group) {
+      const otherLower = other.toLowerCase();
+      if (otherLower !== lower && !synonymIndex.get(lower)!.includes(otherLower)) {
+        synonymIndex.get(lower)!.push(otherLower);
+      }
+    }
+  }
+}
+
+/**
+ * Expand a query with medical synonyms.
+ * Returns the original query with synonym terms appended, boosting BM25 recall.
+ * Only single-token synonyms are appended (multi-word synonyms help via the
+ * original query's semantic embedding, not keyword matching).
+ */
+export function expandQueryWithSynonyms(query: string): string {
+  const lower = query.toLowerCase();
+  const expansions: string[] = [];
+
+  for (const [term, synonyms] of synonymIndex) {
+    // Check if the term appears as a whole word in the query
+    const pattern = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(lower)) {
+      for (const syn of synonyms) {
+        // Only add single-token synonyms to avoid noise
+        if (!syn.includes(' ') && !lower.includes(syn)) {
+          expansions.push(syn);
+        }
+      }
+    }
+  }
+
+  if (expansions.length === 0) return query;
+  return `${query} ${expansions.join(' ')}`;
+}
 
 /**
  * Compute cosine similarity between two vectors.
+ * Exported for testing — allows tests to use the real implementation
+ * instead of re-implementing the algorithm (which risks divergence).
  */
-function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) {
     throw new Error(`Vector dimension mismatch: ${a.length} vs ${b.length}`);
   }
@@ -43,6 +147,8 @@ function cosineSimilarity(a: number[], b: number[]): number {
  * Preserves hyphenated terms (e.g. "IV-catheter", "bi-level", "CPAP-related")
  * as both the compound term and individual parts to improve medical term recall.
  * Short medical tokens (IV, O2, HR, etc.) are preserved even though they are <= 2 chars.
+ *
+ * Exported for testing.
  */
 
 // Short tokens that are medically significant and must not be filtered out.
@@ -57,7 +163,7 @@ const MEDICAL_SHORT_TOKENS = new Set([
 // Pattern for dosage tokens like "5mg", "10ml", "2l" — number + unit
 const DOSAGE_PATTERN = /^\d+(?:mg|ml|kg|lb|cc|dl|mm|cm|mcg|iu|l)$/;
 
-function tokenize(text: string): string[] {
+export function tokenize(text: string): string[] {
   const normalized = text
     .toLowerCase()
     // Remove punctuation except hyphens between word characters
@@ -99,14 +205,20 @@ function tokenize(text: string): string[] {
 /**
  * Build IDF (Inverse Document Frequency) map from the corpus.
  * IDF(term) = ln((N - df + 0.5) / (df + 0.5) + 1)
+ * Also computes the average document (chunk) length in tokens for BM25 normalization.
  */
-function buildIdfMap(chunks: StoredChunk[]): Map<string, number> {
+export function buildIdfMap(chunks: StoredChunk[]): { idf: Map<string, number>; avgDocLength: number } {
   const N = chunks.length;
+  if (N === 0) return { idf: new Map(), avgDocLength: 0 };
+
   const docFreq = new Map<string, number>();
+  let totalTokens = 0;
 
   for (const chunk of chunks) {
-    const terms = new Set(tokenize(chunk.text));
-    for (const term of terms) {
+    const terms = tokenize(chunk.text);
+    totalTokens += terms.length;
+    const uniqueTerms = new Set(terms);
+    for (const term of uniqueTerms) {
       docFreq.set(term, (docFreq.get(term) || 0) + 1);
     }
   }
@@ -116,25 +228,38 @@ function buildIdfMap(chunks: StoredChunk[]): Map<string, number> {
     idf.set(term, Math.log((N - df + 0.5) / (df + 0.5) + 1));
   }
 
-  return idf;
+  return { idf, avgDocLength: totalTokens / N };
 }
 
 function getIdfMap(chunks: StoredChunk[]): Map<string, number> {
-  if (!idfCache || idfChunkCount !== chunks.length) {
-    idfCache = buildIdfMap(chunks);
-    idfChunkCount = chunks.length;
+  if (!idfCache || currentIdfVersion !== idfVersion) {
+    const result = buildIdfMap(chunks);
+    idfCache = result.idf;
+    cachedAvgDocLength = result.avgDocLength;
+    currentIdfVersion = idfVersion;
   }
   return idfCache;
 }
 
 /**
- * BM25 scoring with proper IDF weighting.
+ * Get the corpus average document length (in tokens) for BM25 normalization.
+ * Computed alongside IDF to avoid a second pass over the corpus.
  */
-function bm25Score(query: string, text: string, idf: Map<string, number>): number {
+function getAvgDocLength(): number {
+  // Fallback if IDF hasn't been built yet (shouldn't happen in normal flow)
+  return cachedAvgDocLength || 500;
+}
+
+/**
+ * BM25 scoring with proper IDF weighting.
+ * avgDocLength is computed dynamically from the corpus (via getAvgDocLength())
+ * rather than using a hardcoded constant, so BM25 adapts as the corpus grows.
+ */
+export function bm25Score(query: string, text: string, idf: Map<string, number>): number {
   const queryTerms = tokenize(query);
   const docTerms = tokenize(text);
   const docLength = docTerms.length;
-  const avgDocLength = 500;
+  const avgDocLength = getAvgDocLength();
   const k1 = 1.2;
   const b = 0.75;
 
@@ -163,7 +288,7 @@ function bm25Score(query: string, text: string, idf: Map<string, number>): numbe
  * - Boost chunks from documents with more matching chunks
  * - Penalize very short chunks
  */
-function reRankResults(
+export function reRankResults(
   results: Array<{ chunk: StoredChunk; document: Document; score: number }>,
   queryText: string
 ): Array<{ chunk: StoredChunk; document: Document; score: number }> {
@@ -231,8 +356,11 @@ export async function initializeVectorStore(): Promise<void> {
       }
 
       // Pre-build IDF cache on startup
-      idfCache = buildIdfMap(cachedIndex.chunks);
-      idfChunkCount = cachedIndex.chunks.length;
+      const idfResult = buildIdfMap(cachedIndex.chunks);
+      idfCache = idfResult.idf;
+      cachedAvgDocLength = idfResult.avgDocLength;
+      idfVersion = 0;
+      currentIdfVersion = 0;
     } else {
       const ep = getEmbeddingProvider();
       cachedIndex = {
@@ -285,8 +413,8 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
   cachedIndex!.embeddingModel = ep.modelId;
   cachedIndex!.embeddingDimensions = ep.dimensions;
 
-  // Invalidate IDF cache since corpus changed
-  idfCache = null;
+  // Invalidate IDF cache since corpus changed (bump version so next search rebuilds)
+  idfVersion++;
 
   await saveVectorIndex(cachedIndex!);
   logger.info('Chunks added to vector store', { addedCount: storedChunks.length, totalCount: cachedIndex!.chunks.length });
@@ -378,11 +506,16 @@ export async function searchVectorStore(
   // Build IDF map from full corpus
   const idf = getIdfMap(cachedIndex!.chunks);
 
+  // Expand query with medical synonyms for better BM25 recall.
+  // The semantic search uses the original embedding (which captures meaning),
+  // while BM25 benefits from explicit synonym terms (e.g. "CPAP" → also match "c-pap").
+  const expandedQueryText = expandQueryWithSynonyms(queryText);
+
   // Score all candidates with IDF-enhanced BM25
   // First pass: compute raw scores
   const rawScored = candidates.map(chunk => {
     const semanticScore = cosineSimilarity(queryEmbedding, chunk.embedding);
-    const keywordScore = bm25Score(queryText, chunk.text, idf);
+    const keywordScore = bm25Score(expandedQueryText, chunk.text, idf);
     return { chunk, semanticScore, keywordScore };
   });
 

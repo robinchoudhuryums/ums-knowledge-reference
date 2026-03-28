@@ -64,8 +64,12 @@ jobs:
             const total = summary.total;
             const lines = total.lines.pct;
             const branches = total.branches.pct;
-            console.log('Coverage: lines=' + lines + '% branches=' + branches + '%');
-            if (lines < 30) { console.error('Line coverage below 30% threshold'); process.exit(1); }
+            const functions = total.functions.pct;
+            console.log('Coverage: lines=' + lines + '% branches=' + branches + '% functions=' + functions + '%');
+            let failed = false;
+            if (lines < 50) { console.error('Line coverage ' + lines + '% below 50% threshold'); failed = true; }
+            if (branches < 40) { console.error('Branch coverage ' + branches + '% below 40% threshold'); failed = true; }
+            if (failed) process.exit(1);
           " || echo "Coverage check skipped (no coverage data)"
 
   frontend:

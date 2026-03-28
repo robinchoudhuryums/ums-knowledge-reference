@@ -48,15 +48,21 @@ export async function extractTextWithOcr(buffer: Buffer, filename: string): Prom
     ? extractTextWithAsyncOcr(buffer, filename)
     : extractTextWithSyncOcr(buffer, filename);
 
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`OCR timed out after ${OCR_TIMEOUT_MS / 1000}s`)), OCR_TIMEOUT_MS)
-  );
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`OCR timed out after ${OCR_TIMEOUT_MS / 1000}s`)), OCR_TIMEOUT_MS);
+  });
 
-  return Promise.race([ocrPromise, timeoutPromise]);
+  try {
+    return await Promise.race([ocrPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
 }
 
 /**
  * Synchronous Textract for single-page images (PNG, JPEG, TIFF).
+ * Retries transient errors (HTTP 5xx, throttle) up to MAX_TRANSIENT_RETRIES times.
  */
 async function extractTextWithSyncOcr(buffer: Buffer, filename: string): Promise<OcrResult> {
   const command = new DetectDocumentTextCommand({
@@ -65,8 +71,25 @@ async function extractTextWithSyncOcr(buffer: Buffer, filename: string): Promise
     },
   });
 
-  const response = await textractClient.send(command);
-  return parseTextractBlocks(response.Blocks || [], filename);
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+    try {
+      const response = await textractClient.send(command);
+      return parseTextractBlocks(response.Blocks || [], filename);
+    } catch (err: unknown) {
+      lastError = err;
+      const isTransient = isTransientError(err);
+      if (!isTransient || attempt === MAX_TRANSIENT_RETRIES) {
+        throw err;
+      }
+      const delayMs = POLL_INTERVAL_MS * (attempt + 1); // 2s, 4s, 6s
+      logger.warn('Sync OCR transient error, retrying', {
+        filename, attempt: attempt + 1, maxRetries: MAX_TRANSIENT_RETRIES, error: String(err),
+      });
+      await sleep(delayMs);
+    }
+  }
+  throw lastError; // Should not reach here, but satisfies TypeScript
 }
 
 /**
@@ -223,6 +246,24 @@ function parseTextractBlocks(
   };
 }
 
+/**
+ * Detect transient AWS errors worth retrying (HTTP 5xx, throttling, network errors).
+ */
+function isTransientError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = (err as Record<string, unknown>)['$metadata']
+    && typeof (err as any)['$metadata'] === 'object'
+    ? (err as any)['$metadata'].httpStatusCode
+    : undefined;
+  if (typeof code === 'number' && code >= 500) return true;
+  const name = (err as any).name || '';
+  const message = String((err as any).message || '');
+  if (name === 'ThrottlingException' || name === 'ProvisionedThroughputExceededException') return true;
+  if (name === 'InternalServerError' || name === 'ServiceUnavailableException') return true;
+  if (message.includes('ECONNRESET') || message.includes('ETIMEDOUT') || message.includes('socket hang up')) return true;
+  return false;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -230,6 +271,7 @@ function sleep(ms: number): Promise<void> {
 /**
  * Extract structured text (tables, forms) from a document using Textract AnalyzeDocument.
  * More expensive but better for clinical notes with structured fields.
+ * Preserves table structure as tab-delimited rows and form key-value pairs.
  */
 export async function analyzeDocumentWithOcr(buffer: Buffer, filename: string): Promise<OcrResult> {
   logger.info('Starting OCR analysis (tables + forms)', { filename });
@@ -242,5 +284,114 @@ export async function analyzeDocumentWithOcr(buffer: Buffer, filename: string): 
   });
 
   const response = await textractClient.send(command);
-  return parseTextractBlocks(response.Blocks || [], filename);
+  return parseAnalyzeBlocks(response.Blocks || [], filename);
+}
+
+/**
+ * Parse AnalyzeDocument blocks preserving table/form structure.
+ * Tables are rendered as tab-delimited rows; form key-value pairs as "Key: Value" lines.
+ * Falls back to LINE extraction for regular text.
+ */
+function parseAnalyzeBlocks(
+  blocks: Array<{ BlockType?: string; Text?: string; Confidence?: number; Page?: number; Id?: string; EntityTypes?: string[]; Relationships?: Array<{ Type?: string; Ids?: string[] }> }>,
+  filename: string
+): OcrResult {
+  // Build a map of block ID → block for relationship lookups
+  const blockMap = new Map<string, typeof blocks[number]>();
+  for (const block of blocks) {
+    if (block.Id) blockMap.set(block.Id, block);
+  }
+
+  const outputParts: string[] = [];
+  const confidences: number[] = [];
+  const pages = new Set<number>();
+
+  // Helper: get text from a block by resolving CHILD relationships to WORD blocks
+  function getBlockText(block: typeof blocks[number]): string {
+    if (block.Text) return block.Text;
+    const childRel = block.Relationships?.find(r => r.Type === 'CHILD');
+    if (!childRel?.Ids) return '';
+    return childRel.Ids
+      .map(id => blockMap.get(id))
+      .filter(b => b && (b.BlockType === 'WORD' || b.BlockType === 'SELECTION_ELEMENT'))
+      .map(b => b!.BlockType === 'SELECTION_ELEMENT' ? (b!.Text === 'SELECTED' ? '[X]' : '[ ]') : (b!.Text || ''))
+      .join(' ');
+  }
+
+  // Extract tables as tab-delimited text
+  for (const block of blocks) {
+    if (block.BlockType !== 'TABLE') continue;
+    const cellRel = block.Relationships?.find(r => r.Type === 'CHILD');
+    if (!cellRel?.Ids) continue;
+
+    const cells = cellRel.Ids
+      .map(id => blockMap.get(id))
+      .filter(b => b && b.BlockType === 'CELL') as Array<typeof blocks[number] & { RowIndex?: number; ColumnIndex?: number }>;
+
+    // Group cells by row
+    const rows = new Map<number, Map<number, string>>();
+    for (const cell of cells) {
+      const row = (cell as any).RowIndex || 1;
+      const col = (cell as any).ColumnIndex || 1;
+      if (!rows.has(row)) rows.set(row, new Map());
+      rows.get(row)!.set(col, getBlockText(cell));
+      if (cell.Confidence) confidences.push(cell.Confidence);
+      if (cell.Page) pages.add(cell.Page);
+    }
+
+    // Render rows
+    const sortedRows = [...rows.entries()].sort((a, b) => a[0] - b[0]);
+    outputParts.push('[TABLE]');
+    for (const [, colMap] of sortedRows) {
+      const sortedCols = [...colMap.entries()].sort((a, b) => a[0] - b[0]);
+      outputParts.push(sortedCols.map(([, text]) => text).join('\t'));
+    }
+    outputParts.push('[/TABLE]');
+    outputParts.push('');
+  }
+
+  // Extract form key-value pairs
+  for (const block of blocks) {
+    if (block.BlockType !== 'KEY_VALUE_SET') continue;
+    if (!block.EntityTypes?.includes('KEY')) continue;
+
+    const keyText = getBlockText(block);
+    const valueRel = block.Relationships?.find(r => r.Type === 'VALUE');
+    let valueText = '';
+    if (valueRel?.Ids) {
+      const valueBlock = blockMap.get(valueRel.Ids[0]);
+      if (valueBlock) valueText = getBlockText(valueBlock);
+    }
+
+    if (keyText.trim()) {
+      outputParts.push(`${keyText.trim()}: ${valueText.trim()}`);
+      if (block.Confidence) confidences.push(block.Confidence);
+      if (block.Page) pages.add(block.Page);
+    }
+  }
+
+  // Also include LINE blocks for text not captured by tables/forms
+  const lineBlocks = blocks.filter(b => b.BlockType === 'LINE');
+  for (const line of lineBlocks) {
+    if (line.Text) outputParts.push(line.Text);
+    if (line.Confidence) confidences.push(line.Confidence);
+    if (line.Page) pages.add(line.Page || 1);
+  }
+
+  const text = outputParts.join('\n');
+  const avgConfidence = confidences.length > 0
+    ? confidences.reduce((sum, c) => sum + c, 0) / confidences.length
+    : 0;
+
+  logger.info('OCR analysis complete (tables + forms)', {
+    filename,
+    pageCount: pages.size,
+    avgConfidence: Math.round(avgConfidence),
+  });
+
+  return {
+    text,
+    pageCount: pages.size || 1,
+    confidence: avgConfidence,
+  };
 }

@@ -1,6 +1,8 @@
 export interface ExtractedText {
   text: string;
   pageBreaks?: number[];
+  /** OCR confidence (0-100) when text was extracted via Textract. Undefined for non-OCR extraction. */
+  ocrConfidence?: number;
 }
 
 export interface Document {

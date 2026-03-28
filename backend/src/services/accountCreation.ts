@@ -6,6 +6,9 @@
  * Results are submitted to the queue or emailed to the sales team.
  */
 
+/** Increment when questions or schema change, for audit traceability. */
+export const AC_FORM_VERSION = '1.0';
+
 export interface AccountCreationQuestion {
   id: string;
   number: string;

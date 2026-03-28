@@ -6,6 +6,9 @@
  * and PAP-specific details (sleep study, current equipment, mask type).
  */
 
+/** Increment when questions or schema change, for audit traceability. */
+export const PAP_FORM_VERSION = '1.0';
+
 export interface PapQuestion {
   id: string;
   number: string;

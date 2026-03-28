@@ -7,6 +7,7 @@ import {
   determinePmdRecommendations,
   PpdResponse,
   PmdRecommendation,
+  PPD_FORM_VERSION,
 } from '../services/ppdQuestionnaire';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
@@ -38,9 +39,10 @@ const emailLimiter = rateLimit({
 
 const router = Router();
 
-// Get the full PPD questionnaire (questions + groups)
+// Get the full PPD questionnaire (questions + groups + version)
 router.get('/questions', authenticate, (req: AuthRequest, res: Response) => {
   res.json({
+    formVersion: PPD_FORM_VERSION,
     questions: getPpdQuestions(),
     groups: getPpdQuestionGroups(),
   });
@@ -216,12 +218,22 @@ router.put('/submissions/:id/status', authenticate, async (req: AuthRequest, res
       return;
     }
 
-    const record = await updatePpdStatus(req.params.id, {
-      status,
-      reviewedBy: req.user!.username,
-      reviewNotes,
-      returnReason,
-    });
+    let record;
+    try {
+      record = await updatePpdStatus(req.params.id, {
+        status,
+        reviewedBy: req.user!.username,
+        reviewNotes,
+        returnReason,
+      });
+    } catch (transitionErr: unknown) {
+      const msg = transitionErr instanceof Error ? transitionErr.message : String(transitionErr);
+      if (msg.includes('Invalid status transition')) {
+        res.status(409).json({ error: msg });
+        return;
+      }
+      throw transitionErr;
+    }
 
     if (!record) {
       res.status(404).json({ error: 'PPD submission not found' });

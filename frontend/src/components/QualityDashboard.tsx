@@ -51,15 +51,15 @@ export function QualityDashboard() {
           <div style={styles.cardLabel}>Flagged Responses</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#166534' }}>{metrics.confidenceCounts.high}</div>
+          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-high)' }}>{metrics.confidenceCounts.high}</div>
           <div style={styles.cardLabel}>High Confidence</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#c2410c' }}>{metrics.confidenceCounts.partial}</div>
+          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-partial)' }}>{metrics.confidenceCounts.partial}</div>
           <div style={styles.cardLabel}>Partial</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#b91c1c' }}>{metrics.confidenceCounts.low}</div>
+          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-low)' }}>{metrics.confidenceCounts.low}</div>
           <div style={styles.cardLabel}>Low / Unanswered</div>
         </div>
       </div>
@@ -104,14 +104,14 @@ export function QualityDashboard() {
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: '24px 28px' },
   loading: { padding: '24px', color: 'var(--ums-text-muted)', textAlign: 'center' },
-  error: { padding: '24px', color: '#dc2626' },
+  error: { padding: '24px', color: 'var(--ums-error)' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   title: { margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)' },
   periodButtons: { display: 'flex', gap: '4px' },
   periodButton: { padding: '5px 12px', border: '1px solid var(--ums-border)', borderRadius: '6px', background: 'var(--ums-bg-surface)', cursor: 'pointer', fontSize: '12px', color: 'var(--ums-text-muted)' },
   periodActive: { padding: '5px 12px', border: '1px solid var(--ums-brand-primary)', borderRadius: '6px', background: 'var(--ums-brand-light)', cursor: 'pointer', fontSize: '12px', color: 'var(--ums-brand-text)', fontWeight: 600 },
   cards: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px' },
-  card: { padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid #E8EFF5', textAlign: 'center' as const },
+  card: { padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid var(--ums-border)', textAlign: 'center' as const },
   cardValue: { fontSize: '24px', fontWeight: 700, color: 'var(--ums-text-primary)' },
   cardLabel: { fontSize: '11px', color: 'var(--ums-text-muted)', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.3px' },
   section: { marginBottom: '24px' },
@@ -122,10 +122,10 @@ const styles: Record<string, React.CSSProperties> = {
   chartBarBg: { flex: 1, height: '20px', background: 'var(--ums-bg-surface-alt)', borderRadius: '4px', overflow: 'hidden' },
   chartBar: { height: '100%', background: 'linear-gradient(90deg, var(--ums-brand-primary), #42A5F5)', borderRadius: '4px', display: 'flex', alignItems: 'center', minWidth: '2px' },
   chartBarLabel: { fontSize: '10px', color: 'white', paddingLeft: '6px', whiteSpace: 'nowrap' as const },
-  chartPct: { width: '70px', color: '#166534', fontSize: '11px' },
-  chartFlagged: { color: '#dc2626', fontSize: '11px' },
+  chartPct: { width: '70px', color: 'var(--ums-conf-high)', fontSize: '11px' },
+  chartFlagged: { color: 'var(--ums-error)', fontSize: '11px' },
   gapList: { display: 'flex', flexDirection: 'column' as const, gap: '6px' },
-  gapItem: { display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '13px' },
+  gapItem: { display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--ums-error-light)', border: '1px solid var(--ums-error-border)', borderRadius: '8px', fontSize: '13px' },
   gapQuestion: { color: 'var(--ums-text-secondary)', flex: 1 },
   gapDate: { color: 'var(--ums-text-muted)', fontSize: '11px', marginLeft: '12px' },
 };

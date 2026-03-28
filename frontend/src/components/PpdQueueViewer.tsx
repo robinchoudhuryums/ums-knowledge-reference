@@ -48,10 +48,10 @@ const sectionLabels: Record<string, string> = {
 // ── Status config ──────────────────────────────────────────────────────────
 
 const statusConfig: Record<SubmissionStatus, { label: string; bg: string; fg: string }> = {
-  pending:   { label: 'Pending',   bg: '#fff3cd', fg: '#856404' },
-  in_review: { label: 'In Review', bg: '#cce5ff', fg: '#004085' },
-  completed: { label: 'Completed', bg: '#d4edda', fg: '#155724' },
-  returned:  { label: 'Returned',  bg: '#f8d7da', fg: '#721c24' },
+  pending:   { label: 'Pending',   bg: 'var(--ums-warning-light)', fg: 'var(--ums-warning-text)' },
+  in_review: { label: 'In Review', bg: 'var(--ums-info-light)', fg: 'var(--ums-info-text)' },
+  completed: { label: 'Completed', bg: 'var(--ums-success-light)', fg: 'var(--ums-success-text)' },
+  returned:  { label: 'Returned',  bg: 'var(--ums-error-light)', fg: 'var(--ums-error-text)' },
 };
 
 const allStatuses: Array<SubmissionStatus | 'all'> = ['all', 'pending', 'in_review', 'completed', 'returned'];
@@ -285,9 +285,9 @@ export function PpdQueueViewer() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: '28px', maxWidth: '1100px' },
-  title: { margin: '0 0 16px', fontSize: '18px', fontWeight: 700, color: '#223b5d', letterSpacing: '-0.2px' },
+  title: { margin: '0 0 16px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
   meta: { fontSize: '13px', color: 'var(--ums-text-muted)', margin: '0 4px 8px 0', display: 'inline-block' },
-  error: { marginTop: '12px', padding: '12px 16px', background: '#fef2f2', color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca' },
+  error: { marginTop: '12px', padding: '12px 16px', background: 'var(--ums-error-light)', color: 'var(--ums-error)', borderRadius: '10px', fontSize: '13px', border: '1px solid var(--ums-error-border)' },
 
   // Filter bar
   filterBar: { display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' as const },
@@ -296,46 +296,50 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'var(--ums-bg-surface-alt)', color: 'var(--ums-text-muted)', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
   },
   filterButtonActive: {
-    background: 'var(--ums-brand-gradient)', color: '#fff', border: '1px solid #1565C0',
-    boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)',
+    background: 'var(--ums-brand-gradient)', color: '#fff', border: '1px solid var(--ums-brand-primary)',
+    boxShadow: 'var(--ums-shadow-sm)',
   },
 
   // Table
   tableWrap: { overflowX: 'auto' as const },
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '14px' },
-  th: { textAlign: 'left' as const, padding: '10px 12px', background: '#223b5d', color: '#fff', fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap' as const },
-  tr: { borderBottom: '1px solid #E8EFF5' },
-  td: { padding: '10px 12px', verticalAlign: 'top' as const },
+  th: {
+    textAlign: 'left' as const, padding: '10px 12px', background: 'var(--ums-bg-surface-alt)',
+    color: 'var(--ums-text-muted)', fontWeight: 600, fontSize: '11px', whiteSpace: 'nowrap' as const,
+    textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid var(--ums-border)',
+  },
+  tr: { borderBottom: '1px solid var(--ums-border-light)' },
+  td: { padding: '10px 12px', verticalAlign: 'top' as const, color: 'var(--ums-text-secondary)' },
   subText: { fontSize: '12px', color: 'var(--ums-text-muted)' },
   badge: { display: 'inline-block', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 },
   viewButton: {
-    padding: '5px 14px', background: '#1976d2', color: '#fff', border: 'none',
+    padding: '5px 14px', background: 'var(--ums-brand-gradient)', color: '#fff', border: 'none',
     borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 500,
   },
 
   // Detail view
   backButton: {
-    padding: '6px 14px', background: 'transparent', color: '#1976d2', border: '1px solid #1976d2',
+    padding: '6px 14px', background: 'transparent', color: 'var(--ums-brand-primary)', border: '1px solid var(--ums-brand-primary)',
     borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500, marginBottom: '16px',
   },
   detailHeader: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' as const, marginBottom: '4px' },
-  section: { marginTop: '20px', padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid #E8EFF5' },
-  sectionTitle: { margin: '0 0 10px', fontSize: '15px', fontWeight: 600, color: '#223b5d' },
+  section: { marginTop: '20px', padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid var(--ums-border)' },
+  sectionTitle: { margin: '0 0 10px', fontSize: '15px', fontWeight: 600, color: 'var(--ums-text-primary)' },
   responseRow: { display: 'flex', gap: '8px', padding: '4px 0', fontSize: '13px' },
   responseLabel: { fontWeight: 600, color: 'var(--ums-text-muted)', minWidth: '80px' },
-  responseValue: { color: '#223b5d' },
-  productCard: { display: 'flex', gap: '12px', padding: '10px', background: 'var(--ums-bg-surface)', borderRadius: '8px', border: '1px solid #E8EFF5', marginBottom: '8px' },
+  responseValue: { color: 'var(--ums-text-primary)' },
+  productCard: { display: 'flex', gap: '12px', padding: '10px', background: 'var(--ums-bg-surface)', borderRadius: '8px', border: '1px solid var(--ums-border)', marginBottom: '8px' },
   productImage: { width: '80px', height: '80px', objectFit: 'cover' as const, borderRadius: '6px', flexShrink: 0 },
   justification: { fontSize: '12px', color: 'var(--ums-text-muted)', marginTop: '4px' },
 
   // Status controls
-  statusControl: { marginTop: '24px', padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid #E8EFF5' },
+  statusControl: { marginTop: '24px', padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid var(--ums-border)' },
   controlRow: { marginBottom: '10px' },
-  select: { padding: '8px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px', fontSize: '14px', background: 'var(--ums-bg-surface)' },
-  textarea: { width: '100%', padding: '10px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical' as const, marginBottom: '10px', boxSizing: 'border-box' as const },
+  select: { padding: '8px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px', fontSize: '14px', background: 'var(--ums-bg-surface)', color: 'var(--ums-text-primary)' },
+  textarea: { width: '100%', padding: '10px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical' as const, marginBottom: '10px', boxSizing: 'border-box' as const, background: 'var(--ums-bg-surface)', color: 'var(--ums-text-primary)' },
   saveButton: {
     padding: '9px 22px', background: 'var(--ums-brand-gradient)', color: '#fff',
     border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 500,
-    boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)',
+    boxShadow: 'var(--ums-shadow-sm)',
   },
 };

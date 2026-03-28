@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User } from '../types';
-import { loadMetadata, saveMetadata } from '../services/s3Storage';
+import { getUsers as dbGetUsers, saveUsers as dbSaveUsers } from '../db';
 import { logger } from '../utils/logger';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ums-kb-dev-secret-change-in-production';
@@ -192,12 +192,11 @@ export async function getUserAllowedCollections(userId: string, role: string): P
 }
 
 export async function getUsers(): Promise<User[]> {
-  const users = await loadMetadata<User[]>(USERS_KEY);
-  return users || [];
+  return dbGetUsers();
 }
 
 export async function saveUsers(users: User[]): Promise<void> {
-  await saveMetadata(USERS_KEY, users);
+  return dbSaveUsers(users);
 }
 
 /**

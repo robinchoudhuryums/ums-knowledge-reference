@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
-import { Document, Collection, VectorStoreIndex } from '../types';
+import { VectorStoreIndex } from '../types';
 import { logger } from '../utils/logger';
 import { Readable } from 'stream';
 
@@ -128,26 +128,15 @@ export async function deleteMetadata(key: string): Promise<void> {
 
 // --- Document registry ---
 
-const DOCUMENTS_INDEX_KEY = 'documents-index.json';
-const COLLECTIONS_INDEX_KEY = 'collections-index.json';
-
-export async function getDocumentsIndex(): Promise<Document[]> {
-  const docs = await loadMetadata<Document[]>(DOCUMENTS_INDEX_KEY);
-  return docs || [];
-}
-
-export async function saveDocumentsIndex(docs: Document[]): Promise<void> {
-  await saveMetadata(DOCUMENTS_INDEX_KEY, docs);
-}
-
-export async function getCollectionsIndex(): Promise<Collection[]> {
-  const collections = await loadMetadata<Collection[]>(COLLECTIONS_INDEX_KEY);
-  return collections || [];
-}
-
-export async function saveCollectionsIndex(collections: Collection[]): Promise<void> {
-  await saveMetadata(COLLECTIONS_INDEX_KEY, collections);
-}
+// ─── Document & Collection Index (delegated to db layer for RDS/S3 hybrid) ──
+// These re-export from the db layer which automatically uses PostgreSQL when
+// DATABASE_URL is configured, falling back to S3 JSON when it's not.
+export {
+  getDocumentsIndex,
+  saveDocumentsIndex,
+  getCollectionsIndex,
+  saveCollectionsIndex,
+} from '../db';
 
 // --- Vector store persistence ---
 

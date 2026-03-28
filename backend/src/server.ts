@@ -102,8 +102,14 @@ app.use((req, res, next) => {
 
 // HTTPS enforcement in production — redirects HTTP requests and sets HSTS header.
 // Behind Render/ALB the X-Forwarded-Proto header indicates the original protocol.
+// Health check is exempt since ALB health checks don't send X-Forwarded-Proto.
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res, next) => {
+    // Skip HTTPS redirect for health check (ALB probes hit HTTP directly)
+    if (req.path === '/api/health') {
+      next();
+      return;
+    }
     if (req.headers['x-forwarded-proto'] !== 'https') {
       res.redirect(301, `https://${req.headers.host}${req.url}`);
       return;

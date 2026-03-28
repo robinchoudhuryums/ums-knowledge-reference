@@ -61,7 +61,7 @@ const styles = {
   row: {
     height: '16px',
     borderRadius: '4px',
-    background: 'linear-gradient(90deg, #e8ecf1 25%, #f0f4f8 50%, #e8ecf1 75%)',
+    background: 'linear-gradient(90deg, var(--ums-bg-surface-alt) 25%, var(--ums-border) 50%, var(--ums-bg-surface-alt) 75%)',
     backgroundSize: '200px 100%',
     animation: 'ums-skeleton-shimmer 1.5s ease-in-out infinite',
   },

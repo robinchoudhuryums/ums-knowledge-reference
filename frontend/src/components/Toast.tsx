@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import {
+  CheckCircleIcon,
+  XCircleIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
+} from '@heroicons/react/24/outline';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -67,7 +73,7 @@ function ToastItem({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: num
       }}
       role="alert"
     >
-      <span style={{ ...styles.icon, color: colors.icon }}>{colors.symbol}</span>
+      <span style={{ ...styles.icon, color: colors.icon }}>{<colors.Icon className="w-5 h-5" />}</span>
       <span style={{ ...styles.message, color: colors.text }}>{toast.message}</span>
       <button
         onClick={() => onDismiss(toast.id)}
@@ -80,11 +86,11 @@ function ToastItem({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: num
   );
 }
 
-const typeColors: Record<ToastType, { bg: string; border: string; icon: string; text: string; symbol: string }> = {
-  success: { bg: '#f0fdf4', border: '#bbf7d0', icon: '#16a34a', text: '#166534', symbol: '\u2713' },
-  error:   { bg: '#fef2f2', border: '#fecaca', icon: '#dc2626', text: '#991b1b', symbol: '\u2717' },
-  warning: { bg: '#fffbeb', border: '#fde68a', icon: '#d97706', text: '#92400e', symbol: '\u26A0' },
-  info:    { bg: '#eff6ff', border: '#bfdbfe', icon: '#2563eb', text: '#1e40af', symbol: '\u2139' },
+const typeColors: Record<ToastType, { bg: string; border: string; icon: string; text: string; Icon: React.ComponentType<{ className?: string }> }> = {
+  success: { bg: 'var(--ums-success-light)', border: 'var(--ums-success-border)', icon: 'var(--ums-success)', text: 'var(--ums-success-text)', Icon: CheckCircleIcon },
+  error:   { bg: 'var(--ums-error-light)', border: 'var(--ums-error-border)', icon: 'var(--ums-error)', text: 'var(--ums-error-text)', Icon: XCircleIcon },
+  warning: { bg: 'var(--ums-warning-light)', border: 'var(--ums-warning-border)', icon: 'var(--ums-warning)', text: 'var(--ums-warning-text)', Icon: ExclamationTriangleIcon },
+  info:    { bg: 'var(--ums-info-light)', border: 'var(--ums-info-border)', icon: 'var(--ums-info)', text: 'var(--ums-info-text)', Icon: InformationCircleIcon },
 };
 
 const styles: Record<string, React.CSSProperties> = {

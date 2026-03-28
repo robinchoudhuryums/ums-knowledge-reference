@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ const sty = {
   sectionHeader: { background: 'var(--ums-bg-surface-alt)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s' } as React.CSSProperties,
   sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: '#223b5d' } as React.CSSProperties,
   sectionBody: { padding: '12px 16px' } as React.CSSProperties,
-  questionRow: { marginBottom: 14 } as React.CSSProperties,
+  questionRow: { marginBottom: 10, padding: '12px 16px', background: 'var(--ums-bg-surface)', borderRadius: 8, border: '1px solid var(--ums-border)', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' } as React.CSSProperties,
   questionLabel: { display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500, color: 'var(--ums-text-primary)' } as React.CSSProperties,
   yesNoGroup: { display: 'flex', gap: 8 } as React.CSSProperties,
   textInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
@@ -730,7 +731,7 @@ export function PpdQuestionnaire() {
           </div>
           <div
             style={{ border: '1px solid var(--ums-border)', borderRadius: 8, padding: 16, background: 'var(--ums-bg-surface)', overflow: 'auto', maxHeight: 600 }}
-            dangerouslySetInnerHTML={{ __html: seatingEvalHtml }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(seatingEvalHtml) }}
           />
         </div>
       )}

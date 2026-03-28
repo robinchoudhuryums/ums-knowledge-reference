@@ -1,4 +1,4 @@
-import { useState, useCallback, createContext, useContext } from 'react';
+import { useState, useCallback, useEffect, createContext, useContext } from 'react';
 
 interface ConfirmOptions {
   title: string;
@@ -40,6 +40,16 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
   const isDanger = state.options.variant === 'danger';
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!state.open) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose(false);
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [state.open]);
+
   return (
     <ConfirmContext.Provider value={{ confirm }}>
       {children}
@@ -49,13 +59,17 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             <h3 style={styles.title}>{state.options.title}</h3>
             <p style={styles.message}>{state.options.message}</p>
             <div style={styles.actions}>
-              <button onClick={() => handleClose(false)} style={styles.cancelButton}>
+              <button
+                onClick={() => handleClose(false)}
+                style={styles.cancelButton}
+                autoFocus={isDanger}
+              >
                 {state.options.cancelLabel || 'Cancel'}
               </button>
               <button
                 onClick={() => handleClose(true)}
                 style={isDanger ? styles.dangerButton : styles.confirmButton}
-                autoFocus
+                autoFocus={!isDanger}
               >
                 {state.options.confirmLabel || 'Confirm'}
               </button>
@@ -129,13 +143,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   dangerButton: {
     padding: '8px 18px',
-    background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+    background: 'var(--ums-error)',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 600,
-    boxShadow: '0 2px 8px rgba(220, 38, 38, 0.25)',
+    boxShadow: 'var(--ums-shadow-sm)',
   },
 };

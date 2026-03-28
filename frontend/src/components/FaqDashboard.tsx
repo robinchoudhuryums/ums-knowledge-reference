@@ -29,15 +29,15 @@ export function FaqDashboard() {
   };
 
   const confidenceColor = (c: string) => {
-    if (c === 'high') return '#166534';
-    if (c === 'partial') return '#c2410c';
-    return '#b91c1c';
+    if (c === 'high') return 'var(--ums-conf-high)';
+    if (c === 'partial') return 'var(--ums-conf-partial)';
+    return 'var(--ums-conf-low)';
   };
 
   const confidenceBg = (c: string) => {
-    if (c === 'high') return '#dcfce7';
-    if (c === 'partial') return '#fff7ed';
-    return '#fef2f2';
+    if (c === 'high') return 'var(--ums-conf-high-bg)';
+    if (c === 'partial') return 'var(--ums-conf-partial-bg)';
+    return 'var(--ums-conf-low-bg)';
   };
 
   if (loading) {
@@ -82,15 +82,15 @@ export function FaqDashboard() {
           <div style={styles.cardLabel}>Active Agents</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#166534' }}>{data.confidenceBreakdown.high}</div>
+          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-high)' }}>{data.confidenceBreakdown.high}</div>
           <div style={styles.cardLabel}>High Confidence</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#c2410c' }}>{data.confidenceBreakdown.partial}</div>
+          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-partial)' }}>{data.confidenceBreakdown.partial}</div>
           <div style={styles.cardLabel}>Partial</div>
         </div>
         <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: '#b91c1c' }}>{data.confidenceBreakdown.low}</div>
+          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-low)' }}>{data.confidenceBreakdown.low}</div>
           <div style={styles.cardLabel}>Low Confidence</div>
         </div>
       </div>
@@ -265,7 +265,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 2px 6px rgba(27, 111, 201, 0.25)',
   },
   loading: { color: 'var(--ums-text-muted)', fontSize: '14px' },
-  error: { color: '#dc2626', fontSize: '14px', padding: '14px', background: '#fef2f2', borderRadius: '10px', border: '1px solid #fecaca' },
+  error: { color: 'var(--ums-error)', fontSize: '14px', padding: '14px', background: 'var(--ums-error-light)', borderRadius: '10px', border: '1px solid var(--ums-error-border)' },
   cardRow: { display: 'flex', gap: '12px', flexWrap: 'wrap' as const, marginBottom: '28px' },
   card: {
     flex: '1 1 120px',

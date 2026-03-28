@@ -49,6 +49,13 @@ const MEDICAID_PATTERN = /(?:medicaid|medi-cal)\s*(?:id|#|number)?[:\s]*[A-Z0-9]
 // Street addresses: number + street name (basic heuristic)
 const ADDRESS_PATTERN = /\b\d{1,6}\s+(?:[A-Z][a-z]+\s+){1,3}(?:St(?:reet)?|Ave(?:nue)?|Blvd|Boulevard|Dr(?:ive)?|Rd|Road|Ln|Lane|Ct|Court|Way|Pl(?:ace)?|Cir(?:cle)?)\b\.?/gi;
 
+// ZIP codes: 5-digit or ZIP+4 format, with context to reduce false positives
+// Contextual: preceded by state abbreviation, "zip", or city/state pattern
+const ZIP_PATTERN = /(?:(?:[A-Z]{2}\s+)|(?:zip(?:\s*code)?[:\s]*))(\d{5}(?:-\d{4})?)\b/gi;
+
+// Health plan beneficiary / account numbers with clinical context
+const PLAN_ACCOUNT_PATTERN = /(?:(?:health\s*)?plan|account|policy|group|subscriber|certificate)\s*(?:#|number|num|no\.?)?[:\s]*([A-Z0-9]{5,20})\b/gi;
+
 // Name patterns preceded by common clinical prefixes
 // "patient John Smith", "pt: Jane Doe", "for Mary Johnson"
 const NAME_PREFIX_PATTERN = /(?:patient|pt|member|beneficiary|claimant|insured|subscriber|enrollee)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})/gi;
@@ -106,6 +113,12 @@ export function redactPhi(text: string): RedactionResult {
 
   // Addresses
   applyPattern(ADDRESS_PATTERN, 'ADDRESS');
+
+  // ZIP codes (after address to avoid double-matching)
+  applyPattern(ZIP_PATTERN, 'ZIP');
+
+  // Health plan / account numbers
+  applyPattern(PLAN_ACCOUNT_PATTERN, 'PLAN-ID');
 
   // Names with clinical context
   applyPattern(NAME_PREFIX_PATTERN, 'NAME');

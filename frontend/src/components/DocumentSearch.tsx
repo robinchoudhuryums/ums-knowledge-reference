@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { Collection } from '../types';
 import { searchDocuments, DocumentSearchResult } from '../services/api';
+import { LoadingSkeleton } from './LoadingSkeleton';
 
 interface Props {
   collections: Collection[];
@@ -86,13 +88,29 @@ export function DocumentSearch({ collections }: Props) {
       </form>
 
       <div style={styles.results}>
-        {searched && results.length === 0 && !loading && (
-          <div style={styles.noResults}>
-            No matching passages found for "{query}"
+        {loading && (
+          <div style={styles.loadingContainer}>
+            <LoadingSkeleton rows={5} />
           </div>
         )}
 
-        {results.map(result => (
+        {!loading && !searched && results.length === 0 && (
+          <div style={styles.emptyState}>
+            <MagnifyingGlassIcon style={styles.emptyIcon} />
+            <p style={styles.emptyTitle}>Search your documents</p>
+            <p style={styles.emptyHint}>Enter a keyword or phrase above to find matching passages across all uploaded documents.</p>
+          </div>
+        )}
+
+        {!loading && searched && results.length === 0 && (
+          <div style={styles.emptyState}>
+            <MagnifyingGlassIcon style={styles.emptyIcon} />
+            <p style={styles.emptyTitle}>No matching passages found</p>
+            <p style={styles.emptyHint}>Try different keywords or check that relevant documents have been uploaded.</p>
+          </div>
+        )}
+
+        {!loading && results.map(result => (
           <div key={result.documentId} style={styles.resultCard}>
             <button
               onClick={() => setExpandedDoc(expandedDoc === result.documentId ? null : result.documentId)}
@@ -139,7 +157,11 @@ const styles: Record<string, React.CSSProperties> = {
   searchButton: { padding: '11px 24px', background: 'var(--ums-brand-gradient)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
 
   results: {},
-  noResults: { textAlign: 'center', color: 'var(--ums-text-muted)', padding: '48px', fontSize: '14px' },
+  loadingContainer: { padding: '24px 0' },
+  emptyState: { textAlign: 'center' as const, padding: '48px 24px', color: 'var(--ums-text-muted)' },
+  emptyIcon: { width: '48px', height: '48px', margin: '0 auto 16px', color: 'var(--ums-text-placeholder)', display: 'block' },
+  emptyTitle: { margin: '0 0 6px', fontSize: '16px', fontWeight: 600, color: 'var(--ums-text-primary)' },
+  emptyHint: { margin: 0, fontSize: '13px', color: 'var(--ums-text-muted)', maxWidth: '400px', marginLeft: 'auto', marginRight: 'auto', lineHeight: '1.5' },
 
   resultCard: { border: '1px solid var(--ums-border)', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   resultHeader: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px 18px', border: 'none', background: 'var(--ums-bg-surface)', cursor: 'pointer', fontSize: '14px', textAlign: 'left' },
@@ -151,6 +173,6 @@ const styles: Record<string, React.CSSProperties> = {
   matchesList: { borderTop: '1px solid var(--ums-border)' },
   matchItem: { padding: '14px 18px', borderBottom: '1px solid var(--ums-bg-surface-alt)' },
   matchMeta: { display: 'flex', gap: '6px', marginBottom: '8px' },
-  matchBadge: { fontSize: '11px', color: 'var(--ums-brand-primary)', border: '1px solid #BBDEFB', borderRadius: '6px', padding: '2px 8px', background: 'var(--ums-brand-light)', fontWeight: 500 },
+  matchBadge: { fontSize: '11px', color: 'var(--ums-brand-primary)', border: '1px solid var(--ums-border)', borderRadius: '6px', padding: '2px 8px', background: 'var(--ums-brand-light)', fontWeight: 500 },
   matchText: { fontSize: '13px', lineHeight: '1.7', color: 'var(--ums-text-muted)', whiteSpace: 'pre-wrap' },
 };

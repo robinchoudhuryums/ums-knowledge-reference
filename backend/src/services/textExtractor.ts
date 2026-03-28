@@ -14,7 +14,7 @@ export async function extractText(buffer: Buffer, mimeType: string, filename: st
 
   switch (mimeType) {
     case 'application/pdf':
-      return extractPdf(buffer);
+      return extractPdf(buffer, filename);
 
     case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
     case 'application/msword':
@@ -55,7 +55,7 @@ const OCR_FALLBACK_THRESHOLD = 50;
 // 100 words ≈ a paragraph of real text; below that, the PDF likely has minimal text.
 const OCR_SKIP_WORD_COUNT = 100;
 
-async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
+async function extractPdf(buffer: Buffer, filename: string = 'document.pdf'): Promise<ExtractedText> {
   // Phase 1: Try pdf-parse first (fast, free, no API call)
   let pdfText = '';
   let pdfParsed: Awaited<ReturnType<typeof pdfParse>> | null = null;
@@ -74,6 +74,7 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
   // Phase 2: Only call OCR if pdf-parse yielded insufficient text.
   // For text-native PDFs with a strong text layer, this avoids unnecessary Textract calls.
   let ocrText = '';
+  let ocrConfidence: number | undefined;
   if (pdfWordCount < OCR_SKIP_WORD_COUNT) {
     logger.info('PDF text layer below word threshold, running OCR', {
       pdfParseChars: trimmedPdf.length,
@@ -82,8 +83,16 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
     });
 
     try {
-      const ocrResult = await extractTextWithOcr(buffer, 'document.pdf');
+      const ocrResult = await extractTextWithOcr(buffer, filename);
       ocrText = ocrResult.text;
+      ocrConfidence = ocrResult.confidence;
+
+      // Warn on low-confidence OCR results — indicates poor scan quality
+      if (ocrConfidence > 0 && ocrConfidence < 70) {
+        logger.warn('Low OCR confidence — document may be poorly scanned', {
+          filename, confidence: Math.round(ocrConfidence), pageCount: ocrResult.pageCount,
+        });
+      }
     } catch (err) {
       logger.warn('OCR extraction failed', { error: String(err) });
     }
@@ -99,16 +108,22 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
       pdfParseChars: trimmedPdf.length,
       ocrChars: trimmedOcr.length,
     });
-    return { text: ocrText };
+    return { text: ocrText, ocrConfidence };
   }
 
-  // If OCR captured significantly more text (>20% more), it likely found text in images
+  // If OCR captured significantly more text (>20% more), it likely found text in images.
+  // Merge both: pdf-parse text (better formatting/page breaks) + OCR-only text (images).
   if (trimmedOcr.length > trimmedPdf.length * 1.2) {
-    logger.info('OCR captured more text than pdf-parse (likely text in images), using OCR result', {
+    logger.info('OCR captured more text than pdf-parse, merging results', {
       pdfParseChars: trimmedPdf.length,
       ocrChars: trimmedOcr.length,
     });
-    return { text: ocrText };
+    // If pdf-parse had meaningful text, append OCR supplement at the end
+    if (pdfParsed && trimmedPdf.length >= OCR_FALLBACK_THRESHOLD) {
+      const mergedText = pdfParsed.text + '\n\n--- Additional Text from Images (OCR) ---\n' + ocrText;
+      return { text: mergedText, ocrConfidence };
+    }
+    return { text: ocrText, ocrConfidence };
   }
 
   // pdf-parse has good text with page breaks — prefer it for better formatting
@@ -129,7 +144,7 @@ async function extractPdf(buffer: Buffer): Promise<ExtractedText> {
     throw new Error('Failed to extract text from PDF via both pdf-parse and OCR');
   }
 
-  return { text: ocrText || pdfText };
+  return { text: ocrText || pdfText, ocrConfidence };
 }
 
 async function extractDocx(buffer: Buffer): Promise<ExtractedText> {

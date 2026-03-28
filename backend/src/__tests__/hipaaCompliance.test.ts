@@ -107,6 +107,40 @@ describe('HIPAA — PHI Redaction Coverage', () => {
     });
   });
 
+  describe('ZIP code patterns', () => {
+    it('redacts ZIP with state prefix: "NY 10001"', () => {
+      const result = redactPhi('Lives in NY 10001');
+      expect(result.text).not.toContain('10001');
+      expect(result.text).toContain('[ZIP]');
+    });
+
+    it('redacts ZIP with "zip code" context', () => {
+      const result = redactPhi('zip code 33101');
+      expect(result.text).not.toContain('33101');
+      expect(result.text).toContain('[ZIP]');
+    });
+  });
+
+  describe('health plan / account number patterns', () => {
+    it('redacts "plan number ABC12345"', () => {
+      const result = redactPhi('plan number ABC12345');
+      expect(result.text).not.toContain('ABC12345');
+      expect(result.text).toContain('[PLAN-ID]');
+    });
+
+    it('redacts "account #: GRP987654"', () => {
+      const result = redactPhi('account #: GRP987654');
+      expect(result.text).not.toContain('GRP987654');
+      expect(result.text).toContain('[PLAN-ID]');
+    });
+
+    it('redacts "subscriber number H12345678"', () => {
+      const result = redactPhi('subscriber number H12345678');
+      expect(result.text).not.toContain('H12345678');
+      expect(result.text).toContain('[PLAN-ID]');
+    });
+  });
+
   describe('false-positive prevention', () => {
     it('does NOT redact HCPCS code E0601', () => {
       const text = 'HCPCS code E0601 for CPAP devices';
@@ -120,6 +154,12 @@ describe('HIPAA — PHI Redaction Coverage', () => {
       const result = redactPhi(text);
       expect(result.text).toContain('L0001');
       expect(result.redactionCount).toBe(0);
+    });
+
+    it('does NOT redact random 5-digit numbers as ZIP without context', () => {
+      const text = 'Order quantity: 12345 units';
+      const result = redactPhi(text);
+      expect(result.text).toContain('12345');
     });
   });
 
@@ -292,6 +332,79 @@ describe('HIPAA — Audit Trail', () => {
     expect((entry.details as any).ip).toBe('127.0.0.1');
   });
 
+  it('logAuditEvent deep-redacts PHI in nested details', async () => {
+    const { s3Client } = await import('../config/aws');
+    const captured: unknown[] = [];
+    (s3Client.send as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: any) => {
+      if (cmd.input?.Key?.includes('audit/')) {
+        captured.push(JSON.parse(cmd.input.Body));
+      }
+      return {};
+    });
+
+    const { logAuditEvent } = await import('../services/audit');
+    await logAuditEvent('user-1', 'admin', 'query', {
+      question: 'patient John Smith has SSN 123-45-6789',
+      nested: {
+        phone: 'Call (555) 123-4567',
+        items: ['DOB 01/15/1952', 'normal text'],
+      },
+    });
+
+    expect(captured.length).toBe(1);
+    const entry = captured[0] as Record<string, any>;
+    // Top-level string should be redacted
+    expect(entry.details.question).toContain('[NAME]');
+    expect(entry.details.question).toContain('[SSN]');
+    expect(entry.details.question).not.toContain('123-45-6789');
+    // Nested object string should be redacted
+    expect(entry.details.nested.phone).toContain('[PHONE]');
+    expect(entry.details.nested.phone).not.toContain('(555) 123-4567');
+    // Array element should be redacted
+    expect(entry.details.nested.items[0]).toContain('[DOB]');
+    expect(entry.details.nested.items[0]).not.toContain('01/15/1952');
+    // Non-PHI array element should be preserved
+    expect(entry.details.nested.items[1]).toBe('normal text');
+  });
+
+  it('logAuditEvent includes hash chain fields (previousHash and entryHash)', async () => {
+    const { s3Client } = await import('../config/aws');
+    const captured: unknown[] = [];
+    (s3Client.send as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: any) => {
+      if (cmd.input?.Key?.includes('audit/')) {
+        captured.push(JSON.parse(cmd.input.Body));
+      }
+      return {};
+    });
+
+    const { logAuditEvent } = await import('../services/audit');
+    await logAuditEvent('user-1', 'admin', 'login', { ip: '10.0.0.1' });
+
+    expect(captured.length).toBe(1);
+    const entry = captured[0] as Record<string, unknown>;
+    expect(entry).toHaveProperty('entryHash');
+    expect(entry).toHaveProperty('previousHash');
+    expect(typeof entry.entryHash).toBe('string');
+    expect((entry.entryHash as string).length).toBe(64); // SHA-256 hex = 64 chars
+    expect(typeof entry.previousHash).toBe('string');
+  });
+
+  it('logAuditEvent uses ServerSideEncryption on S3 write', async () => {
+    const { s3Client } = await import('../config/aws');
+    let encryption: string | undefined;
+    (s3Client.send as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: any) => {
+      if (cmd.input?.Key?.includes('audit/')) {
+        encryption = cmd.input.ServerSideEncryption;
+      }
+      return {};
+    });
+
+    const { logAuditEvent } = await import('../services/audit');
+    await logAuditEvent('user-1', 'admin', 'login', {});
+
+    expect(encryption).toBe('AES256');
+  });
+
   it('action type matches the allowed AuditLogEntry union', () => {
     const allowedActions: string[] = [
       'query', 'upload', 'delete', 'login',
@@ -300,10 +413,6 @@ describe('HIPAA — Audit Trail', () => {
       'user_create', 'user_update', 'user_delete', 'user_reset_password',
     ];
 
-    // This is a compile-time + runtime check that the known action set is complete.
-    // If a new action is added to the type but not here, the TypeScript compiler
-    // will catch it (because logAuditEvent enforces the union), and this test
-    // documents the expected set.
     for (const action of allowedActions) {
       expect(typeof action).toBe('string');
     }

@@ -7,6 +7,7 @@ import {
   determinePmdRecommendations,
   PpdResponse,
   PmdRecommendation,
+  PPD_FORM_VERSION,
 } from '../services/ppdQuestionnaire';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
@@ -14,6 +15,7 @@ import { submitPpd, getPpdSubmission, listPpdSubmissions, updatePpdStatus, delet
 import { generateSeatingEvaluation, renderSeatingEvalHtml } from '../services/seatingEvaluation';
 import { requireAdmin } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import { escapeHtml } from '../utils/htmlEscape';
 
 // Stricter rate limit for PPD queue submissions to prevent abuse.
 // 10 submissions per 15 minutes per user should be more than sufficient.
@@ -38,9 +40,10 @@ const emailLimiter = rateLimit({
 
 const router = Router();
 
-// Get the full PPD questionnaire (questions + groups)
+// Get the full PPD questionnaire (questions + groups + version)
 router.get('/questions', authenticate, (req: AuthRequest, res: Response) => {
   res.json({
+    formVersion: PPD_FORM_VERSION,
     questions: getPpdQuestions(),
     groups: getPpdQuestionGroups(),
   });
@@ -203,7 +206,7 @@ router.get('/submissions/:id', authenticate, async (req: AuthRequest, res: Respo
 });
 
 // Update PPD submission status (admin/reviewer)
-router.put('/submissions/:id/status', authenticate, async (req: AuthRequest, res: Response) => {
+router.put('/submissions/:id/status', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { status, reviewNotes, returnReason } = req.body as {
       status: PpdStatus;
@@ -216,12 +219,22 @@ router.put('/submissions/:id/status', authenticate, async (req: AuthRequest, res
       return;
     }
 
-    const record = await updatePpdStatus(req.params.id, {
-      status,
-      reviewedBy: req.user!.username,
-      reviewNotes,
-      returnReason,
-    });
+    let record;
+    try {
+      record = await updatePpdStatus(req.params.id, {
+        status,
+        reviewedBy: req.user!.username,
+        reviewNotes,
+        returnReason,
+      });
+    } catch (transitionErr: unknown) {
+      const msg = transitionErr instanceof Error ? transitionErr.message : String(transitionErr);
+      if (msg.includes('Invalid status transition')) {
+        res.status(409).json({ error: msg });
+        return;
+      }
+      throw transitionErr;
+    }
 
     if (!record) {
       res.status(404).json({ error: 'PPD submission not found' });
@@ -288,7 +301,7 @@ router.post('/send-email', authenticate, emailLimiter, async (req: AuthRequest, 
 
     const result = await sendEmail({
       to,
-      subject: `PPD for ${patientInfo}`,
+      subject: `PPD for ${patientInfo.replace(/[\r\n]/g, '')}`,
       html,
       bcc: process.env.PPD_BCC_EMAIL,
     });
@@ -330,7 +343,7 @@ function buildPpdEmailHtml(
 
   for (const group of groups) {
     rows += `<tr><td colspan="2" style="height:12px;"></td></tr>`;
-    rows += `<tr style="background:${headerColor};"><td colspan="2" style="padding:10px;border:1px solid #ccc;text-align:center;font-weight:bold;color:#ffffff;">${group}</td></tr>`;
+    rows += `<tr style="background:${headerColor};"><td colspan="2" style="padding:10px;border:1px solid #ccc;text-align:center;font-weight:bold;color:#ffffff;">${escapeHtml(group)}</td></tr>`;
 
     const groupQuestions = questions.filter(q => q.group === group);
     let rowIdx = 0;
@@ -342,15 +355,15 @@ function buildPpdEmailHtml(
       }
 
       const bg = rowIdx % 2 === 0 ? '#ffffff' : '#e6f2ff';
-      let displayAnswer = answer || '<span style="color:#999;font-style:italic;">N/A</span>';
+      let displayAnswer = answer ? escapeHtml(answer) : '<span style="color:#999;font-style:italic;">N/A</span>';
 
       // Style yes/no answers
       if (q.type === 'yes-no' && answer) {
         const lower = answer.toLowerCase();
         if (lower === 'yes' || lower === 'true') {
-          displayAnswer = `<span style="background:#d4edda;color:#155724;border:1px solid #c3e6cb;font-weight:bold;border-radius:4px;padding:4px 8px;">${answer}</span>`;
+          displayAnswer = `<span style="background:#d4edda;color:#155724;border:1px solid #c3e6cb;font-weight:bold;border-radius:4px;padding:4px 8px;">${escapeHtml(answer)}</span>`;
         } else if (lower === 'no' || lower === 'false') {
-          displayAnswer = `<span style="background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;font-weight:bold;border-radius:4px;padding:4px 8px;">${answer}</span>`;
+          displayAnswer = `<span style="background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;font-weight:bold;border-radius:4px;padding:4px 8px;">${escapeHtml(answer)}</span>`;
         }
       }
 
@@ -358,7 +371,7 @@ function buildPpdEmailHtml(
         ? 'font-weight:normal;font-style:italic;color:#444;padding-left:25px;'
         : 'font-weight:bold;color:#333;';
 
-      rows += `<tr style="background:${bg};"><td style="padding:8px;border:1px solid #ddd;width:50%;${qStyle}">${q.number}. ${q.text}</td><td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold;">${displayAnswer}</td></tr>`;
+      rows += `<tr style="background:${bg};"><td style="padding:8px;border:1px solid #ddd;width:50%;${qStyle}">${q.number}. ${escapeHtml(q.text)}</td><td style="padding:8px;border:1px solid #ddd;text-align:center;font-weight:bold;">${displayAnswer}</td></tr>`;
       rowIdx++;
     }
   }
@@ -388,14 +401,14 @@ function buildPpdEmailHtml(
 
       // Image
       if (rec.imageUrl) {
-        html += `<img src="${rec.imageUrl}" alt="${rec.hcpcsCode}" style="width:100px;height:auto;border:1px solid #eee;" />`;
+        html += `<img src="${escapeHtml(rec.imageUrl)}" alt="${escapeHtml(rec.hcpcsCode)}" style="width:100px;height:auto;border:1px solid #eee;" />`;
       }
 
       // Content
       html += '<div style="font-size:14px;flex-grow:1;">';
       const title = rec.brochureUrl
-        ? `<a href="${rec.brochureUrl}" target="_blank" style="text-decoration:none;color:#1a73e8;">${rec.hcpcsCode}</a>`
-        : rec.hcpcsCode;
+        ? `<a href="${escapeHtml(rec.brochureUrl)}" target="_blank" style="text-decoration:none;color:#1a73e8;">${escapeHtml(rec.hcpcsCode)}</a>`
+        : escapeHtml(rec.hcpcsCode);
 
       let badge = '';
       if (status === 'accepted') badge = '<span style="background:#e6fffa;color:#00875A;border:1px solid #b3f5e1;padding:2px 6px;border-radius:4px;font-size:12px;">Accepted</span>';
@@ -403,7 +416,7 @@ function buildPpdEmailHtml(
       else if (status === 'undecided') badge = '<span style="background:#e2e8f0;color:#334155;border:1px solid #94a3b8;padding:2px 6px;border-radius:4px;font-size:12px;">Undecided</span>';
 
       html += `<div style="font-weight:bold;font-size:16px;margin-bottom:8px;">${title} ${badge}</div>`;
-      html += `<div style="color:#555;">${rec.justification}</div>`;
+      html += `<div style="color:#555;">${escapeHtml(rec.justification)}</div>`;
       html += '</div></li>';
     }
     html += '</ul>';
@@ -423,7 +436,7 @@ function buildPpdEmailHtml(
   return `
     <div style="background-color:#e9ecef;padding:30px;font-family:sans-serif;">
       <div style="background-color:rgba(255,255,255,0.9);padding:20px;border-radius:8px;max-width:800px;margin:auto;">
-        <h2 style="margin:0 0 15px;text-align:left;color:#333;">PPD for ${patientInfo}</h2>
+        <h2 style="margin:0 0 15px;text-align:left;color:#333;">PPD for ${escapeHtml(patientInfo)}</h2>
         <table style="border-collapse:collapse;width:100%;font-size:14px;">
           ${rows}
         </table>

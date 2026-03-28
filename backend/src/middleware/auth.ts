@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { writeFileSync } from 'fs';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User } from '../types';
@@ -222,7 +223,6 @@ export async function initializeAuth(): Promise<void> {
     // Plaintext passwords in logs violate HIPAA and could be captured by log aggregators.
     const passwordFilePath = '/tmp/ums-admin-initial-password.txt';
     try {
-      const { writeFileSync } = require('fs');
       writeFileSync(passwordFilePath, `Admin initial password: ${initialPassword}\nThis password MUST be changed on first login.\n`, { mode: 0o600 });
       logger.warn('Default admin user created (username: admin). Initial password written to: ' + passwordFilePath);
       logger.warn('Read the password from that file, then delete it immediately.');
@@ -255,7 +255,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     const remaining = getLockoutRemainingSeconds(user);
     logger.warn('Login attempt on locked account', { username, remainingSeconds: remaining });
     res.status(423).json({
-      error: `Account is locked due to too many failed attempts. Try again in ${Math.ceil(remaining / 60)} minutes.`,
+      error: 'Account is locked due to too many failed attempts. Please try again later.',
     });
     return;
   }
@@ -285,7 +285,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   await saveUsers(users);
 
   // Generate a unique token ID for revocation support
-  const jti = `${user.id}-${Date.now()}`;
+  const jti = crypto.randomUUID();
 
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role, jti },

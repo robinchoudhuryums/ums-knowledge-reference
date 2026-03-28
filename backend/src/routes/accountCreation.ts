@@ -5,9 +5,20 @@ import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
 import { readInsuranceCard, compareInsuranceFields } from '../services/insuranceCardReader';
 import { logger } from '../utils/logger';
+import { escapeHtml } from '../utils/htmlEscape';
+import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+const submitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  message: { error: 'Too many submissions. Please wait before submitting again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const router = Router();
 
@@ -20,7 +31,7 @@ router.get('/questions', authenticate, (_req: AuthRequest, res: Response) => {
 });
 
 // Submit account creation form and optionally email it
-router.post('/submit', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/submit', authenticate, submitLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { patientName, dob, responses, sendTo } = req.body as {
       patientName: string;
@@ -45,7 +56,7 @@ router.post('/submit', authenticate, async (req: AuthRequest, res: Response) => 
       const html = buildAccountCreationHtml(patientName, dob || '', responses);
       const emailResult = await sendEmail({
         to: sendTo,
-        subject: `PMD Account Creation for ${patientName} ${dob || ''}`.trim(),
+        subject: `PMD Account Creation for ${patientName.replace(/[\r\n]/g, '')} ${(dob || '').replace(/[\r\n]/g, '')}`.trim(),
         html,
         bcc: process.env.PMD_BCC_EMAIL || process.env.PPD_BCC_EMAIL,
       });
@@ -90,7 +101,7 @@ function buildAccountCreationHtml(
   let rows = '';
   for (const group of groups) {
     rows += `<tr><td colspan="2" style="height:12px;"></td></tr>`;
-    rows += `<tr style="background:${headerColor};"><td colspan="2" style="padding:10px;border:1px solid #ccc;text-align:center;font-weight:bold;color:#ffffff;">${group}</td></tr>`;
+    rows += `<tr style="background:${headerColor};"><td colspan="2" style="padding:10px;border:1px solid #ccc;text-align:center;font-weight:bold;color:#ffffff;">${escapeHtml(group)}</td></tr>`;
 
     const groupQuestions = questions.filter(q => q.group === group);
     let rowIdx = 0;
@@ -106,14 +117,14 @@ function buildAccountCreationHtml(
           ? `<div style="width:16px;height:16px;border:1px solid #777;background:#fff;text-align:center;line-height:16px;font-weight:bold;color:${checkColor};display:inline-block;">&#10003;</div>`
           : `<div style="width:16px;height:16px;border:1px solid #ccc;background:#f4f4f4;display:inline-block;"></div>`;
       } else {
-        displayAnswer = answer || '<span style="color:#999;font-style:italic;">N/A</span>';
+        displayAnswer = answer ? escapeHtml(answer) : '<span style="color:#999;font-style:italic;">N/A</span>';
       }
 
       const qStyle = q.isSecondary
         ? 'font-weight:normal;font-style:italic;color:#444;padding-left:25px;'
         : 'font-weight:bold;color:#333;';
 
-      rows += `<tr style="background:${bg};"><td style="padding:8px;border:1px solid #ddd;width:50%;${qStyle}">${q.number}. ${q.text}</td><td style="padding:8px;border:1px solid #ddd;text-align:center;">${displayAnswer}</td></tr>`;
+      rows += `<tr style="background:${bg};"><td style="padding:8px;border:1px solid #ddd;width:50%;${qStyle}">${q.number}. ${escapeHtml(q.text)}</td><td style="padding:8px;border:1px solid #ddd;text-align:center;">${displayAnswer}</td></tr>`;
       rowIdx++;
     }
   }
@@ -121,7 +132,7 @@ function buildAccountCreationHtml(
   return `
     <div style="background-color:#e9ecef;padding:30px;font-family:sans-serif;">
       <div style="background-color:rgba(255,255,255,0.9);padding:20px;border-radius:8px;max-width:800px;margin:auto;">
-        <h2 style="margin:0 0 15px;color:#333;">PMD Account Creation Form for ${patientName} ${dob}</h2>
+        <h2 style="margin:0 0 15px;color:#333;">PMD Account Creation Form for ${escapeHtml(patientName)} ${escapeHtml(dob)}</h2>
         <table style="border-collapse:collapse;width:100%;font-size:14px;">
           ${rows}
         </table>

@@ -362,7 +362,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
   },
-  main: { flex: 1, overflow: 'hidden' },
+  main: { flex: 1, overflow: 'auto' },
   adminPanel: { height: '100%', overflowY: 'auto' as const, padding: '0 0 40px', background: 'var(--ums-bg-surface)' },
   adminHeader: { padding: '28px 28px 0' },
   adminTitle: { margin: '0 0 4px', fontSize: '24px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.3px' },

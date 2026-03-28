@@ -12,8 +12,19 @@ import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
 import { enrichQueryWithStructuredData } from '../services/referenceEnrichment';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
+
+// Rate limit query endpoints to prevent abuse (usage tracking also applies per-user daily limits)
+const queryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  message: { error: 'Too many queries. Please wait before submitting again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const REFORMULATION_PROMPT = `Given the conversation so far and the user's latest message, rewrite the latest message as a standalone search query that captures the full intent. Include key terms from prior context that are needed to search accurately. Return ONLY the reformulated query, nothing else.`;
 
@@ -361,7 +372,7 @@ function sanitizeConversationHistory(history?: ConversationTurn[]): Conversation
 }
 
 // Standard (non-streaming) query endpoint
-router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK }: QueryRequest = req.body;
     const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
@@ -549,7 +560,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 // Streaming query endpoint — sends answer tokens as Server-Sent Events
-router.post('/stream', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK }: QueryRequest = req.body;
     const question = rawQuestion ? sanitizeInput(rawQuestion) : '';

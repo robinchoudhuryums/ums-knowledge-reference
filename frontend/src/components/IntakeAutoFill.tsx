@@ -335,7 +335,7 @@ const s: Record<string, React.CSSProperties> = {
   header: { display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'flex-start' },
   iconBg: {
     width: '48px', height: '48px', borderRadius: '14px',
-    background: 'linear-gradient(135deg, #ECFDF5, #A7F3D0)',
+    background: 'var(--ums-brand-gradient)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   icon: { fontSize: '24px' },
@@ -345,17 +345,18 @@ const s: Record<string, React.CSSProperties> = {
   // Tabs
   tabRow: {
     display: 'flex', gap: '4px', marginBottom: '20px',
-    background: '#F1F5F9', borderRadius: '10px', padding: '3px',
+    background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', padding: '3px',
+    border: '1px solid var(--ums-border)',
   },
   tabActive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'var(--ums-bg-surface)', color: '#065F46', fontSize: '13px', fontWeight: 600,
-    cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    background: 'var(--ums-bg-surface)', color: 'var(--ums-brand-text)', fontSize: '13px', fontWeight: 600,
+    cursor: 'pointer', boxShadow: 'var(--ums-shadow-sm)',
   },
   tabActiveClinical: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'var(--ums-bg-surface)', color: '#7C3AED', fontSize: '13px', fontWeight: 600,
-    cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    background: 'var(--ums-bg-surface)', color: 'var(--ums-brand-text)', fontSize: '13px', fontWeight: 600,
+    cursor: 'pointer', boxShadow: 'var(--ums-shadow-sm)',
   },
   tabInactive: {
     flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
@@ -371,30 +372,31 @@ const s: Record<string, React.CSSProperties> = {
   field: {},
   fieldWide: { gridColumn: '1 / -1' },
   fieldLabel: {
-    display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151',
+    display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ums-text-secondary)',
     marginBottom: '4px',
   },
   fieldInput: {
     width: '100%', padding: '8px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px',
     fontSize: '13px', color: 'var(--ums-text-primary)', outline: 'none', boxSizing: 'border-box' as const,
+    background: 'var(--ums-bg-input)',
   },
   generateBtn: {
     padding: '10px 24px', border: 'none', borderRadius: '10px',
-    background: 'linear-gradient(135deg, #059669, #047857)', color: 'white',
+    background: 'var(--ums-brand-gradient)', color: 'white',
     fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-    boxShadow: '0 2px 8px rgba(5, 150, 105, 0.25)',
+    boxShadow: 'var(--ums-shadow-sm)',
   },
   mappingNote: {
-    marginTop: '12px', fontSize: '13px', color: '#059669', fontWeight: 600,
+    marginTop: '12px', fontSize: '13px', color: 'var(--ums-success)', fontWeight: 600,
   },
 
   // Clinical upload
   uploadLabel: { display: 'inline-block', cursor: 'pointer' },
   uploadBtn: {
     display: 'inline-block', padding: '11px 24px',
-    background: 'linear-gradient(135deg, #7C3AED, #6D28D9)', color: 'white',
+    background: 'var(--ums-brand-gradient)', color: 'white',
     borderRadius: '10px', fontSize: '14px', fontWeight: 500,
-    boxShadow: '0 2px 8px rgba(124, 58, 237, 0.25)', cursor: 'pointer',
+    boxShadow: 'var(--ums-shadow-sm)', cursor: 'pointer',
   },
   uploadBtnLoading: {
     display: 'inline-block', padding: '11px 24px', background: 'var(--ums-text-muted)',
@@ -405,110 +407,110 @@ const s: Record<string, React.CSSProperties> = {
   },
   loadingFill: {
     height: '100%', width: '40%', borderRadius: '2px',
-    background: 'linear-gradient(90deg, #7C3AED, #A78BFA, #7C3AED)',
+    background: 'linear-gradient(90deg, var(--ums-brand-primary), var(--ums-brand-text), var(--ums-brand-primary))',
     backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite',
   },
   error: {
-    marginTop: '16px', padding: '12px 16px', background: '#fef2f2',
-    color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca',
+    marginTop: '16px', padding: '12px 16px', background: 'var(--ums-error-light)',
+    color: 'var(--ums-error)', borderRadius: '10px', fontSize: '13px', border: '1px solid var(--ums-error-border)',
   },
 
   // Clinical results
   clinicalResults: {
-    marginTop: '20px', border: '1px solid #E8EFF5', borderRadius: '14px',
+    marginTop: '20px', border: '1px solid var(--ums-border)', borderRadius: '14px',
     overflow: 'hidden',
   },
   confRow: {
     display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 18px',
-    background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid #E8EFF5',
+    background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid var(--ums-border)',
   },
   confLabel: { fontSize: '12px', color: 'var(--ums-text-muted)', fontWeight: 500 },
   confHigh: {
-    fontSize: '11px', color: '#059669', background: '#ECFDF5', padding: '3px 8px',
-    borderRadius: '6px', fontWeight: 600, border: '1px solid #A7F3D0',
+    fontSize: '11px', color: 'var(--ums-conf-high)', background: 'var(--ums-conf-high-bg)', padding: '3px 8px',
+    borderRadius: '6px', fontWeight: 600, border: '1px solid var(--ums-conf-high-border)',
   },
   confMed: {
-    fontSize: '11px', color: '#D97706', background: '#FFFBEB', padding: '3px 8px',
-    borderRadius: '6px', fontWeight: 600, border: '1px solid #FDE68A',
+    fontSize: '11px', color: 'var(--ums-conf-partial)', background: 'var(--ums-conf-partial-bg)', padding: '3px 8px',
+    borderRadius: '6px', fontWeight: 600, border: '1px solid var(--ums-conf-partial-border)',
   },
   confLow: {
-    fontSize: '11px', color: '#DC2626', background: '#FEF2F2', padding: '3px 8px',
-    borderRadius: '6px', fontWeight: 600, border: '1px solid #FECACA',
+    fontSize: '11px', color: 'var(--ums-conf-low)', background: 'var(--ums-conf-low-bg)', padding: '3px 8px',
+    borderRadius: '6px', fontWeight: 600, border: '1px solid var(--ums-conf-low-border)',
   },
   modelLabel: { fontSize: '11px', color: 'var(--ums-text-muted)', marginLeft: 'auto' },
   notes: {
     margin: 0, padding: '10px 18px', fontSize: '13px', color: 'var(--ums-text-muted)',
-    background: '#FFFBEB', borderBottom: '1px solid #FDE68A', lineHeight: '1.5',
+    background: 'var(--ums-warning-light)', borderBottom: '1px solid var(--ums-warning-border)', lineHeight: '1.5',
     fontStyle: 'italic',
   },
 
-  section: { padding: '14px 18px', borderBottom: '1px solid #E8EFF5' },
+  section: { padding: '14px 18px', borderBottom: '1px solid var(--ums-border)' },
   sectionTitle: {
     margin: '0 0 8px', fontSize: '12px', fontWeight: 700, color: 'var(--ums-text-primary)',
     textTransform: 'uppercase' as const, letterSpacing: '0.3px',
   },
-  sectionText: { margin: 0, fontSize: '13px', color: '#374151', lineHeight: '1.5' },
+  sectionText: { margin: 0, fontSize: '13px', color: 'var(--ums-text-secondary)', lineHeight: '1.5' },
   tagList: { display: 'flex', flexWrap: 'wrap' as const, gap: '6px' },
   codeTag: {
     fontSize: '12px', padding: '4px 10px', borderRadius: '6px',
-    background: '#EDE9FE', color: '#6D28D9', fontWeight: 600, fontFamily: 'monospace',
-    border: '1px solid #DDD6FE',
+    background: 'var(--ums-info-light)', color: 'var(--ums-info-text)', fontWeight: 600, fontFamily: 'monospace',
+    border: '1px solid var(--ums-info-border)',
   },
   hcpcsTag: {
     fontSize: '12px', padding: '4px 10px', borderRadius: '6px',
     background: 'var(--ums-brand-light)', color: 'var(--ums-brand-text)', fontWeight: 600, fontFamily: 'monospace',
-    border: '1px solid #BBDEFB',
+    border: '1px solid var(--ums-border)',
   },
   testRow: {
     display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 0',
-    borderBottom: '1px solid #F1F5F9',
+    borderBottom: '1px solid var(--ums-border-light)',
   },
   testName: { fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-primary)', minWidth: '140px' },
-  testVal: { fontSize: '13px', color: '#059669', fontWeight: 600, fontFamily: 'monospace' },
+  testVal: { fontSize: '13px', color: 'var(--ums-conf-high)', fontWeight: 600, fontFamily: 'monospace' },
   testDate: { fontSize: '11px', color: 'var(--ums-text-muted)', marginLeft: 'auto' },
   quote: {
-    margin: 0, padding: '10px 14px', borderLeft: '3px solid #7C3AED',
-    background: '#F5F3FF', fontSize: '13px', color: '#374151', lineHeight: '1.6',
+    margin: 0, padding: '10px 14px', borderLeft: '3px solid var(--ums-brand-primary)',
+    background: 'var(--ums-bg-surface-alt)', fontSize: '13px', color: 'var(--ums-text-secondary)', lineHeight: '1.6',
     fontStyle: 'italic',
   },
   list: { margin: 0, paddingLeft: '18px' },
-  listItem: { fontSize: '13px', color: '#374151', lineHeight: '1.6', marginBottom: '4px' },
+  listItem: { fontSize: '13px', color: 'var(--ums-text-secondary)', lineHeight: '1.6', marginBottom: '4px' },
 
   // Combined mappings
   mappingsSection: {
-    border: '1px solid #A7F3D0', borderRadius: '14px', overflow: 'hidden',
-    background: '#ECFDF5',
+    border: '1px solid var(--ums-success-border)', borderRadius: '14px', overflow: 'hidden',
+    background: 'var(--ums-success-light)',
   },
   mappingsHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '14px 18px', borderBottom: '1px solid #A7F3D0',
+    padding: '14px 18px', borderBottom: '1px solid var(--ums-success-border)',
   },
-  mappingsTitle: { margin: 0, fontSize: '15px', fontWeight: 700, color: '#065F46' },
+  mappingsTitle: { margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--ums-success-text)' },
   copyBtn: {
-    padding: '6px 14px', border: '1px solid #6EE7B7', borderRadius: '8px',
-    background: 'var(--ums-bg-surface)', color: '#065F46', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+    padding: '6px 14px', border: '1px solid var(--ums-success-border)', borderRadius: '8px',
+    background: 'var(--ums-bg-surface)', color: 'var(--ums-success-text)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
   },
   mappingsDesc: {
-    margin: 0, padding: '10px 18px', fontSize: '12px', color: '#047857',
-    borderBottom: '1px solid #A7F3D0',
+    margin: 0, padding: '10px 18px', fontSize: '12px', color: 'var(--ums-success-text)',
+    borderBottom: '1px solid var(--ums-success-border)',
   },
   mappingsList: { padding: '10px 18px', display: 'flex', flexDirection: 'column' as const, gap: '8px' },
   mappingItem: {
     padding: '10px 14px', background: 'var(--ums-bg-surface)', borderRadius: '8px',
-    border: '1px solid #D1FAE5',
+    border: '1px solid var(--ums-border)',
   },
   mappingTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
-  mappingField: { fontSize: '13px', fontWeight: 700, color: '#065F46' },
+  mappingField: { fontSize: '13px', fontWeight: 700, color: 'var(--ums-text-primary)' },
   mapConfHigh: {
-    fontSize: '10px', color: '#059669', background: '#D1FAE5', padding: '2px 6px',
+    fontSize: '10px', color: 'var(--ums-conf-high)', background: 'var(--ums-conf-high-bg)', padding: '2px 6px',
     borderRadius: '4px', fontWeight: 600,
   },
   mapConfMed: {
-    fontSize: '10px', color: '#D97706', background: '#FEF3C7', padding: '2px 6px',
+    fontSize: '10px', color: 'var(--ums-conf-partial)', background: 'var(--ums-conf-partial-bg)', padding: '2px 6px',
     borderRadius: '4px', fontWeight: 600,
   },
   mapConfLow: {
-    fontSize: '10px', color: '#DC2626', background: '#FEE2E2', padding: '2px 6px',
+    fontSize: '10px', color: 'var(--ums-conf-low)', background: 'var(--ums-conf-low-bg)', padding: '2px 6px',
     borderRadius: '4px', fontWeight: 600,
   },
   mappingValue: { fontSize: '13px', color: 'var(--ums-text-primary)', fontWeight: 600, marginBottom: '2px' },

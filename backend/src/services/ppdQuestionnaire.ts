@@ -1,6 +1,13 @@
 import { PMD_CATALOG, getProductByHcpcs } from './pmdCatalog';
 
 /**
+ * Form version identifier. Increment when the question set or answer schema changes.
+ * This is embedded in PPD submissions for audit traceability — if questions are
+ * added, removed, or reworded, the version number tells you which form was used.
+ */
+export const PPD_FORM_VERSION = '2.0';
+
+/**
  * PPD (Patient Provided Data) Questionnaire Service
  *
  * Provides the structured questionnaire for Power Mobility Device (PMD) orders.

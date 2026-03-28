@@ -40,7 +40,7 @@ const sty = {
   sectionHeader: { background: 'var(--ums-bg-surface-alt)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s' } as React.CSSProperties,
   sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: '#223b5d' } as React.CSSProperties,
   sectionBody: { padding: '14px 16px', transition: 'max-height 0.3s ease', overflow: 'hidden' } as React.CSSProperties,
-  questionRow: { marginBottom: 14 } as React.CSSProperties,
+  questionRow: { marginBottom: 10, padding: '12px 16px', background: 'var(--ums-bg-surface)', borderRadius: 8, border: '1px solid var(--ums-border)', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' } as React.CSSProperties,
   questionLabel: { display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500, color: 'var(--ums-text-primary)' } as React.CSSProperties,
   secondaryLabel: { display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 400, fontStyle: 'italic' as const, color: 'var(--ums-text-muted)', paddingLeft: 16 } as React.CSSProperties,
   textInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const, transition: 'border-color 0.2s' } as React.CSSProperties,

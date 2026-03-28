@@ -15,15 +15,36 @@ import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sd
 import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
-import { PpdResponse, PmdRecommendation } from './ppdQuestionnaire';
+import { PpdResponse, PmdRecommendation, PPD_FORM_VERSION } from './ppdQuestionnaire';
 
 const PPD_QUEUE_PREFIX = `${S3_PREFIXES.metadata}ppd-queue/`;
 const PPD_INDEX_KEY = `${S3_PREFIXES.metadata}ppd-queue-index.json`;
 
 export type PpdStatus = 'pending' | 'in_review' | 'completed' | 'returned';
 
+/**
+ * Valid state machine transitions for PPD submissions.
+ * pending → in_review → completed
+ *                     → returned → in_review (re-review after corrections)
+ */
+const VALID_TRANSITIONS: Record<PpdStatus, PpdStatus[]> = {
+  pending:   ['in_review'],
+  in_review: ['completed', 'returned'],
+  returned:  ['in_review'],
+  completed: [], // terminal state — no further transitions
+};
+
+/**
+ * Check whether a status transition is valid per the PPD state machine.
+ */
+export function isValidTransition(from: PpdStatus, to: PpdStatus): boolean {
+  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
 export interface PpdSubmissionRecord {
   id: string;
+  /** Form version at time of submission (for audit trail when questions change) */
+  formVersion: string;
   patientInfo: string;
   language: 'english' | 'spanish';
   responses: PpdResponse[];
@@ -86,6 +107,7 @@ export async function submitPpd(submission: {
 }): Promise<PpdSubmissionRecord> {
   const record: PpdSubmissionRecord = {
     id: uuidv4(),
+    formVersion: PPD_FORM_VERSION,
     patientInfo: submission.patientInfo,
     language: submission.language,
     responses: submission.responses,
@@ -161,6 +183,14 @@ export async function updatePpdStatus(
 ): Promise<PpdSubmissionRecord | null> {
   const record = await getPpdSubmission(id);
   if (!record) return null;
+
+  // Validate state machine transition
+  if (!isValidTransition(record.status, update.status)) {
+    throw new Error(
+      `Invalid status transition: ${record.status} → ${update.status}. ` +
+      `Allowed: ${VALID_TRANSITIONS[record.status].join(', ') || 'none (terminal state)'}`
+    );
+  }
 
   record.status = update.status;
   record.reviewedBy = update.reviewedBy;

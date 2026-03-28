@@ -10,6 +10,7 @@ const GENESIS_HASH = 'GENESIS';
 
 // Module-level variable tracking the hash of the last written entry
 let lastEntryHash: string = GENESIS_HASH;
+let chainInitialized = false;
 
 // Mutex to serialize audit writes and prevent concurrent entries from
 // reading the same lastEntryHash, which would break the hash chain.
@@ -69,6 +70,44 @@ function deepRedactPhi(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Recover the hash chain from S3 on first audit write after restart.
+ * Reads today's (and optionally yesterday's) audit entries to find the most recent hash,
+ * preserving chain continuity across server restarts.
+ */
+async function recoverHashChain(): Promise<void> {
+  if (chainInitialized) return;
+  chainInitialized = true;
+
+  try {
+    // Try today first, then yesterday (in case server restarts around midnight)
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    for (const date of [today, yesterday]) {
+      const entries = await getAuditLogs(date);
+      if (entries.length > 0) {
+        // getAuditLogs sorts descending by timestamp, so [0] is the most recent
+        const mostRecent = entries[0];
+        if (mostRecent.entryHash) {
+          lastEntryHash = mostRecent.entryHash;
+          logger.info('Audit hash chain recovered from S3', {
+            date,
+            recoveredFromEntryId: mostRecent.id,
+          });
+          return;
+        }
+      }
+    }
+
+    // No entries found — starting fresh with GENESIS
+    logger.info('No previous audit entries found, starting hash chain from GENESIS');
+  } catch (err) {
+    // Recovery failure is non-fatal — chain starts fresh from GENESIS
+    logger.warn('Failed to recover audit hash chain, starting from GENESIS', { error: String(err) });
+  }
+}
+
 export async function logAuditEvent(
   userId: string,
   username: string,
@@ -84,6 +123,9 @@ export async function logAuditEvent(
   // correctly references the preceding entry. Without this, concurrent writes
   // would both read the same lastEntryHash, producing a broken chain.
   await withAuditLock(async () => {
+    // On first write after restart, recover the chain from S3
+    await recoverHashChain();
+
     const entry: AuditLogEntry = {
       id: uuidv4(),
       timestamp: new Date().toISOString(),
@@ -125,25 +167,36 @@ export async function getAuditLogs(date: string): Promise<AuditLogEntry[]> {
   const prefix = `${S3_PREFIXES.audit}${date}/`;
 
   try {
-    const listResult = await s3Client.send(new ListObjectsV2Command({
-      Bucket: S3_BUCKET,
-      Prefix: prefix,
-    }));
-
-    if (!listResult.Contents) return [];
-
     const entries: AuditLogEntry[] = [];
-    for (const obj of listResult.Contents) {
-      if (!obj.Key) continue;
-      const getResult = await s3Client.send(new GetObjectCommand({
+    let continuationToken: string | undefined;
+
+    do {
+      const listResult = await s3Client.send(new ListObjectsV2Command({
         Bucket: S3_BUCKET,
-        Key: obj.Key,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
       }));
-      const body = await getResult.Body?.transformToString();
-      if (body) {
-        entries.push(JSON.parse(body));
+
+      if (listResult.Contents) {
+        for (const obj of listResult.Contents) {
+          if (!obj.Key) continue;
+          try {
+            const getResult = await s3Client.send(new GetObjectCommand({
+              Bucket: S3_BUCKET,
+              Key: obj.Key,
+            }));
+            const body = await getResult.Body?.transformToString();
+            if (body) {
+              entries.push(JSON.parse(body));
+            }
+          } catch (readErr) {
+            logger.warn('Failed to read individual audit log entry', { key: obj.Key, error: String(readErr) });
+          }
+        }
       }
-    }
+
+      continuationToken = listResult.IsTruncated ? listResult.NextContinuationToken : undefined;
+    } while (continuationToken);
 
     return entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   } catch (error) {

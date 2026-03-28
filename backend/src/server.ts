@@ -217,7 +217,7 @@ app.get('/api/health', async (_req, res) => {
 
   // Vector store loaded check
   const { getVectorStoreStats } = await import('./services/vectorStore');
-  const vsStats = getVectorStoreStats();
+  const vsStats = await getVectorStoreStats();
   checks.vectorStore = vsStats.lastUpdated ? 'ok' : 'error';
   if (checks.vectorStore === 'error') healthy = false;
 

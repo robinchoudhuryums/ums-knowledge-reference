@@ -77,3 +77,18 @@ export async function saveCollectionsIndex(collections: Collection[]): Promise<v
   if (await useRds()) return dbSaveCollections(collections);
   return saveMetadata(COLLECTIONS_INDEX_KEY, collections);
 }
+
+// ─── Vector Store ───────────────────────────────────────────────────────────
+// Re-export pgvector functions for use when callers want direct DB access.
+// The main vectorStore.ts service handles the hybrid routing internally.
+
+export {
+  dbAddChunks,
+  dbRemoveDocumentChunks,
+  dbSearchVectorStore,
+  dbSearchChunksByKeyword,
+  dbGetVectorStoreStats,
+} from './vectorStore';
+
+// Export the useRds check so vectorStore.ts can decide which backend to use
+export { useRds };

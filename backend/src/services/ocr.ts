@@ -107,6 +107,7 @@ async function extractTextWithAsyncOcr(buffer: Buffer, filename: string): Promis
       Key: tempKey,
       Body: buffer,
       ContentType: 'application/pdf',
+      ServerSideEncryption: 'AES256',
     }));
 
     // Start async text detection job

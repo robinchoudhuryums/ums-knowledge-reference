@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { writeFileSync } from 'fs';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { User } from '../types';
@@ -222,7 +223,6 @@ export async function initializeAuth(): Promise<void> {
     // Plaintext passwords in logs violate HIPAA and could be captured by log aggregators.
     const passwordFilePath = '/tmp/ums-admin-initial-password.txt';
     try {
-      const { writeFileSync } = require('fs');
       writeFileSync(passwordFilePath, `Admin initial password: ${initialPassword}\nThis password MUST be changed on first login.\n`, { mode: 0o600 });
       logger.warn('Default admin user created (username: admin). Initial password written to: ' + passwordFilePath);
       logger.warn('Read the password from that file, then delete it immediately.');

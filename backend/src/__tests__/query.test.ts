@@ -110,7 +110,7 @@ import { checkAndRecordQuery } from '../services/usage';
 import { logAuditEvent } from '../services/audit';
 import { getUserAllowedCollections } from '../middleware/auth';
 import { searchVectorStore } from '../services/vectorStore';
-import { SearchResult, Document, StoredChunk } from '../types';
+import { SearchResult, StoredChunk } from '../types';
 
 const mockSearchVectorStore = searchVectorStore as any;
 

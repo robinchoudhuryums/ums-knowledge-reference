@@ -18,6 +18,7 @@ const MIN_RETENTION_AUDIT_DAYS = 2190;     // 6 years — HIPAA § 164.530(j)
 const MIN_RETENTION_QUERY_LOG_DAYS = 180;  // 6 months minimum for operational logs
 const MIN_RETENTION_RAG_TRACE_DAYS = 30;   // 30 days minimum for troubleshooting
 const MIN_RETENTION_FEEDBACK_DAYS = 180;   // 6 months minimum
+const MIN_RETENTION_PPD_DAYS = 365;        // 1 year minimum for clinical intake data
 
 /**
  * Parse an integer from an env var with a safe fallback.
@@ -50,12 +51,17 @@ const RETENTION_FEEDBACK_DAYS = Math.max(
   safeParseInt(process.env.RETENTION_FEEDBACK_DAYS, 365),
   MIN_RETENTION_FEEDBACK_DAYS
 );
+const RETENTION_PPD_DAYS = Math.max(
+  safeParseInt(process.env.RETENTION_PPD_DAYS, 730),
+  MIN_RETENTION_PPD_DAYS
+);
 
 export interface RetentionSummary {
   auditDeleted: number;
   queryLogDeleted: number;
   traceDeleted: number;
   feedbackDeleted: number;
+  ppdDeleted: number;
 }
 
 // Date pattern: YYYY-MM-DD with valid month (01-12) and day (01-31) ranges.
@@ -148,6 +154,7 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
     retentionQueryLogDays: RETENTION_QUERY_LOG_DAYS,
     retentionRagTraceDays: RETENTION_RAG_TRACE_DAYS,
     retentionFeedbackDays: RETENTION_FEEDBACK_DAYS,
+    retentionPpdDays: RETENTION_PPD_DAYS,
   });
 
   // Audit logs: stored under audit/YYYY-MM-DD/
@@ -178,14 +185,22 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
     now
   );
 
+  // PPD submissions: stored under metadata/ppd-queue/ — contain clinical PHI
+  const ppdDeleted = await deleteExpiredObjects(
+    `${S3_PREFIXES.metadata}ppd-queue/`,
+    RETENTION_PPD_DAYS,
+    now
+  );
+
   const summary: RetentionSummary = {
     auditDeleted,
     queryLogDeleted,
     traceDeleted,
     feedbackDeleted,
+    ppdDeleted,
   };
 
-  const totalDeleted = auditDeleted + queryLogDeleted + traceDeleted + feedbackDeleted;
+  const totalDeleted = auditDeleted + queryLogDeleted + traceDeleted + feedbackDeleted + ppdDeleted;
 
   logger.info('Data retention cleanup completed', {
     ...summary,
@@ -203,6 +218,7 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
           queryLogDays: RETENTION_QUERY_LOG_DAYS,
           ragTraceDays: RETENTION_RAG_TRACE_DAYS,
           feedbackDays: RETENTION_FEEDBACK_DAYS,
+          ppdDays: RETENTION_PPD_DAYS,
         },
       });
     } catch (error) {
@@ -250,5 +266,6 @@ export function startRetentionScheduler(): void {
     retentionQueryLogDays: RETENTION_QUERY_LOG_DAYS,
     retentionRagTraceDays: RETENTION_RAG_TRACE_DAYS,
     retentionFeedbackDays: RETENTION_FEEDBACK_DAYS,
+    retentionPpdDays: RETENTION_PPD_DAYS,
   });
 }

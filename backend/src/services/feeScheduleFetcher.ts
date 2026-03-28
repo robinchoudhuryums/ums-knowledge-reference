@@ -118,6 +118,7 @@ async function saveFetchMeta(meta: FetchMeta): Promise<void> {
     Key: FETCH_META_KEY,
     Body: JSON.stringify(meta),
     ContentType: 'application/json',
+    ServerSideEncryption: 'AES256',
   }));
 }
 

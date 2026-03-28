@@ -128,6 +128,7 @@ async function cacheResult(hash: string, result: FormAnalysisResult): Promise<vo
       Key: key,
       Body: JSON.stringify(result),
       ContentType: 'application/json',
+      ServerSideEncryption: 'AES256',
     }));
     logger.info('Form analysis result cached', { hash });
   } catch (err) {
@@ -218,6 +219,7 @@ async function analyzeFormAsync(buffer: Buffer, filename: string): Promise<Block
       Key: tempKey,
       Body: buffer,
       ContentType: 'application/pdf',
+      ServerSideEncryption: 'AES256',
     }));
 
     const startCommand = new StartDocumentAnalysisCommand({

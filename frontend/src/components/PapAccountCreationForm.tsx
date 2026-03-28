@@ -37,26 +37,26 @@ const sty = {
   header: { background: 'linear-gradient(135deg, #1a237e, #3949ab)', color: '#fff', padding: '16px 20px', borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' } as React.CSSProperties,
   headerTitle: { margin: 0, fontSize: 20, fontWeight: 600 } as React.CSSProperties,
   langToggle: { display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.5)' } as React.CSSProperties,
-  section: { border: '1px solid #d0d7de', borderRadius: 10, marginBottom: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' } as React.CSSProperties,
+  section: { border: '1px solid var(--ums-border)', borderRadius: 10, marginBottom: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' } as React.CSSProperties,
   sectionHeader: { background: 'linear-gradient(to right, #e8eaf6, #f0f4f8)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s' } as React.CSSProperties,
   sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: '#1a237e' } as React.CSSProperties,
   sectionBody: { padding: '14px 16px' } as React.CSSProperties,
   questionRow: { marginBottom: 14 } as React.CSSProperties,
-  questionLabel: { display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500, color: '#333' } as React.CSSProperties,
-  secondaryLabel: { display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 400, fontStyle: 'italic' as const, color: '#555', paddingLeft: 16 } as React.CSSProperties,
-  textInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
-  textarea: { padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const, minHeight: 70, resize: 'vertical' as const } as React.CSSProperties,
-  selectInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
+  questionLabel: { display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500, color: 'var(--ums-text-primary)' } as React.CSSProperties,
+  secondaryLabel: { display: 'block', marginBottom: 6, fontSize: 13, fontWeight: 400, fontStyle: 'italic' as const, color: 'var(--ums-text-muted)', paddingLeft: 16 } as React.CSSProperties,
+  textInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
+  textarea: { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const, minHeight: 70, resize: 'vertical' as const } as React.CSSProperties,
+  selectInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
   checkboxRow: { display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' } as React.CSSProperties,
   checkbox: { width: 20, height: 20, accentColor: '#3949ab', cursor: 'pointer' } as React.CSSProperties,
   progressRing: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '8px 0' } as React.CSSProperties,
-  progressRingText: { fontSize: 13, color: '#555', fontWeight: 500 } as React.CSSProperties,
+  progressRingText: { fontSize: 13, color: 'var(--ums-text-muted)', fontWeight: 500 } as React.CSSProperties,
   completionBadge: { fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600 } as React.CSSProperties,
   actionBar: { display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' as const, alignItems: 'center' } as React.CSSProperties,
   submitBtn: { background: '#3949ab', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' } as React.CSSProperties,
   submitBtnDisabled: { background: '#9fa8da', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'not-allowed' } as React.CSSProperties,
   clearBtn: { background: 'var(--ums-bg-surface)', color: '#dc3545', border: '1px solid #dc3545', padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' } as React.CSSProperties,
-  emailInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: 280 } as React.CSSProperties,
+  emailInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: 280 } as React.CSSProperties,
   error: { background: '#f8d7da', color: '#721c24', padding: '10px 14px', borderRadius: 6, marginTop: 12 } as React.CSSProperties,
   success: { background: '#d4edda', color: '#155724', padding: '10px 14px', borderRadius: 6, marginTop: 12, fontWeight: 600 } as React.CSSProperties,
   conditionalBadge: { display: 'inline-block', padding: '4px 10px', borderRadius: 6, fontWeight: 600, fontSize: 13 } as React.CSSProperties,
@@ -158,7 +158,7 @@ export function PapAccountCreationForm() {
     return map[group] || group;
   };
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>Loading form...</div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ums-text-muted)' }}>Loading form...</div>;
   if (fetchError) return <div style={sty.error}>Failed to load form: {fetchError}</div>;
 
   return (
@@ -187,7 +187,7 @@ export function PapAccountCreationForm() {
             strokeDasharray={`${progressPct * 1.57} 157`}
             transform="rotate(-90 30 30)"
             style={{ transition: 'stroke-dasharray 0.4s ease, stroke 0.3s ease' }} />
-          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="#333">{progressPct}%</text>
+          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--ums-text-primary)">{progressPct}%</text>
         </svg>
         <div style={sty.progressRingText}>{answeredCount} / {totalRequired} {lang === 'en' ? 'required fields' : 'campos obligatorios'}</div>
       </div>
@@ -204,11 +204,11 @@ export function PapAccountCreationForm() {
               <h3 style={sty.sectionTitle}>{groupTitle}</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {comp.total > 0 && (
-                  <span style={{ ...sty.completionBadge, background: badgeColor, color: badgeColor === '#dee2e6' ? '#666' : '#fff' }}>
+                  <span style={{ ...sty.completionBadge, background: badgeColor, color: badgeColor === '#dee2e6' ? 'var(--ums-text-muted)' : '#fff' }}>
                     {comp.answered}/{comp.total}
                   </span>
                 )}
-                <span style={{ fontSize: 14, color: '#666', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
+                <span style={{ fontSize: 14, color: 'var(--ums-text-muted)', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
               </div>
             </div>
             <div className={`pap-section-body ${isCollapsed ? 'collapsed' : 'expanded'}`} style={sty.sectionBody}>
@@ -262,7 +262,7 @@ export function PapAccountCreationForm() {
                       {q.type === 'checkbox' && (
                         <div style={sty.checkboxRow} onClick={() => setResponse(q.id, val === 'true' ? 'false' : 'true')}>
                           <input type="checkbox" checked={val === 'true'} readOnly style={sty.checkbox} />
-                          <span style={{ fontSize: 13, color: val === 'true' ? '#155724' : '#666' }}>
+                          <span style={{ fontSize: 13, color: val === 'true' ? '#155724' : 'var(--ums-text-muted)' }}>
                             {val === 'true' ? (lang === 'en' ? 'Yes / Confirmed' : 'Sí / Confirmado') : (lang === 'en' ? 'Not confirmed' : 'No confirmado')}
                           </span>
                         </div>

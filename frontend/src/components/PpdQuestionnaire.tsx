@@ -91,7 +91,7 @@ const sty = {
   recControls: { display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' as const } as React.CSSProperties,
   starLabel: { cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties,
   statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid var(--ums-border)', fontSize: 12 } as React.CSSProperties,
-  copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid #1976d2', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
+  copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid var(--ums-brand-primary)', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
   actionBar: { display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' as const } as React.CSSProperties,
   loadingContainer: { padding: 60, textAlign: 'center' as const, color: 'var(--ums-text-muted)', fontSize: 16 } as React.CSSProperties,
   badge: { display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, marginLeft: 8 } as React.CSSProperties,
@@ -129,7 +129,7 @@ function painToggle(active: boolean): React.CSSProperties {
 function badgeStyle(answered: number, total: number): React.CSSProperties {
   const pct = total > 0 ? answered / total : 0;
   let bg = '#e9ecef';
-  let color = '#666';
+  let color = 'var(--ums-text-muted)';
   if (pct === 1) { bg = '#d4edda'; color = '#155724'; }
   else if (pct > 0) { bg = '#fff3cd'; color = '#856404'; }
   return { ...sty.badge, background: bg, color };
@@ -358,9 +358,9 @@ export function PpdQuestionnaire() {
                   type="button"
                   style={{
                     padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
-                    border: selected ? '2px solid #1976d2' : '1px solid #ccc',
+                    border: selected ? '2px solid var(--ums-brand-primary)' : '1px solid var(--ums-border)',
                     background: selected ? 'var(--ums-brand-light)' : 'var(--ums-bg-surface)',
-                    color: selected ? 'var(--ums-brand-primary)' : '#333',
+                    color: selected ? 'var(--ums-brand-primary)' : 'var(--ums-text-primary)',
                     fontWeight: selected ? 700 : 400, fontSize: 13,
                   }}
                   onClick={() => {
@@ -527,7 +527,7 @@ export function PpdQuestionnaire() {
             strokeDasharray={`${progressPct * 1.57} 157`}
             transform="rotate(-90 30 30)"
             style={{ transition: 'stroke-dasharray 0.4s ease, stroke 0.3s ease' }} />
-          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="#333">{progressPct}%</text>
+          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--ums-text-primary)">{progressPct}%</text>
         </svg>
         <div style={sty.progressRingText}>
           {answeredCount} / {totalRequired} {lang === 'en' ? 'required questions answered' : 'preguntas obligatorias respondidas'}
@@ -551,7 +551,7 @@ export function PpdQuestionnaire() {
                   {counts.answered}/{counts.total}
                 </span>
               </h3>
-              <span style={{ fontSize: 14, color: '#666', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
+              <span style={{ fontSize: 14, color: 'var(--ums-text-muted)', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
             </div>
             <div className={`ppd-section-body ${isCollapsed ? 'collapsed' : 'expanded'}`} style={sty.sectionBody}>
               {isPainGroup
@@ -610,7 +610,7 @@ export function PpdQuestionnaire() {
             </>
           )}
           {recommendations.complexRehab.length === 0 && recommendations.standard.length === 0 && (
-            <div style={{ padding: 16, textAlign: 'center', color: '#666' }}>
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--ums-text-muted)' }}>
               {lang === 'en' ? 'No recommendations returned. Please review your responses.' : 'No se devolvieron recomendaciones. Revise sus respuestas.'}
             </div>
           )}
@@ -729,7 +729,7 @@ export function PpdQuestionnaire() {
             </div>
           </div>
           <div
-            style={{ border: '1px solid #d0d7de', borderRadius: 8, padding: 16, background: 'var(--ums-bg-surface)', overflow: 'auto', maxHeight: 600 }}
+            style={{ border: '1px solid var(--ums-border)', borderRadius: 8, padding: 16, background: 'var(--ums-bg-surface)', overflow: 'auto', maxHeight: 600 }}
             dangerouslySetInnerHTML={{ __html: seatingEvalHtml }}
           />
         </div>

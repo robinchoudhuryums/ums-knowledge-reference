@@ -74,12 +74,15 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
 
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
 
+  // Strip CRLF from subject to prevent header injection
+  const sanitizedSubject = options.subject.replace(/[\r\n]/g, '');
+
   try {
     const result = await transport.sendMail({
       from,
       to: options.to,
       bcc: options.bcc,
-      subject: options.subject,
+      subject: sanitizedSubject,
       html: options.html,
     });
 

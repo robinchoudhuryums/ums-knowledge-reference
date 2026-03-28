@@ -45,8 +45,12 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+if (corsOrigin === '*') {
+  logger.warn('CORS_ORIGIN is set to "*" which is incompatible with credentials. Falling back to localhost.');
+}
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: corsOrigin === '*' ? 'http://localhost:5173' : corsOrigin,
   credentials: true,
 }));
 

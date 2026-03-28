@@ -255,7 +255,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     const remaining = getLockoutRemainingSeconds(user);
     logger.warn('Login attempt on locked account', { username, remainingSeconds: remaining });
     res.status(423).json({
-      error: `Account is locked due to too many failed attempts. Try again in ${Math.ceil(remaining / 60)} minutes.`,
+      error: 'Account is locked due to too many failed attempts. Please try again later.',
     });
     return;
   }
@@ -285,7 +285,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   await saveUsers(users);
 
   // Generate a unique token ID for revocation support
-  const jti = `${user.id}-${Date.now()}`;
+  const jti = crypto.randomUUID();
 
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role, jti },

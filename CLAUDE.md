@@ -48,7 +48,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `insuranceCardReader.ts` — Insurance card OCR: Textract + Claude extracts structured fields, immediate PHI redaction, audit trail, mismatch detection
   - `dataRetention.ts` — HIPAA-compliant automated data retention cleanup with hard-coded minimum floors (audit ≥6yr), NaN-safe parseInt, validated date regex
 - **Routes** (`backend/src/routes/`):
-  - `query.ts` — RAG query (non-streaming + streaming SSE), query reformulation for follow-ups
+  - `query.ts` — RAG query (non-streaming + streaming SSE), query reformulation for follow-ups, rate-limited (30 req/15min per user)
   - `documents.ts` — Document upload, listing, deletion, clinical extraction, fee schedule fetch, reindex
   - `extraction.ts` — Structured document extraction with template selection + async job endpoints
   - `users.ts` — Admin user management CRUD (list, update role, delete, password reset)
@@ -67,10 +67,10 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Database layer** (`backend/src/db/`): Hybrid S3/RDS access layer. `index.ts` routes to PostgreSQL when DATABASE_URL is configured, falls back to S3 JSON. `users.ts` (user CRUD), `documents.ts` (document/collection CRUD with document count aggregation), `vectorStore.ts` (pgvector-backed similarity search with IVFFlat index).
 - **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index)
 - **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, async lockout check in middleware, lockout cache for S3 outage resilience, revokeAllUserTokens on password reset)
-- **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `phiRedactor.ts` (PHI scrubbing with natural language DOB, MRN, SSN, phone, email, address, Medicare/Medicaid), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout), `metrics.ts` (in-memory request metrics with per-route latency percentiles)
+- **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `phiRedactor.ts` (PHI scrubbing with natural language DOB, MRN, SSN, phone, email, address, Medicare/Medicaid), `htmlEscape.ts` (HTML entity escaping for safe email template interpolation), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout), `metrics.ts` (in-memory request metrics with per-route latency percentiles)
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): 334 total tests across 28 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, and integration tests.
+- **Tests** (`backend/src/__tests__/`): 533 total tests across 40 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, and FAQ analytics.
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
@@ -100,10 +100,12 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `PapAccountCreationForm.tsx` — PAP/CPAP Account Creation form with conditional formatting badges, insurance card OCR upload
   - `InsuranceCardUpload.tsx` — Reusable drag-and-drop/paste image upload with Textract OCR, auto-fill, and mismatch detection
   - `LoadingSkeleton.tsx` — Reusable shimmer-animated loading placeholder
+  - `Toast.tsx` — Toast notification system with Heroicon status icons and semantic CSS variable theming
+  - `ConfirmDialog.tsx` — Modal confirmation dialog with danger variant, Escape key dismiss, auto-focus management
 - **Hooks**: `frontend/src/hooks/useAuth.ts` (login/logout with stream cancellation), `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout with full-viewport interaction blocker)
 - **API client**: `frontend/src/services/api.ts` (AbortController-based stream cancellation, 2MB SSE buffer cap)
 - **Types**: `frontend/src/types/index.ts`
-- **Styling**: CSS variables design system (`index.css`) with 30+ tokens for light/dark themes. Tailwind CSS v4 for utility classes. Healthcare blue palette with hexagonal/molecular background pattern. Dark mode via `class="dark"` on `<html>` with localStorage persistence and system preference detection.
+- **Styling**: CSS variables design system (`index.css`) with 60+ tokens for light/dark themes including semantic status colors (success/error/warning/info with light/border/text variants) and confidence colors (high/partial/low with background/border variants). Tailwind CSS v4 for utility classes. Healthcare blue palette with hexagonal/molecular background pattern. Dark mode via `class="dark"` on `<html>` with localStorage persistence and system preference detection.
 - **Icons**: Heroicons (`@heroicons/react/24/outline`) for standard UI, Lucide React (`lucide-react`) for medical icons (Brain logo, Stethoscope for clinical tab)
 
 ### AWS Services Used
@@ -159,6 +161,9 @@ docker build -t ums-knowledge .
 - **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
 
 ## Recent Changes (reverse chronological)
+- **Test coverage expansion** (10 new test files, 142 new tests): Added tests for htmlEscape, hcpcsLookup, icd10Mapping, pmdCatalog, coverageChecklists, formRules, accountCreation, papAccountCreation, referenceEnrichment, and faqAnalytics. Total: 391 → 533 tests across 30 → 40 test files.
+- **Security and DevOps hardening**: HTML escaping utility (`htmlEscape.ts`) applied to all email HTML builders (PPD, Account Creation, PAP) to prevent XSS. CRLF sanitization on email subjects. `requireAdmin` added to PPD status update endpoint (was missing authorization). JWT `jti` changed from predictable `user-id-timestamp` to `crypto.randomUUID()`. CORS origin validation prevents `*` with credentials. Rate limiting added to Account Creation and PAP submit endpoints (10/15min) and query endpoints (30/15min). Lockout timing removed from error messages. `.nvmrc` (Node 20), `.github/dependabot.yml` (weekly npm + GitHub Actions updates).
+- **UI/UX improvements**: Semantic CSS variable system with 30+ new tokens for status colors (success/error/warning/info) and confidence colors (high/partial/low) with proper dark mode variants. Replaced hard-coded hex colors across 15+ components. Toast notifications use Heroicons with semantic theming. ConfirmDialog supports Escape key dismiss and danger-variant auto-focus. DocumentSearch adds loading skeleton, search hint, and no-results empty state. ObservabilityDashboard period buttons unified to brand palette. PpdQueueViewer, InsuranceCardUpload, IntakeAutoFill, ChatInterface confidence badges, ErrorBoundary all converted to CSS variables.
 - **Comprehensive codebase audit and hardening** (18 commits across all categories):
   - **RAG**: Dynamic BM25 normalization (replaces hardcoded /10), embedding dimension validation, prompt injection detection (12 patterns + XML context framing), medical-term-aware tokenizer (preserves hyphenated terms + short medical tokens like IV, O2, 5mg), chunker table detection fix, usage rollback on failed queries, improved confidence scoring (blended avg+top score, tuned thresholds, model-vs-retrieval reconciliation), output-side guardrails (detect system prompt leakage, role deviation), conversation history validation (20 turn / 50K char budget), NaN guard on combined scores
   - **Ingestion**: Mutex lock on document index updates (prevents concurrent corruption), chunk rollback on failure (prevents orphans), document version audit trail (`document_replaced` action), file extension whitelist, OCR polling loop fix (separated polling from pagination), conditional OCR (word-count threshold skips Textract for text-native PDFs), content-hash deduplication (rejects identical uploads in same collection)
@@ -169,7 +174,7 @@ docker build -t ums-knowledge .
   - **Scalability**: `/api/metrics` admin endpoint (per-route request counts, p50/p95/p99 latency, memory usage), job queue S3 persistence (survives restarts), source monitor parallel checks (concurrency 3, correct index tracking), S3 object size guards (metadata 50MB, vector index 500MB), vector store memory warning at 50K chunks, RDS/pgvector migration documented in storage interfaces
   - **OCR**: 5-minute hard timeout via Promise.race, transient error retry (3 attempts) during Textract polling, 100ms pagination delay to prevent AWS throttling, word-count skip threshold (not char count)
   - **Code quality**: Stricter TypeScript (`noUnusedLocals`, `noImplicitReturns`), silent `.catch(() => {})` replaced with logged warnings, dynamic `require()` replaced with static imports, S3 error handling improved (NoSuchKey + NotFound + HTTP 404), unused variables removed, date regex validates month/day ranges
-  - **Tests**: 320 tests across 27 files (was 205/18) — new coverage for ingestion, audit, embeddings, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire
+  - **Tests**: 391 tests across 30 files (was 205/18) — new coverage for ingestion, audit, embeddings, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, PPD queue
 - **Insurance card OCR auto-fill**: Upload insurance card images (drag-and-drop/paste) → Textract OCR → Claude extracts structured fields (insurance name, member ID, group #, plan type, subscriber name/DOB). Auto-fills form fields and flags mismatches against entered data. Integrated into both PMD and PAP Account Creation forms.
 - **PAP Account Creation form**: CPAP/BiPAP sales lead intake tool ported from Apps Script. 24 questions across 4 sections with conditional formatting badges (sleep study status, CPAP age). Purple/indigo theme. Email via Gmail SMTP.
 - **PMD Account Creation form**: Power mobility sales lead intake tool ported from Apps Script. 25 questions across 4 sections (Demographics, Insurance, Clinical, Scheduling) with EN/ES toggle, email support.
@@ -288,7 +293,7 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/ppd/seating-eval` | User | Generate auto-filled Seating Evaluation |
 | POST | `/api/ppd/submit` | User | Submit PPD to review queue |
 | GET | `/api/ppd/submissions` | User | List PPD submissions (own or all for admin) |
-| PUT | `/api/ppd/submissions/:id/status` | User | Update PPD submission status |
+| PUT | `/api/ppd/submissions/:id/status` | Admin | Update PPD submission status |
 | POST | `/api/ppd/send-email` | User | Email PPD form via Gmail SMTP |
 | GET | `/api/account-creation/questions` | User | Get PMD Account Creation questionnaire |
 | POST | `/api/account-creation/submit` | User | Submit PMD Account Creation form |

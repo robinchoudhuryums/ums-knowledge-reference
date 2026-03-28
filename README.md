@@ -43,7 +43,13 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 - Prompt injection detection (12 patterns) with XML context framing
 - JWT_SECRET strength enforcement in production (fail-fast on missing/weak secret)
 - Client-side PHI detection warning before query submission
+- HTML escaping on all email template user data (XSS prevention)
+- CRLF sanitization on email subjects (header injection prevention)
+- Rate limiting on all expensive endpoints (queries, extraction, form submissions, OCR)
+- CORS origin validation (prevents wildcard with credentials)
+- Cryptographically random JWT token IDs (`crypto.randomUUID()`)
 - Non-root Docker container
+- Dependabot for automated dependency security updates
 
 ### Admin & Analytics
 - RAG observability dashboard, query quality metrics, FAQ analytics
@@ -65,13 +71,13 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 | **Database** | PostgreSQL 17 on AWS RDS (pgvector for embeddings) |
 | **Storage** | Amazon S3 (raw document files), PostgreSQL (metadata, vectors, audit) |
 | **Icons** | Heroicons (UI) + Lucide React (medical: Brain, Stethoscope) |
-| **Styling** | Tailwind CSS v4 + CSS variables (light/dark themes) |
+| **Styling** | Tailwind CSS v4 + 60+ CSS variables (light/dark themes, semantic status/confidence colors) |
 | **Deployment** | Docker on EC2 behind ALB, auto-deploy via GitHub Actions |
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 20+
+- Node.js 20+ (pinned via `.nvmrc` — run `nvm use` to auto-select)
 - AWS account with S3, Bedrock, Textract, and RDS access
 - PostgreSQL 15+ with pgvector extension (AWS RDS recommended)
 - Docker (for production builds)
@@ -120,7 +126,7 @@ docker run -p 3001:3001 --env-file backend/.env ums-knowledge
 ### Production Deployment (EC2)
 
 The app auto-deploys to EC2 via GitHub Actions when code is pushed to `main`:
-1. CI runs (lint, type-check, 334 tests)
+1. CI runs (lint, type-check, 533 tests)
 2. SSHes into EC2 → `git pull` → `docker build` → restart container
 3. Health check verification at `/api/health`
 
@@ -138,7 +144,7 @@ docker run -d --name ums-knowledge --restart unless-stopped --env-file ~/ums-kno
 # Type-check
 cd backend && npx tsc --noEmit
 
-# Run tests (334 tests across 28 test files)
+# Run tests (533 tests across 40 test files)
 cd backend && npm test
 
 # Lint

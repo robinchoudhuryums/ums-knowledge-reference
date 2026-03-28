@@ -34,7 +34,7 @@ async function useRds(): Promise<boolean> {
   return _useRds;
 }
 
-// ─── Users ──────────────────────────────────────────────────────────────────
+// ─── Users ────────────────────────────────────��─────────────────────────────
 
 import { dbGetUsers, dbSaveUsers } from './users';
 import { loadMetadata, saveMetadata } from '../services/s3Storage';
@@ -54,7 +54,7 @@ export async function saveUsers(users: User[]): Promise<void> {
   return saveMetadata(USERS_KEY, users);
 }
 
-// ─── Documents ──────────────────────────────────────────────────────────────
+// ─── Documents ───────────────────��──────────────────────────────────────────
 
 import { dbGetDocuments, dbSaveDocuments, dbGetCollections, dbSaveCollections } from './documents';
 
@@ -78,7 +78,7 @@ export async function saveCollectionsIndex(collections: Collection[]): Promise<v
   return saveMetadata(COLLECTIONS_INDEX_KEY, collections);
 }
 
-// ─── Vector Store ───────────────────────────────────────────────────────────
+// ─── Vector Store ────────────────────────���──────────────────────────────────
 // Re-export pgvector functions for use when callers want direct DB access.
 // The main vectorStore.ts service handles the hybrid routing internally.
 

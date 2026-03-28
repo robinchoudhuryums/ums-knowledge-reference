@@ -39,10 +39,10 @@ Tracks improvements made in UMS Knowledge Reference that are candidates for port
 | Conversation history validation (20 turns, 50K chars) | 2026-03-28 | **Ported** | `validateConversationHistory()` exported but not yet wired into call analysis |
 | NaN guards on combined retrieval scores | 2026-03-28 | **Ported** | Falls back to semantic-only score |
 | Prompt caching on Bedrock calls | 2026-03-28 | **Ported** | `cachePoint` on system prompt blocks, cache hit/miss logging |
-| Content-hash deduplication (rejects identical uploads) | 2026-03-28 | **Pending** | Prevents duplicate docs in same collection/org |
-| Embedding model abstraction (`EmbeddingProvider` interface) | 2026-03-28 | **Pending** | Allows swapping embedding models without code changes |
-| Table preservation in chunker | 2026-03-28 | **Pending** | Detects and preserves table structures during chunking |
-| Usage rollback on failed queries | 2026-03-28 | **Pending** | Decrements usage count if AI call fails after recording |
+| Content-hash deduplication (rejects identical uploads) | 2026-03-28 | **Ported** | SHA256 hash check in onboarding.ts before createReferenceDocument |
+| Embedding model abstraction (`EmbeddingProvider` interface) | 2026-03-28 | **Ported** | `embedding-provider.ts` interface + `TitanEmbeddingProvider` in embeddings.ts |
+| Table preservation in chunker | 2026-03-28 | **Ported** | `detectTable()` in chunker.ts, pipe/tab/separator detection, 2x size allowance |
+| Usage rollback on failed queries | 2026-03-28 | **Ported** | Negative quantity trackUsage in postProcessing when call status is failed |
 
 ## HIPAA / Compliance
 
@@ -52,8 +52,8 @@ Tracks improvements made in UMS Knowledge Reference that are candidates for port
 | PHI redaction utility (`phiRedactor.ts`) | 2026-03-28 | **Ported** | SSN, phone, email, DOB, MRN, Medicare/Medicaid, addresses. Clinical code exclusion. |
 | Deep PHI redaction on audit log detail field | 2026-03-28 | **Ported** | `redactPhi()` applied in `logPhiAccess()` |
 | Data retention with HIPAA minimum floors | 2026-03-28 | N/A | Observatory already has 7-year retention |
-| PHI scanning in RAG responses (log warning + flag) | 2026-03-28 | **Pending** | Scan AI output for PHI before returning to client |
-| Reformulated query + conversation history redaction in traces | 2026-03-28 | **Pending** | Redact PHI from RAG trace logs |
+| PHI scanning in RAG responses (log warning + flag) | 2026-03-28 | **Ported** | `scanAndRedactOutput()` in rag.ts, integrated into call-processing.ts RAG context |
+| Reformulated query + conversation history redaction in traces | 2026-03-28 | **Ported** | `redactPhi()` applied to queryTextRedacted in all RAG trace logs |
 
 ## Observability
 
@@ -62,9 +62,9 @@ Tracks improvements made in UMS Knowledge Reference that are candidates for port
 | Per-request correlation IDs (AsyncLocalStorage) | 2026-03-28 | **Ported** | `correlation-id.ts` middleware, auto-injected into Pino |
 | Structured JSON logging with correlation IDs | 2026-03-28 | **Ported** | Pino mixin function |
 | Per-route request metrics (p50/p95/p99) | 2026-03-28 | **Ported** | `request-metrics.ts`, exported via `/api/health/metrics` |
-| RAG observability tracing (per-query scores, timing) | 2026-03-28 | **Pending** | Per-query trace logging with retrieval scores, confidence, timing breakdown |
-| Quality metrics dashboard (confidence distribution) | 2026-03-28 | **Pending** | Frontend dashboard for RAG query quality tracking |
-| FAQ analytics (pattern detection from query logs) | 2026-03-28 | **Pending** | Detects frequently asked questions for knowledge base gaps |
+| RAG observability tracing (per-query scores, timing) | 2026-03-28 | **Ported** | `rag-trace.ts` with per-query timing (embedding/retrieval/rerank), scores, confidence |
+| Quality metrics dashboard (confidence distribution) | 2026-03-28 | **Pending** | Frontend dashboard — backend data available via rag-trace + faq-analytics |
+| FAQ analytics (pattern detection from query logs) | 2026-03-28 | **Ported** | `faq-analytics.ts` with normalize/group/gap detection, endpoint at /api/health/faq-analytics |
 
 ## UMS-Specific (Not Applicable to Observatory)
 

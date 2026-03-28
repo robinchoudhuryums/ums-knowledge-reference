@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Hoist mock functions so they are available inside vi.mock factories
+const { mockSend, mockUploadDone } = vi.hoisted(() => ({
+  mockSend: vi.fn(),
+  mockUploadDone: vi.fn().mockResolvedValue({}),
+}));
+
 // Mock aws config
-const mockSend = vi.fn();
 vi.mock('../config/aws', () => ({
   s3Client: { send: mockSend },
   S3_BUCKET: 'test-bucket',
@@ -13,12 +18,11 @@ vi.mock('../config/aws', () => ({
   },
 }));
 
-// Mock @aws-sdk/lib-storage Upload
-const mockUploadDone = vi.fn().mockResolvedValue({});
+// Mock @aws-sdk/lib-storage Upload as a constructor class
 vi.mock('@aws-sdk/lib-storage', () => ({
-  Upload: vi.fn().mockImplementation(() => ({
-    done: mockUploadDone,
-  })),
+  Upload: vi.fn().mockImplementation(function (this: any) {
+    this.done = mockUploadDone;
+  }),
 }));
 
 vi.mock('../utils/logger', () => ({
@@ -448,7 +452,6 @@ describe('s3Storage', () => {
         Body: { transformToString: vi.fn().mockResolvedValue('{}') },
       });
       await expect(loadVectorIndex()).rejects.toThrow('Vector index too large');
-      await expect(loadVectorIndex).rejects; // just verifying it throws
     });
 
     it('includes migration hint in size guard error message', async () => {

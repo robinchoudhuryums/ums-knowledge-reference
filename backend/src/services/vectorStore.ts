@@ -1,6 +1,7 @@
 import { StoredChunk, VectorStoreIndex, SearchResult, Document, DocumentChunk } from '../types';
 import { saveVectorIndex, loadVectorIndex, getDocumentsIndex } from './s3Storage';
 import { getEmbeddingProvider } from './embeddings';
+import { useRds, dbAddChunks, dbRemoveDocumentChunks, dbSearchVectorStore, dbSearchChunksByKeyword, dbGetVectorStoreStats } from '../db';
 import { logger } from '../utils/logger';
 
 // In-memory cache of the vector index for fast search
@@ -256,6 +257,11 @@ export async function initializeVectorStore(): Promise<void> {
  * Add chunks with embeddings to the vector store.
  */
 export async function addChunksToStore(chunks: DocumentChunk[], embeddings: number[][]): Promise<void> {
+  // Route to pgvector when database is configured
+  if (await useRds()) {
+    return dbAddChunks(chunks, embeddings);
+  }
+
   if (!cachedIndex) await initializeVectorStore();
 
   const storedChunks: StoredChunk[] = chunks.map((chunk, i) => ({
@@ -290,6 +296,10 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
  * Remove all chunks for a document from the vector store.
  */
 export async function removeDocumentChunks(documentId: string): Promise<void> {
+  if (await useRds()) {
+    return dbRemoveDocumentChunks(documentId);
+  }
+
   if (!cachedIndex) await initializeVectorStore();
 
   const before = cachedIndex!.chunks.length;
@@ -319,6 +329,11 @@ export async function searchVectorStore(
     keywordWeight?: number;
   } = {}
 ): Promise<SearchResult[]> {
+  // Route to pgvector when database is configured
+  if (await useRds()) {
+    return dbSearchVectorStore(queryEmbedding, queryText, options);
+  }
+
   if (!cachedIndex) await initializeVectorStore();
 
   const topK = options.topK || 5;
@@ -433,6 +448,10 @@ export async function searchChunksByKeyword(
   query: string,
   collectionId?: string
 ): Promise<Array<{ documentId: string; documentName: string; matches: Array<{ text: string; pageNumber?: number; chunkIndex: number }> }>> {
+  if (await useRds()) {
+    return dbSearchChunksByKeyword(query, collectionId);
+  }
+
   if (!cachedIndex) await initializeVectorStore();
 
   const documents = await getDocumentsIndex();
@@ -478,7 +497,10 @@ export async function searchChunksByKeyword(
 /**
  * Get vector store stats.
  */
-export function getVectorStoreStats(): { totalChunks: number; lastUpdated: string | null } {
+export async function getVectorStoreStats(): Promise<{ totalChunks: number; lastUpdated: string | null }> {
+  if (await useRds()) {
+    return dbGetVectorStoreStats();
+  }
   return {
     totalChunks: cachedIndex?.chunks.length || 0,
     lastUpdated: cachedIndex?.lastUpdated || null,

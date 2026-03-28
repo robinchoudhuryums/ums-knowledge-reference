@@ -61,39 +61,39 @@ const sty = {
   container: { padding: 20, maxWidth: 900, margin: '0 auto', fontFamily: 'system-ui, sans-serif' } as React.CSSProperties,
   header: { background: 'linear-gradient(135deg, #223b5d, #1565c0)', color: '#fff', padding: '16px 20px', borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' } as React.CSSProperties,
   headerTitle: { margin: 0, fontSize: 20, fontWeight: 600 } as React.CSSProperties,
-  patientInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: 280 } as React.CSSProperties,
+  patientInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: 280 } as React.CSSProperties,
   langToggle: { display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid #fff' } as React.CSSProperties,
   progressRing: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '8px 0' } as React.CSSProperties,
-  progressRingText: { fontSize: 13, color: '#555', fontWeight: 500 } as React.CSSProperties,
-  section: { border: '1px solid #d0d7de', borderRadius: 10, marginBottom: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', transition: 'box-shadow 0.3s ease' } as React.CSSProperties,
-  sectionHeader: { background: 'linear-gradient(to right, #f0f4f8, #e8eef5)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s' } as React.CSSProperties,
+  progressRingText: { fontSize: 13, color: 'var(--ums-text-muted)', fontWeight: 500 } as React.CSSProperties,
+  section: { border: '1px solid var(--ums-border)', borderRadius: 10, marginBottom: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', transition: 'box-shadow 0.3s ease' } as React.CSSProperties,
+  sectionHeader: { background: 'var(--ums-bg-surface-alt)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s' } as React.CSSProperties,
   sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: '#223b5d' } as React.CSSProperties,
   sectionBody: { padding: '12px 16px' } as React.CSSProperties,
   questionRow: { marginBottom: 14 } as React.CSSProperties,
-  questionLabel: { display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500, color: '#333' } as React.CSSProperties,
+  questionLabel: { display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500, color: 'var(--ums-text-primary)' } as React.CSSProperties,
   yesNoGroup: { display: 'flex', gap: 8 } as React.CSSProperties,
-  textInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
-  textarea: { padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const, minHeight: 60, resize: 'vertical' as const } as React.CSSProperties,
-  selectInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
-  submitBtn: { background: '#1976d2', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
+  textInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
+  textarea: { padding: '7px 10px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const, minHeight: 60, resize: 'vertical' as const } as React.CSSProperties,
+  selectInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
+  submitBtn: { background: 'var(--ums-brand-primary)', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
   submitBtnDisabled: { background: '#90b4d8', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'not-allowed', marginTop: 8 } as React.CSSProperties,
   error: { background: '#f8d7da', color: '#721c24', padding: '10px 14px', borderRadius: 6, marginTop: 12 } as React.CSSProperties,
   recSection: { marginTop: 24 } as React.CSSProperties,
   recHeading: { fontSize: 17, fontWeight: 700, color: '#fff', padding: '10px 16px', borderRadius: 8, marginBottom: 14 } as React.CSSProperties,
   recHeadingComplex: { background: 'linear-gradient(135deg, #b71c1c, #d32f2f)' } as React.CSSProperties,
   recHeadingStandard: { background: 'linear-gradient(135deg, #1565c0, #1976d2)' } as React.CSSProperties,
-  recCard: { border: '1px solid #d0d7de', borderRadius: 10, padding: 16, marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' as const, transition: 'box-shadow 0.2s, transform 0.2s', cursor: 'default' } as React.CSSProperties,
-  recImage: { width: 150, height: 150, objectFit: 'contain' as const, borderRadius: 8, border: '1px solid #eee', flexShrink: 0, background: '#fafafa' } as React.CSSProperties,
+  recCard: { border: '1px solid var(--ums-border)', borderRadius: 10, padding: 16, marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' as const, transition: 'box-shadow 0.2s, transform 0.2s', cursor: 'default' } as React.CSSProperties,
+  recImage: { width: 150, height: 150, objectFit: 'contain' as const, borderRadius: 8, border: '1px solid var(--ums-border)', flexShrink: 0, background: 'var(--ums-bg-surface-alt)' } as React.CSSProperties,
   recBody: { flex: 1, minWidth: 200 } as React.CSSProperties,
-  recHcpcs: { fontSize: 16, fontWeight: 700, color: '#1976d2', textDecoration: 'none' } as React.CSSProperties,
-  recJustification: { fontSize: 13, color: '#555', margin: '6px 0' } as React.CSSProperties,
-  recDetail: { fontSize: 12, color: '#666', margin: '2px 0' } as React.CSSProperties,
+  recHcpcs: { fontSize: 16, fontWeight: 700, color: 'var(--ums-brand-primary)', textDecoration: 'none' } as React.CSSProperties,
+  recJustification: { fontSize: 13, color: 'var(--ums-text-muted)', margin: '6px 0' } as React.CSSProperties,
+  recDetail: { fontSize: 12, color: 'var(--ums-text-muted)', margin: '2px 0' } as React.CSSProperties,
   recControls: { display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' as const } as React.CSSProperties,
   starLabel: { cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties,
-  statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 } as React.CSSProperties,
-  copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid #1976d2', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
+  statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid var(--ums-border)', fontSize: 12 } as React.CSSProperties,
+  copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid var(--ums-brand-primary)', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
   actionBar: { display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' as const } as React.CSSProperties,
-  loadingContainer: { padding: 60, textAlign: 'center' as const, color: '#666', fontSize: 16 } as React.CSSProperties,
+  loadingContainer: { padding: 60, textAlign: 'center' as const, color: 'var(--ums-text-muted)', fontSize: 16 } as React.CSSProperties,
   badge: { display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, marginLeft: 8 } as React.CSSProperties,
   painGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 } as React.CSSProperties,
   clearBtn: { background: 'var(--ums-bg-surface)', color: '#dc3545', border: '1px solid #dc3545', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
@@ -104,11 +104,11 @@ function langBtn(active: boolean): React.CSSProperties {
 }
 
 function yesBtn(sel: boolean): React.CSSProperties {
-  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #28a745', background: sel ? '#d4edda' : 'var(--ums-bg-surface)', color: sel ? '#155724' : '#333', fontWeight: sel ? 700 : 400 };
+  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #28a745', background: sel ? '#d4edda' : 'var(--ums-bg-surface)', color: sel ? '#155724' : 'var(--ums-text-primary)', fontWeight: sel ? 700 : 400 };
 }
 
 function noBtn(sel: boolean): React.CSSProperties {
-  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #dc3545', background: sel ? '#f8d7da' : 'var(--ums-bg-surface)', color: sel ? '#721c24' : '#333', fontWeight: sel ? 700 : 400 };
+  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #dc3545', background: sel ? '#f8d7da' : 'var(--ums-bg-surface)', color: sel ? '#721c24' : 'var(--ums-text-primary)', fontWeight: sel ? 700 : 400 };
 }
 
 function painToggle(active: boolean): React.CSSProperties {
@@ -116,9 +116,9 @@ function painToggle(active: boolean): React.CSSProperties {
     padding: '10px 14px',
     borderRadius: 8,
     cursor: 'pointer',
-    border: active ? '2px solid #dc3545' : '1px solid #ccc',
+    border: active ? '2px solid #dc3545' : '1px solid var(--ums-border)',
     background: active ? '#f8d7da' : 'var(--ums-bg-surface)',
-    color: active ? '#721c24' : '#333',
+    color: active ? '#721c24' : 'var(--ums-text-primary)',
     fontWeight: active ? 700 : 400,
     fontSize: 14,
     textAlign: 'center' as const,
@@ -129,7 +129,7 @@ function painToggle(active: boolean): React.CSSProperties {
 function badgeStyle(answered: number, total: number): React.CSSProperties {
   const pct = total > 0 ? answered / total : 0;
   let bg = '#e9ecef';
-  let color = '#666';
+  let color = 'var(--ums-text-muted)';
   if (pct === 1) { bg = '#d4edda'; color = '#155724'; }
   else if (pct > 0) { bg = '#fff3cd'; color = '#856404'; }
   return { ...sty.badge, background: bg, color };
@@ -358,9 +358,9 @@ export function PpdQuestionnaire() {
                   type="button"
                   style={{
                     padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
-                    border: selected ? '2px solid #1976d2' : '1px solid #ccc',
+                    border: selected ? '2px solid var(--ums-brand-primary)' : '1px solid var(--ums-border)',
                     background: selected ? 'var(--ums-brand-light)' : 'var(--ums-bg-surface)',
-                    color: selected ? 'var(--ums-brand-primary)' : '#333',
+                    color: selected ? 'var(--ums-brand-primary)' : 'var(--ums-text-primary)',
                     fontWeight: selected ? 700 : 400, fontSize: 13,
                   }}
                   onClick={() => {
@@ -527,7 +527,7 @@ export function PpdQuestionnaire() {
             strokeDasharray={`${progressPct * 1.57} 157`}
             transform="rotate(-90 30 30)"
             style={{ transition: 'stroke-dasharray 0.4s ease, stroke 0.3s ease' }} />
-          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="#333">{progressPct}%</text>
+          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--ums-text-primary)">{progressPct}%</text>
         </svg>
         <div style={sty.progressRingText}>
           {answeredCount} / {totalRequired} {lang === 'en' ? 'required questions answered' : 'preguntas obligatorias respondidas'}
@@ -551,7 +551,7 @@ export function PpdQuestionnaire() {
                   {counts.answered}/{counts.total}
                 </span>
               </h3>
-              <span style={{ fontSize: 14, color: '#666', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
+              <span style={{ fontSize: 14, color: 'var(--ums-text-muted)', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
             </div>
             <div className={`ppd-section-body ${isCollapsed ? 'collapsed' : 'expanded'}`} style={sty.sectionBody}>
               {isPainGroup
@@ -610,7 +610,7 @@ export function PpdQuestionnaire() {
             </>
           )}
           {recommendations.complexRehab.length === 0 && recommendations.standard.length === 0 && (
-            <div style={{ padding: 16, textAlign: 'center', color: '#666' }}>
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--ums-text-muted)' }}>
               {lang === 'en' ? 'No recommendations returned. Please review your responses.' : 'No se devolvieron recomendaciones. Revise sus respuestas.'}
             </div>
           )}
@@ -729,7 +729,7 @@ export function PpdQuestionnaire() {
             </div>
           </div>
           <div
-            style={{ border: '1px solid #d0d7de', borderRadius: 8, padding: 16, background: 'var(--ums-bg-surface)', overflow: 'auto', maxHeight: 600 }}
+            style={{ border: '1px solid var(--ums-border)', borderRadius: 8, padding: 16, background: 'var(--ums-bg-surface)', overflow: 'auto', maxHeight: 600 }}
             dangerouslySetInnerHTML={{ __html: seatingEvalHtml }}
           />
         </div>

@@ -149,7 +149,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Get a single document's metadata
+// Get a single document's metadata (with collection ACL enforcement)
 router.get('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const docs = await getDocumentsIndex();
@@ -158,6 +158,14 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       res.status(404).json({ error: 'Document not found' });
       return;
     }
+
+    // Enforce collection-level access control (same as list endpoint)
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+    if (allowedCollections && !allowedCollections.includes(doc.collectionId)) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
     res.json({ document: doc });
   } catch {
     res.status(500).json({ error: 'Failed to get document' });
@@ -278,27 +286,31 @@ router.post('/bulk-delete', authenticate, requireAdmin, async (req: AuthRequest,
       return;
     }
 
-    const docs = await getDocumentsIndex();
+    let docs = await getDocumentsIndex();
     const results: Array<{ id: string; name: string; status: 'deleted' | 'not_found' | 'error'; error?: string }> = [];
+    const deletedIds = new Set<string>();
 
     for (const docId of documentIds) {
-      const docIndex = docs.findIndex(d => d.id === docId);
-      if (docIndex === -1) {
+      const doc = docs.find(d => d.id === docId);
+      if (!doc) {
         results.push({ id: docId, name: 'unknown', status: 'not_found' });
         continue;
       }
 
-      const doc = docs[docIndex];
       try {
         await removeDocumentChunks(doc.id);
         await deleteDocumentFromS3(doc.s3Key);
-        docs.splice(docIndex, 1);
+        deletedIds.add(docId);
         results.push({ id: docId, name: doc.originalName, status: 'deleted' });
       } catch (err) {
         results.push({ id: docId, name: doc.originalName, status: 'error', error: String(err) });
       }
     }
 
+    // Remove all deleted docs at once (avoids splice-during-iteration bug)
+    if (deletedIds.size > 0) {
+      docs = docs.filter(d => !deletedIds.has(d.id));
+    }
     await saveDocumentsIndex(docs);
 
     const deletedCount = results.filter(r => r.status === 'deleted').length;

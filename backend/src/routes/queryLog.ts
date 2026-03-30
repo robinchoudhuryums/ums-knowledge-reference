@@ -184,11 +184,13 @@ router.get('/audit/:startDate/:endDate/json', authenticate, requireAdmin, async 
 
     const { getAuditLogs } = await import('../services/audit');
     const allEntries = [];
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const startMs = new Date(startDate).getTime();
+    const endMs = new Date(endDate).getTime();
 
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dateKey = d.toISOString().split('T')[0];
+    // Use timestamp arithmetic to avoid Date mutation bugs
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    for (let ts = startMs; ts <= endMs; ts += DAY_MS) {
+      const dateKey = new Date(ts).toISOString().split('T')[0];
       const entries = await getAuditLogs(dateKey);
       allEntries.push(...entries);
     }

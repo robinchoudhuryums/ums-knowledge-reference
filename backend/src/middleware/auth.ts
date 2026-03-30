@@ -401,7 +401,7 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
 
   const passwordHash = await bcrypt.hash(password, 12);
   const newUser: User = {
-    id: `user-${Date.now()}`,
+    id: crypto.randomUUID(),
     username,
     passwordHash,
     role: role === 'admin' ? 'admin' : 'user',

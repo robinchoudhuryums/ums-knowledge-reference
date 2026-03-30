@@ -14,6 +14,7 @@
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { logger } from '../utils/logger';
+import { redactPhi } from '../utils/phiRedactor';
 import { v4 as uuidv4 } from 'uuid';
 import { PpdResponse, PmdRecommendation, PPD_FORM_VERSION } from './ppdQuestionnaire';
 
@@ -139,7 +140,7 @@ export async function submitPpd(submission: {
   });
   await saveIndex(index);
 
-  logger.info('PPD submitted to queue', { id: record.id, patientInfo: record.patientInfo, submittedBy: record.submittedBy });
+  logger.info('PPD submitted to queue', { id: record.id, patientInfo: redactPhi(record.patientInfo).text, submittedBy: record.submittedBy });
   return record;
 }
 
@@ -217,7 +218,7 @@ export async function updatePpdStatus(
     await saveIndex(index);
   }
 
-  logger.info('PPD status updated', { id, status: update.status, reviewedBy: update.reviewedBy });
+  logger.info('PPD status updated', { id, status: update.status, reviewedBy: update.reviewedBy, patientInfo: redactPhi(record.patientInfo).text });
   return record;
 }
 

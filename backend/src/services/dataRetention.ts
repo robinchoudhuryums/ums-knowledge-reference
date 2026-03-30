@@ -86,7 +86,12 @@ function extractDateFromKey(key: string): string | null {
  */
 function isExpired(dateStr: string, retentionDays: number, now: Date): boolean {
   const date = new Date(dateStr + 'T00:00:00Z');
-  if (isNaN(date.getTime())) return false;
+  if (isNaN(date.getTime())) {
+    // Treat objects with unparseable dates as expired — they should be cleaned up
+    // rather than accumulating indefinitely. Log for investigation.
+    logger.warn('Data retention: invalid date treated as expired', { dateStr });
+    return true;
+  }
   const cutoff = new Date(now);
   cutoff.setUTCDate(cutoff.getUTCDate() - retentionDays);
   return date < cutoff;

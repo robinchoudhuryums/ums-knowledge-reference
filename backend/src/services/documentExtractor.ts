@@ -51,7 +51,7 @@ IMPORTANT:
 
 DOCUMENT TEXT:
 ---
-${documentText.substring(0, 80000)}
+${documentText.substring(0, 100000)}
 ---
 
 Extract the data now. Return ONLY the JSON followed by CONFIDENCE and NOTES lines.`;
@@ -148,6 +148,15 @@ export async function extractDocumentData(
     throw new Error('Could not extract sufficient text from the document. Try a higher-quality scan or a text-based PDF.');
   }
 
+  const MAX_EXTRACTION_CHARS = 100_000;
+  if (text.length > MAX_EXTRACTION_CHARS) {
+    logger.warn('Document text truncated for extraction', {
+      filename,
+      originalLength: text.length,
+      truncatedTo: MAX_EXTRACTION_CHARS,
+      percentKept: Math.round((MAX_EXTRACTION_CHARS / text.length) * 100),
+    });
+  }
   logger.info('Text extracted for extraction', { filename, textLength: text.length });
 
   // Step 2: Build prompt

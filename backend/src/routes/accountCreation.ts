@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { getAccountCreationQuestions, getAccountCreationGroups, AccountCreationResponse } from '../services/accountCreation';
+import { getAccountCreationQuestions, getAccountCreationGroups, AccountCreationResponse, validateAccountCreationResponses } from '../services/accountCreation';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
 import { readInsuranceCard, compareInsuranceFields } from '../services/insuranceCardReader';
@@ -43,6 +43,17 @@ router.post('/submit', authenticate, submitLimiter, async (req: AuthRequest, res
     if (!patientName || !responses || !Array.isArray(responses)) {
       res.status(400).json({ error: 'patientName and responses[] are required' });
       return;
+    }
+
+    // Server-side validation of required fields
+    const validation = validateAccountCreationResponses(responses);
+    if (!validation.valid) {
+      logger.warn('Account creation submitted with missing required fields', {
+        userId: req.user!.id,
+        missingCount: validation.missingRequired.length,
+        missingIds: validation.missingRequired,
+      });
+      // Log but don't block — agents may submit partial forms intentionally
     }
 
     await logAuditEvent(req.user!.id, req.user!.username, 'query', {

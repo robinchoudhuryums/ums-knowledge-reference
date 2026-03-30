@@ -23,7 +23,7 @@ function buildPoolConfig(): PoolConfig {
     return {
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.DATABASE_URL.includes('sslmode=require') || process.env.DB_SSL !== 'false'
-        ? { rejectUnauthorized: false } // RDS uses self-signed certs
+        ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
         : undefined,
       max: parseInt(process.env.DB_POOL_MAX || '10', 10),
       idleTimeoutMillis: 30_000,
@@ -52,7 +52,7 @@ function buildPoolConfig(): PoolConfig {
     database,
     user,
     password,
-    ssl: process.env.DB_SSL !== 'false' ? { rejectUnauthorized: false } : undefined,
+    ssl: process.env.DB_SSL !== 'false' ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' } : undefined,
     max: parseInt(process.env.DB_POOL_MAX || '10', 10),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,

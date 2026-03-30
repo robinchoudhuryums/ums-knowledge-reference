@@ -195,12 +195,16 @@ export function determinePmdRecommendations(responses: PpdResponse[]): PmdRecomm
   // Ambiguous keywords (stiff, tight) require a body-part context to avoid
   // false positives like "tight hamstrings" from normal exercise soreness.
   const spasticityAnswer = get('q32');
-  const highConfidenceKeywords = ['spasm', 'spastic', 'spasticity', 'clonus', 'rigid', 'rigidity'];
-  const contextualKeywords = ['stiff', 'tight']; // Only match near body parts
-  const bodyPartContext = /(?:leg|arm|muscle|limb|joint|hand|foot|knee|hip|shoulder|neck|trunk|back)/i;
-  const hasSpasticity = isPositive('q32') ||
+  const highConfidenceKeywords = ['spasm', 'spastic', 'spasticity', 'clonus', 'rigid', 'rigidity', 'hypertonia', 'hypertonicity'];
+  const contextualKeywords = ['stiff', 'tight', 'tense']; // Only match near body parts
+  const bodyPartContext = /(?:leg|arm|muscle|limb|joint|hand|foot|feet|knee|hip|shoulder|neck|trunk|back|thigh|calf|wrist|elbow|ankle)/i;
+  // Negation check: if the answer starts with or contains "no" as a standalone denial, don't flag
+  const isNegated = /^no\b|(?:^|\s)no\s+(?:spasm|spastic|stiff|tight)/i.test(spasticityAnswer);
+  const hasSpasticity = !isNegated && (
+    isPositive('q32') ||
     highConfidenceKeywords.some(kw => spasticityAnswer.includes(kw)) ||
-    (contextualKeywords.some(kw => spasticityAnswer.includes(kw)) && bodyPartContext.test(spasticityAnswer));
+    (contextualKeywords.some(kw => spasticityAnswer.includes(kw)) && bodyPartContext.test(spasticityAnswer))
+  );
   const hasSwelling = isPositive('q36');
   const usesCatheters = isPositive('q30');
 

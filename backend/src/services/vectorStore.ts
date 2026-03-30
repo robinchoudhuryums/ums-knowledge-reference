@@ -434,7 +434,9 @@ export async function removeDocumentChunks(documentId: string): Promise<void> {
   cachedIndex!.chunks = cachedIndex!.chunks.filter(c => c.documentId !== documentId);
   const removed = before - cachedIndex!.chunks.length;
 
-  // Invalidate IDF cache
+  // Invalidate IDF cache — must increment version (not just null) so concurrent
+  // requests with a stale currentIdfVersion will rebuild on next access
+  idfVersion++;
   idfCache = null;
 
   cachedIndex!.lastUpdated = new Date().toISOString();
@@ -555,8 +557,13 @@ export async function searchVectorStore(
   const reRanked = reRankResults(reRankPool, queryText);
   reRanked.sort((a, b) => b.score - a.score);
 
+  // Apply minimum score threshold — discard results with negligible relevance.
+  // A combined score < 0.1 means neither semantic nor keyword search found meaningful overlap.
+  const MIN_SCORE_THRESHOLD = 0.1;
+  const thresholded = reRanked.filter(r => r.score >= MIN_SCORE_THRESHOLD);
+
   // Build final results with clean chunk objects
-  return reRanked.slice(0, topK).map(r => ({
+  return thresholded.slice(0, topK).map(r => ({
     chunk: {
       id: r.chunk.id,
       documentId: r.chunk.documentId,

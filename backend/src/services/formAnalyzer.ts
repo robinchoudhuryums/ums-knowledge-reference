@@ -237,28 +237,19 @@ async function analyzeFormAsync(buffer: Buffer, filename: string): Promise<Block
     logger.info('Async form analysis job started', { jobId, filename });
 
     let allBlocks: Block[] = [];
-    let nextToken: string | undefined;
     let jobStatus = 'IN_PROGRESS';
 
+    // Phase 1: Poll until job completes (separate from pagination to avoid infinite loop).
     for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
       await sleep(POLL_INTERVAL_MS);
 
-      const getCommand = new GetDocumentAnalysisCommand({
-        JobId: jobId,
-        NextToken: nextToken,
-      });
-
+      const getCommand = new GetDocumentAnalysisCommand({ JobId: jobId });
       const getResponse = await textractClient.send(getCommand);
       jobStatus = getResponse.JobStatus || 'FAILED';
 
       if (jobStatus === 'SUCCEEDED') {
         if (getResponse.Blocks) {
           allBlocks = allBlocks.concat(getResponse.Blocks);
-        }
-        if (getResponse.NextToken) {
-          nextToken = getResponse.NextToken;
-          attempt--;
-          continue;
         }
         break;
       }
@@ -270,6 +261,31 @@ async function analyzeFormAsync(buffer: Buffer, filename: string): Promise<Block
 
     if (jobStatus !== 'SUCCEEDED') {
       throw new Error('Textract form analysis job timed out');
+    }
+
+    // Phase 2: Paginate through remaining result pages (capped to prevent runaway loops).
+    const MAX_RESULT_PAGES = 100;
+    let nextToken: string | undefined;
+    // Check if initial response had a NextToken — re-fetch to get it
+    {
+      const initialGet = await textractClient.send(new GetDocumentAnalysisCommand({ JobId: jobId }));
+      nextToken = initialGet.NextToken;
+      // First page blocks were already captured above; only capture if initial response didn't include them
+    }
+
+    for (let page = 0; page < MAX_RESULT_PAGES && nextToken; page++) {
+      const getResponse = await textractClient.send(new GetDocumentAnalysisCommand({
+        JobId: jobId,
+        NextToken: nextToken,
+      }));
+
+      if (getResponse.Blocks) {
+        allBlocks = allBlocks.concat(getResponse.Blocks);
+      }
+
+      nextToken = getResponse.NextToken;
+      if (!nextToken) break;
+      await sleep(100); // Throttle to avoid AWS rate limiting
     }
 
     return allBlocks;

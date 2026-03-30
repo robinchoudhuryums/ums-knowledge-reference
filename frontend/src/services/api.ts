@@ -242,43 +242,60 @@ export async function queryKnowledgeBaseStream(
   // something is wrong (malformed response, missing newlines, etc.)
   const MAX_BUFFER_SIZE = 2 * 1024 * 1024;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-
-    if (buffer.length > MAX_BUFFER_SIZE) {
-      onError('Response stream too large — connection terminated for safety');
-      reader.cancel();
-      return;
+  // Stream timeout: if no data arrives for 120 seconds, abort.
+  // This prevents the UI from hanging indefinitely if the backend stalls.
+  const STREAM_TIMEOUT_MS = 120_000;
+  let lastDataAt = Date.now();
+  const timeoutCheck = setInterval(() => {
+    if (Date.now() - lastDataAt > STREAM_TIMEOUT_MS) {
+      clearInterval(timeoutCheck);
+      controller.abort();
+      onError('Response timed out — no data received for 2 minutes');
     }
+  }, 5000);
 
-    // Parse SSE events from buffer
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      try {
-        const data = JSON.parse(line.slice(6));
-        if (data.type === 'text') {
-          onText(data.text);
-        } else if (data.type === 'sources') {
-          onSources(data.sources);
-        } else if (data.type === 'confidence') {
-          onConfidence(data.confidence);
-        } else if (data.type === 'traceId') {
-          onTraceId?.(data.traceId);
-        } else if (data.type === 'done') {
-          onDone();
-        } else if (data.type === 'error') {
-          onError(data.error);
+      lastDataAt = Date.now();
+      buffer += decoder.decode(value, { stream: true });
+
+      if (buffer.length > MAX_BUFFER_SIZE) {
+        onError('Response stream too large — connection terminated for safety');
+        reader.cancel();
+        return;
+      }
+
+      // Parse SSE events from buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.type === 'text') {
+            onText(data.text);
+          } else if (data.type === 'sources') {
+            onSources(data.sources);
+          } else if (data.type === 'confidence') {
+            onConfidence(data.confidence);
+          } else if (data.type === 'traceId') {
+            onTraceId?.(data.traceId);
+          } else if (data.type === 'done') {
+            onDone();
+          } else if (data.type === 'error') {
+            onError(data.error);
+          }
+        } catch {
+          // Skip malformed lines
         }
-      } catch {
-        // Skip malformed lines
       }
     }
+  } finally {
+    clearInterval(timeoutCheck);
   }
 
   // Clean up the controller reference when streaming completes naturally

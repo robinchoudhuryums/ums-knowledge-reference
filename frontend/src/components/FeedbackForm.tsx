@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
 import { SourceCitation } from '../types';
 import { submitFeedback } from '../services/api';
 
@@ -11,6 +11,28 @@ interface Props {
 }
 
 export function FeedbackForm({ question, answer, sources, onClose, traceId }: Props) {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Focus trap + Escape to close
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') onClose();
+    if (e.key === 'Tab' && modalRef.current) {
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>('button, input, textarea, select, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    // Auto-focus first input
+    const firstInput = modalRef.current?.querySelector<HTMLElement>('input, textarea');
+    firstInput?.focus();
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
   const [patientName, setPatientName] = useState('');
   const [transactionNumber, setTransactionNumber] = useState('');
   const [notes, setNotes] = useState('');
@@ -62,8 +84,8 @@ export function FeedbackForm({ question, answer, sources, onClose, traceId }: Pr
   }
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
+    <div style={styles.overlay} onClick={onClose} role="dialog" aria-modal="true" aria-label="Flag response for review">
+      <div ref={modalRef} style={styles.modal} onClick={e => e.stopPropagation()}>
         <div style={styles.header}>
           <h3 style={styles.title}>Flag Response for Review</h3>
           <button onClick={onClose} style={styles.closeButton}>&#10005;</button>

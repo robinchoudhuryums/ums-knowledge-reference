@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { SourceCitation } from '../types';
 
 interface Props {
@@ -7,22 +7,36 @@ interface Props {
 }
 
 export function SourceViewer({ source, onClose }: Props) {
+  const modalRef = useRef<HTMLDivElement>(null);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose();
+    // Focus trap: cycle focus within modal
+    if (e.key === 'Tab' && modalRef.current) {
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   }, [onClose]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
+    // Auto-focus the close button when modal opens
+    const closeBtn = modalRef.current?.querySelector<HTMLElement>('button[aria-label="Close"]');
+    closeBtn?.focus();
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
   const relevancePct = Math.round(source.score * 100);
-  const relevanceColor = relevancePct >= 70 ? '#166534' : relevancePct >= 40 ? '#c2410c' : 'var(--ums-text-muted)';
-  const relevanceBg = relevancePct >= 70 ? '#dcfce7' : relevancePct >= 40 ? '#fff7ed' : 'var(--ums-bg-surface-alt)';
+  const relevanceColor = relevancePct >= 70 ? 'var(--ums-success-text, #166534)' : relevancePct >= 40 ? 'var(--ums-warning-text, #c2410c)' : 'var(--ums-text-muted)';
+  const relevanceBg = relevancePct >= 70 ? 'var(--ums-success-light, #dcfce7)' : relevancePct >= 40 ? 'var(--ums-warning-light, #fff7ed)' : 'var(--ums-bg-surface-alt)';
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
+    <div style={styles.overlay} onClick={onClose} role="dialog" aria-modal="true" aria-label={`Source: ${source.documentName}`}>
+      <div ref={modalRef} style={styles.modal} onClick={e => e.stopPropagation()}>
         <div style={styles.header}>
           <div>
             <h3 style={styles.title}>{source.documentName}</h3>

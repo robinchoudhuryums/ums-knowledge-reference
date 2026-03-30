@@ -96,7 +96,7 @@ export default function App() {
   }, [isAuthenticated, loadCollections]);
 
   if (!isAuthenticated) {
-    return <ToastProvider><LoginForm onLogin={login} /></ToastProvider>;
+    return <ToastProvider><ErrorBoundary fallbackMessage="Login encountered an error. Please refresh the page."><LoginForm onLogin={login} /></ErrorBoundary></ToastProvider>;
   }
 
   if (mustChangePassword) {

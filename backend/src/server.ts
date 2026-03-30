@@ -210,13 +210,23 @@ app.get('/api/health', async (_req, res) => {
   }
 
   // Database connectivity check
+  // Database is optional: when DATABASE_URL is not set, the app uses S3 JSON fallback.
+  // Only mark unhealthy if database IS configured but unreachable (connection error).
   try {
     const { checkDatabaseConnection } = await import('./config/database');
     const dbOk = await checkDatabaseConnection();
-    checks.database = dbOk ? 'ok' : 'not_configured';
-    // Database is optional during S3→RDS migration — don't mark unhealthy
+    if (dbOk) {
+      checks.database = 'ok';
+    } else if (process.env.DATABASE_URL) {
+      // Database is configured but connection failed — mark degraded
+      checks.database = 'error';
+      healthy = false;
+    } else {
+      checks.database = 'not_configured';
+    }
   } catch {
     checks.database = 'error';
+    if (process.env.DATABASE_URL) healthy = false;
   }
 
   // Vector store loaded check

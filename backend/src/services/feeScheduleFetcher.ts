@@ -189,7 +189,8 @@ function processFeeScheduleCsv(csvContent: string): { text: string; recordCount:
 }
 
 /**
- * Simple CSV line parser that handles quoted fields.
+ * CSV line parser that handles quoted fields and escaped quotes (RFC 4180).
+ * Escaped quotes inside quoted fields use doubled quotes: "He said ""hello"""
  */
 function parseCSVLine(line: string): string[] {
   const fields: string[] = [];
@@ -199,7 +200,13 @@ function parseCSVLine(line: string): string[] {
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (ch === '"') {
-      inQuotes = !inQuotes;
+      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+        // Escaped quote ("") inside a quoted field — emit a literal quote
+        current += '"';
+        i++; // skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
     } else if (ch === ',' && !inQuotes) {
       fields.push(current);
       current = '';

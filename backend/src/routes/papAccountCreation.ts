@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { getPapQuestions, getPapGroups, PapResponse } from '../services/papAccountCreation';
+import { getPapQuestions, getPapGroups, PapResponse, validatePapResponses } from '../services/papAccountCreation';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
 import { logger } from '../utils/logger';
@@ -34,6 +34,16 @@ router.post('/submit', authenticate, submitLimiter, async (req: AuthRequest, res
     if (!patientName || !responses || !Array.isArray(responses)) {
       res.status(400).json({ error: 'patientName and responses[] are required' });
       return;
+    }
+
+    // Server-side validation of required fields
+    const validation = validatePapResponses(responses);
+    if (!validation.valid) {
+      logger.warn('PAP account creation submitted with missing required fields', {
+        userId: req.user!.id,
+        missingCount: validation.missingRequired.length,
+        missingIds: validation.missingRequired,
+      });
     }
 
     await logAuditEvent(req.user!.id, req.user!.username, 'query', {

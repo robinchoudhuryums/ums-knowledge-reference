@@ -74,3 +74,21 @@ export function getAccountCreationQuestions(): AccountCreationQuestion[] {
 export function getAccountCreationGroups(): string[] {
   return AC_GROUPS;
 }
+
+/**
+ * Validate account creation responses server-side.
+ * Returns an array of missing required question IDs, or empty if valid.
+ */
+export function validateAccountCreationResponses(
+  responses: AccountCreationResponse[],
+): { valid: boolean; missingRequired: string[] } {
+  const answeredIds = new Set(
+    responses
+      .filter(r => r.answer !== null && r.answer !== undefined && String(r.answer).trim() !== '')
+      .map(r => r.questionId)
+  );
+  const missingRequired = AC_QUESTIONS
+    .filter(q => q.required && !answeredIds.has(q.id))
+    .map(q => q.id);
+  return { valid: missingRequired.length === 0, missingRequired };
+}

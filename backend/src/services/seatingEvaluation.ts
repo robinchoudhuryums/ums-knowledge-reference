@@ -291,8 +291,12 @@ export function generateSeatingEvaluation(
     painLE: { locations: painLocationsLE, scale: painLocationsLE.length > 0 ? String(Math.min(painLocationsLE.length * 2, 10)) : '' },
 
     rulesOutCaneWalker: true,  // Always true for PMD patients
-    // Parse armStrength as number for comparison — string comparison ('10' <= '3') is wrong
-    rulesOutManualWheelchair: parseInt(armStrength.split('-')[0], 10) <= 3 || painLocationsUE.length >= 2,
+    // Parse armStrength as number for comparison — string comparison ('10' <= '3') is wrong.
+    // Guard against NaN: if parsing fails, default to true (conservative — rules out manual).
+    rulesOutManualWheelchair: (() => {
+      const parsed = parseInt(armStrength.split('-')[0], 10);
+      return isNaN(parsed) || parsed <= 3 || painLocationsUE.length >= 2;
+    })(),
     rulesOutScooterPOV: isYes('q35') || isYes('q33') || !isYes('q7'),
 
     // Cognitive status inferred from PPD responses rather than hardcoded.

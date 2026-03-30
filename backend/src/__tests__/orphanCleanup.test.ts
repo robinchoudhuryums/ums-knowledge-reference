@@ -9,15 +9,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Document } from '../types';
 
 // ---------------------------------------------------------------------------
-// Mock S3 storage
+// Mock database layer (orphanCleanup imports from ../db)
 // ---------------------------------------------------------------------------
 let mockDocs: Document[] = [];
 
-vi.mock('../services/s3Storage', () => ({
+vi.mock('../db', () => ({
   getDocumentsIndex: vi.fn(async () => mockDocs),
   saveDocumentsIndex: vi.fn(async (docs: Document[]) => { mockDocs = docs; }),
-  loadMetadata: vi.fn(async () => null),
-  saveMetadata: vi.fn(async () => {}),
 }));
 
 // Mock vector store

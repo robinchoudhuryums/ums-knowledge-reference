@@ -4,7 +4,7 @@
  * them as 'error' so they don't block the UI or waste resources.
  */
 
-import { getDocumentsIndex, saveDocumentsIndex } from './s3Storage';
+import { getDocumentsIndex, saveDocumentsIndex } from '../db';
 import { removeDocumentChunks } from './vectorStore';
 import { logger } from '../utils/logger';
 

@@ -66,10 +66,14 @@ export async function dbSaveUsers(users: User[]): Promise<void> {
       ]);
     }
 
-    // Delete users not in the list (handles user deletion)
+    // Delete users not in the list (handles user deletion).
+    // Safety: never delete ALL users — if the list is empty, something went wrong upstream.
+    // A system must always have at least one admin user.
     const ids = users.map(u => u.id);
     if (ids.length > 0) {
       await client.query('DELETE FROM users WHERE id != ALL($1)', [ids]);
+    } else {
+      logger.warn('dbSaveUsers called with empty user list — skipping delete to prevent data loss');
     }
 
     await client.query('COMMIT');

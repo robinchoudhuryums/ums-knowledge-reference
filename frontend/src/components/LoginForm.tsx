@@ -62,7 +62,14 @@ export function LoginForm({ onLogin }: Props) {
               <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>Password is required</div>
             )}
           </div>
-          {error && <div style={styles.error}>{error}</div>}
+          {error && (
+            <div style={styles.error} role="alert">
+              <strong style={{ display: 'block', marginBottom: '2px' }}>
+                {error.includes('locked') ? '🔒 Account Locked' : 'Login Failed'}
+              </strong>
+              {error}
+            </div>
+          )}
           <button type="submit" disabled={loading} style={styles.button}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
@@ -156,12 +163,13 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.2px',
   },
   error: {
-    color: 'var(--ums-error)',
+    color: '#991b1b',
     fontSize: '13px',
     textAlign: 'center' as const,
-    padding: '8px 12px',
-    background: 'var(--ums-bg-surface-alt)',
-    borderRadius: '8px',
+    padding: '12px 16px',
+    background: '#fef2f2',
+    borderRadius: '10px',
     border: '1px solid #fecaca',
+    lineHeight: '1.4',
   },
 };

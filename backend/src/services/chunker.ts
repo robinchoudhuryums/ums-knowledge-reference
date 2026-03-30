@@ -249,8 +249,16 @@ export function chunkDocument(
       position = findNaturalBreak(text, nextRawPos);
     }
 
-    // Safety: ensure forward progress
-    if (position <= chunks[chunks.length - 1]?.startOffset) {
+    // Safety: ensure forward progress — if natural break or table detection
+    // returned a position at or before the last chunk's start, force advance
+    // to nextRawPos to avoid an infinite loop or skipping content
+    if (chunks.length > 0 && position <= chunks[chunks.length - 1].startOffset) {
+      logger.warn('Chunker forward progress forced', {
+        documentId,
+        stuckAt: position,
+        lastChunkStart: chunks[chunks.length - 1].startOffset,
+        forcedTo: nextRawPos,
+      });
       position = nextRawPos;
     }
   }

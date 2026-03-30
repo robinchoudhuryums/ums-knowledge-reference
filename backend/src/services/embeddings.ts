@@ -42,7 +42,9 @@ const QUERY_EMBEDDING_CACHE_MAX = 200;
 const queryEmbeddingCache = new Map<string, number[]>();
 
 function normalizeForCache(text: string): string {
-  return text.toLowerCase().trim().replace(/\s+/g, ' ');
+  // Include model ID in cache key so cache is automatically invalidated on model change
+  const modelId = ensureProvider().modelId;
+  return `${modelId}:${text.toLowerCase().trim().replace(/\s+/g, ' ')}`;
 }
 
 /**

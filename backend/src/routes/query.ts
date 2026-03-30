@@ -271,6 +271,15 @@ function sanitizeInput(text: string, maxLength: number = 2000): string {
  * override system instructions or manipulate the LLM's behavior.
  */
 function detectPromptInjection(text: string): { detected: boolean; reason?: string } {
+  // Normalize Unicode to NFC to prevent bypass via decomposed characters (e.g., Cyrillic 'і' for Latin 'i')
+  // Also replace common look-alike Unicode characters with ASCII equivalents
+  const normalized = text.normalize('NFC')
+    .replace(/[\u0400-\u04FF]/g, ch => {
+      // Map common Cyrillic look-alikes to Latin
+      const cyrillicMap: Record<string, string> = { 'а': 'a', 'е': 'e', 'і': 'i', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x' };
+      return cyrillicMap[ch.toLowerCase()] || ch;
+    });
+
   // Patterns that attempt to override or ignore system instructions
   const injectionPatterns: Array<{ pattern: RegExp; reason: string }> = [
     { pattern: /ignore\s+(all\s+)?(previous|prior|above|earlier|system)\s+(instructions?|prompts?|rules?|guidelines?)/i, reason: 'Attempts to override system instructions' },
@@ -288,13 +297,13 @@ function detectPromptInjection(text: string): { detected: boolean; reason?: stri
   ];
 
   for (const { pattern, reason } of injectionPatterns) {
-    if (pattern.test(text)) {
+    if (pattern.test(normalized)) {
       return { detected: true, reason };
     }
   }
 
   // Check for excessive special delimiters that may try to break context framing
-  const delimiterCount = (text.match(/---+|===+|####+|\*\*\*+/g) || []).length;
+  const delimiterCount = (normalized.match(/---+|===+|####+|\*\*\*+/g) || []).length;
   if (delimiterCount > 5) {
     return { detected: true, reason: 'Excessive delimiters may indicate context manipulation' };
   }
@@ -354,7 +363,7 @@ function sanitizeConversationHistory(history?: ConversationTurn[]): Conversation
   // Limit number of turns
   const limited = history.slice(-MAX_HISTORY_TURNS);
 
-  // Validate structure and cap individual turn content
+  // Validate structure, cap individual turn content, and check for injection in user turns
   let totalChars = 0;
   const valid: ConversationTurn[] = [];
   for (const turn of limited) {
@@ -363,6 +372,15 @@ function sanitizeConversationHistory(history?: ConversationTurn[]): Conversation
       continue; // Skip malformed turns
     }
     const content = turn.content.slice(0, 5000); // Cap individual turn at 5K chars
+
+    // Check user turns in conversation history for injection attempts
+    if (turn.role === 'user') {
+      const historyInjection = detectPromptInjection(content);
+      if (historyInjection.detected) {
+        continue; // Skip this turn — it contains injection patterns
+      }
+    }
+
     totalChars += content.length;
     if (totalChars > MAX_HISTORY_CHARS) break; // Stop if total budget exceeded
     valid.push({ role: turn.role, content });

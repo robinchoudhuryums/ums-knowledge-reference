@@ -380,7 +380,7 @@ describe('Extraction Routes', () => {
     });
 
     it('returns 404 for non-existent job', async () => {
-      vi.mocked(getJob).mockReturnValue(undefined);
+      vi.mocked(getJob).mockReturnValue(null);
 
       const app = buildApp();
       const res = await supertest(app).get('/api/extraction/jobs/no-such-job');

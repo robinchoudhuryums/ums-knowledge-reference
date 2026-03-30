@@ -57,7 +57,7 @@ export function useIdleTimeout(onIdle: () => void, enabled: boolean): IdleTimeou
     idleTimerRef.current = setTimeout(() => {
       clearAllTimers();
       setShowWarning(false);
-      onIdleRef.current();
+      try { onIdleRef.current(); } catch (err) { console.error('Idle timeout callback failed:', err); }
     }, IDLE_TIMEOUT_MS);
   }, [clearAllTimers]);
 
@@ -74,7 +74,7 @@ export function useIdleTimeout(onIdle: () => void, enabled: boolean): IdleTimeou
     ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, handler, { passive: true }));
 
     return () => {
-      ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, handler));
+      ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, handler, { passive: true } as EventListenerOptions));
       clearAllTimers();
     };
   }, [enabled, resetTimers, clearAllTimers]);

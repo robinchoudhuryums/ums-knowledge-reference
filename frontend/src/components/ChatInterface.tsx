@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, FormEvent, KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, FormEvent, KeyboardEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ConversationTurn, SourceCitation, Collection } from '../types';
 import { queryKnowledgeBaseStream, submitTraceFeedback } from '../services/api';
@@ -48,7 +48,11 @@ export function ChatInterface({ collections }: Props) {
   const [selectedCollections, setSelectedCollections] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('ums-selected-collections');
-      return stored ? JSON.parse(stored) : [];
+      if (!stored) return [];
+      const parsed: unknown = JSON.parse(stored);
+      // Validate: must be an array of strings
+      if (Array.isArray(parsed) && parsed.every(v => typeof v === 'string')) return parsed;
+      return [];
     } catch { return []; }
   });
   const [expandedSource, setExpandedSource] = useState<SourceCitation | null>(null);
@@ -211,8 +215,8 @@ export function ChatInterface({ collections }: Props) {
     );
   };
 
-  // Deduplicate sources by document name for compact display
-  const deduplicateSources = (sources: SourceCitation[]) => {
+  // Deduplicate sources by document name for compact display (memoized)
+  const deduplicateSources = useCallback((sources: SourceCitation[]) => {
     const seen = new Map<string, SourceCitation[]>();
     for (const s of sources) {
       const key = s.documentName;
@@ -220,7 +224,13 @@ export function ChatInterface({ collections }: Props) {
       seen.get(key)!.push(s);
     }
     return Array.from(seen.entries());
-  };
+  }, []);
+
+  // Memoize deduplicated streaming sources to avoid recomputation on every render
+  const deduplicatedStreamingSources = useMemo(
+    () => deduplicateSources(streamingSources),
+    [streamingSources, deduplicateSources]
+  );
 
   return (
     <div style={styles.container}>
@@ -307,6 +317,8 @@ export function ChatInterface({ collections }: Props) {
                     }}
                     style={thumbsVoted[turn.traceId] === 'up' ? styles.thumbsActive : styles.thumbsButton}
                     title="Good answer"
+                    aria-label="Rate this answer as helpful"
+                    aria-pressed={thumbsVoted[turn.traceId!] === 'up'}
                   >
                     &#x1F44D;
                   </button>
@@ -319,6 +331,8 @@ export function ChatInterface({ collections }: Props) {
                     }}
                     style={thumbsVoted[turn.traceId] === 'down' ? styles.thumbsActive : styles.thumbsButton}
                     title="Bad answer"
+                    aria-label="Rate this answer as unhelpful"
+                    aria-pressed={thumbsVoted[turn.traceId!] === 'down'}
                   >
                     &#x1F44E;
                   </button>
@@ -333,6 +347,7 @@ export function ChatInterface({ collections }: Props) {
                   }}
                   style={styles.copyButton}
                   title="Copy answer to clipboard"
+                  aria-label="Copy answer to clipboard"
                 >
                   {copiedIndex === i ? 'Copied!' : 'Copy'}
                 </button>
@@ -347,6 +362,7 @@ export function ChatInterface({ collections }: Props) {
                   })}
                   style={styles.flagButton}
                   title="Flag this response for admin review"
+                  aria-label="Flag this response for admin review"
                 >
                   &#9872; Flag
                 </button>
@@ -394,7 +410,7 @@ export function ChatInterface({ collections }: Props) {
           <div style={styles.assistantMessage}>
             <div style={styles.messageHeader}>
               <span style={styles.messageLabel}>Knowledge Base</span>
-              <span style={styles.streamingDot} />
+              <span style={styles.streamingDot} role="status" aria-label="Generating response" />
               {streamingConfidence && (
                 <span style={{
                   ...styles.confidenceBadge,
@@ -423,7 +439,7 @@ export function ChatInterface({ collections }: Props) {
               <div style={styles.sourcesSection}>
                 <div style={styles.sourcesLabel}>Sources referenced:</div>
                 <div style={styles.sourcesRow}>
-                  {deduplicateSources(streamingSources).map(([docName, chunks]) => (
+                  {deduplicatedStreamingSources.map(([docName, chunks]) => (
                     <button
                       key={docName}
                       onClick={() => setExpandedSource(chunks[0])}

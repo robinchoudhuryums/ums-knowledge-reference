@@ -8,7 +8,7 @@ import { logQuery } from '../services/queryLog';
 import { generateTraceId, logRagTrace } from '../services/ragTrace';
 import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';
 import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
-import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
+import { bedrockClient, BEDROCK_GENERATION_MODEL, bedrockCircuitBreaker } from '../config/aws';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
 import { enrichQueryWithStructuredData, classifyQuery } from '../services/referenceEnrichment';
@@ -601,7 +601,7 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       }),
     });
 
-    const bedrockResponse = await bedrockClient.send(command);
+    const bedrockResponse = await bedrockCircuitBreaker.execute(() => bedrockClient.send(command));
     const generationTimeMs = Date.now() - generationStart;
     const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
     const rawAnswer = responseBody.content?.[0]?.text || 'Unable to generate a response.';
@@ -770,7 +770,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       }),
     });
 
-    const bedrockResponse = await bedrockClient.send(command);
+    const bedrockResponse = await bedrockCircuitBreaker.execute(() => bedrockClient.send(command));
 
     let fullAnswer = '';
     let streamInputTokens: number | undefined;

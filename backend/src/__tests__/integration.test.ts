@@ -112,6 +112,7 @@ vi.mock('../services/embeddings', () => ({
 const mockBedrockSend = vi.fn();
 vi.mock('../config/aws', () => ({
   bedrockClient: { send: (...args: unknown[]) => mockBedrockSend(...args) },
+  bedrockCircuitBreaker: { execute: (fn: () => Promise<unknown>) => fn() },
   s3Client: { send: vi.fn(async () => ({})) },
   BEDROCK_GENERATION_MODEL: 'mock-haiku-model',
   BEDROCK_EXTRACTION_MODEL: 'mock-sonnet-model',

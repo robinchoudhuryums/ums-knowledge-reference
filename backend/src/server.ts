@@ -329,16 +329,38 @@ async function start() {
     const { verifyS3BucketConfig } = await import('./config/aws');
     await verifyS3BucketConfig();
 
-    // Run database migrations if PostgreSQL is configured
-    try {
-      if (await checkDatabaseConnection()) {
-        const { runMigrations } = await import('./config/migrate');
-        await runMigrations();
-      } else {
-        logger.info('Database not configured — running in S3-only mode');
+    // Run database migrations if PostgreSQL is configured.
+    // Retry connection up to 3 times with exponential backoff to handle
+    // cold-start delays when RDS is waking up or network is initializing.
+    if (process.env.DATABASE_URL || process.env.DB_HOST) {
+      let dbConnected = false;
+      const DB_RETRY_ATTEMPTS = 3;
+      const DB_RETRY_BASE_MS = 2000;
+
+      for (let attempt = 1; attempt <= DB_RETRY_ATTEMPTS; attempt++) {
+        try {
+          if (await checkDatabaseConnection()) {
+            const { runMigrations } = await import('./config/migrate');
+            await runMigrations();
+            dbConnected = true;
+            break;
+          }
+        } catch (dbErr) {
+          if (attempt < DB_RETRY_ATTEMPTS) {
+            const delay = DB_RETRY_BASE_MS * Math.pow(2, attempt - 1);
+            logger.warn(`Database connection attempt ${attempt}/${DB_RETRY_ATTEMPTS} failed, retrying in ${delay}ms`, { error: String(dbErr) });
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            logger.warn(`Database connection failed after ${DB_RETRY_ATTEMPTS} attempts — continuing in S3-only mode`, { error: String(dbErr) });
+          }
+        }
       }
-    } catch (dbErr) {
-      logger.warn('Database migration check failed — continuing in S3-only mode', { error: String(dbErr) });
+
+      if (!dbConnected) {
+        logger.info('Database not reachable — running in S3-only mode');
+      }
+    } else {
+      logger.info('Database not configured — running in S3-only mode');
     }
 
     // Initialize auth (create default admin if needed)

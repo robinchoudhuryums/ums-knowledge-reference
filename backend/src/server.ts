@@ -1,6 +1,10 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// OpenTelemetry must be initialized before any other imports so auto-instrumentation
+// hooks are registered before Express, HTTP, and AWS SDK modules load.
+import './tracing';
+
 import path from 'path';
 import crypto from 'crypto';
 import express from 'express';

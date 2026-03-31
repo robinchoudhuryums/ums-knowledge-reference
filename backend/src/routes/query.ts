@@ -12,6 +12,7 @@ import { bedrockClient, BEDROCK_GENERATION_MODEL, bedrockCircuitBreaker } from '
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
 import { enrichQueryWithStructuredData, classifyQuery } from '../services/referenceEnrichment';
+import { withSpan } from '../utils/traceSpan';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -497,13 +498,22 @@ async function runQueryPipeline(
   const searchQuery = await reformulateQuery(question, conversationHistory);
 
   const embeddingStart = Date.now();
-  const queryEmbedding = await generateEmbedding(searchQuery);
+  const queryEmbedding = await withSpan('rag.embedding', { model: 'titan-embed-v2', queryLength: searchQuery.length }, async () => {
+    return generateEmbedding(searchQuery);
+  });
   const embeddingTimeMs = Date.now() - embeddingStart;
 
   const retrievalStart = Date.now();
-  const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
-    topK: topK ?? 6,
-    collectionIds: effectiveCollectionIds,
+  const searchResults = await withSpan('rag.retrieval', { topK: topK ?? 6 }, async (span) => {
+    const results = await searchVectorStore(queryEmbedding, searchQuery, {
+      topK: topK ?? 6,
+      collectionIds: effectiveCollectionIds,
+    });
+    span.setAttribute('results.count', results.length);
+    if (results.length > 0) {
+      span.setAttribute('results.topScore', Math.max(...results.map(r => r.score)));
+    }
+    return results;
   });
   const retrievalTimeMs = Date.now() - retrievalStart;
 
@@ -601,11 +611,19 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       }),
     });
 
-    const bedrockResponse = await bedrockCircuitBreaker.execute(() => bedrockClient.send(command));
+    const bedrockResponse = await withSpan('rag.generation', { model: BEDROCK_GENERATION_MODEL }, async (span) => {
+      const resp = await bedrockCircuitBreaker.execute(() => bedrockClient.send(command));
+      const body = JSON.parse(new TextDecoder().decode(resp.body));
+      if (body.usage) {
+        span.setAttribute('tokens.input', body.usage.input_tokens || 0);
+        span.setAttribute('tokens.output', body.usage.output_tokens || 0);
+        if (body.usage.cache_read_input_tokens) span.setAttribute('tokens.cache_read', body.usage.cache_read_input_tokens);
+      }
+      return { resp, body };
+    });
     const generationTimeMs = Date.now() - generationStart;
-    const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
+    const responseBody = bedrockResponse.body;
     const rawAnswer = responseBody.content?.[0]?.text || 'Unable to generate a response.';
-    // Log cache usage if available (cache_read_input_tokens / cache_creation_input_tokens)
     if (responseBody.usage?.cache_read_input_tokens || responseBody.usage?.cache_creation_input_tokens) {
       logger.info('Prompt cache stats', {
         traceId,

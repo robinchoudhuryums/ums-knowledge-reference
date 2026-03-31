@@ -4,6 +4,7 @@ import { ConversationTurn, SourceCitation, Collection } from '../types';
 import { queryKnowledgeBaseStream, submitTraceFeedback } from '../services/api';
 import { SourceViewer } from './SourceViewer';
 import { FeedbackForm } from './FeedbackForm';
+import { useConfirm } from './ConfirmDialog';
 
 interface Props {
   collections: Collection[];
@@ -38,6 +39,7 @@ function detectPotentialPhi(text: string): string[] {
 }
 
 export function ChatInterface({ collections }: Props) {
+  const { confirm } = useConfirm();
   const [conversation, setConversation] = useState<ConversationTurn[]>([]);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -97,16 +99,19 @@ export function ChatInterface({ collections }: Props) {
     // Warn user if their query appears to contain PHI
     const phiTypes = detectPotentialPhi(userMessage);
     if (phiTypes.length > 0) {
-      const proceed = window.confirm(
-        `Your query may contain sensitive information (${phiTypes.join(', ')}). ` +
-        `PHI should not be entered in the chat. Do you want to continue anyway?`
-      );
+      const proceed = await confirm({
+        title: 'Potential PHI Detected',
+        message: `Your query may contain sensitive information (${phiTypes.join(', ')}). PHI should not be entered in the chat. Do you want to continue anyway?`,
+        confirmLabel: 'Send Anyway',
+        cancelLabel: 'Edit Query',
+        variant: 'danger',
+      });
       if (!proceed) return;
     }
 
     setQuestion('');
     setFailedQuery(null);
-    setConversation(prev => [...prev, { role: 'user', content: userMessage }]);
+    setConversation(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: userMessage }]);
     setLoading(true);
     setStreamingText('');
     setStreamingSources([]);
@@ -140,7 +145,7 @@ export function ChatInterface({ collections }: Props) {
               setStreamingTraceId(tid => {
                 setConversation(conv => [
                   ...conv,
-                  { role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined },
+                  { id: crypto.randomUUID(), role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined },
                 ]);
                 return null;
               });
@@ -157,7 +162,7 @@ export function ChatInterface({ collections }: Props) {
       (error) => {
         setConversation(prev => [
           ...prev,
-          { role: 'assistant', content: `Error: ${error}`, isError: true } as ConversationTurn,
+          { id: crypto.randomUUID(), role: 'assistant', content: `Error: ${error}`, isError: true },
         ]);
         setFailedQuery(userMessage);
         setStreamingText('');
@@ -289,7 +294,7 @@ export function ChatInterface({ collections }: Props) {
         )}
 
         {conversation.map((turn, i) => (
-          <div key={i} style={turn.role === 'user' ? styles.userMessage : styles.assistantMessage}>
+          <div key={turn.id} style={turn.role === 'user' ? styles.userMessage : styles.assistantMessage}>
             <div style={styles.messageHeader}>
               <span style={styles.messageLabel}>
                 {turn.role === 'user' ? 'You' : 'Knowledge Base'}
@@ -341,7 +346,7 @@ export function ChatInterface({ collections }: Props) {
               {turn.role === 'assistant' && (
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(turn.content);
+                    navigator.clipboard.writeText(turn.content).catch(() => {/* clipboard not available */});
                     setCopiedIndex(i);
                     setTimeout(() => setCopiedIndex(prev => prev === i ? null : prev), 2000);
                   }}
@@ -372,7 +377,7 @@ export function ChatInterface({ collections }: Props) {
               <div style={styles.userText}>{turn.content}</div>
             ) : (
               <div className="markdown-content" style={styles.markdownContent}>
-                <ReactMarkdown>{turn.content}</ReactMarkdown>
+                <ReactMarkdown skipHtml>{turn.content}</ReactMarkdown>
               </div>
             )}
             {turn.sources && turn.sources.length > 0 && (
@@ -426,7 +431,7 @@ export function ChatInterface({ collections }: Props) {
             </div>
             {streamingText ? (
               <div className="markdown-content" style={styles.markdownContent}>
-                <ReactMarkdown>{streamingText}</ReactMarkdown>
+                <ReactMarkdown skipHtml>{streamingText}</ReactMarkdown>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '4px 0' }}>

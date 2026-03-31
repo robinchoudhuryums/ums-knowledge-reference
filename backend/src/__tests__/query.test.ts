@@ -69,6 +69,7 @@ vi.mock('../services/vectorStore', async (importOriginal) => {
 const mockBedrockSend = vi.fn();
 vi.mock('../config/aws', () => ({
   bedrockClient: { send: (...args: unknown[]) => mockBedrockSend(...args) },
+  bedrockCircuitBreaker: { execute: (fn: () => Promise<unknown>) => fn() },
   BEDROCK_GENERATION_MODEL: 'mock-model',
 }));
 

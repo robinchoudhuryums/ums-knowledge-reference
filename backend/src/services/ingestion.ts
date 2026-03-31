@@ -14,6 +14,7 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { addChunksToStore, removeDocumentChunks } from './vectorStore';
 import { logAuditEvent } from './audit';
 import { logger } from '../utils/logger';
+import { createMutex } from '../utils/asyncMutex';
 
 // Allowed file extensions for uploaded documents
 const ALLOWED_EXTENSIONS = new Set([
@@ -21,26 +22,7 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 
 // Mutex lock to prevent concurrent document index updates from corrupting state.
-// Without this, two simultaneous uploads could both read the same index,
-// each append their document, and the second save would overwrite the first.
-let indexMutexPromise: Promise<void> | null = null;
-
-async function withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
-  // Wait for any in-flight index operation to finish
-  while (indexMutexPromise) {
-    await indexMutexPromise;
-  }
-
-  let resolve: () => void;
-  indexMutexPromise = new Promise<void>(r => { resolve = r; });
-
-  try {
-    return await fn();
-  } finally {
-    indexMutexPromise = null;
-    resolve!();
-  }
-}
+const withIndexLock = createMutex();
 
 export interface UploadResult {
   document: Document;

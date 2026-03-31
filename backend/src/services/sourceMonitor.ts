@@ -182,6 +182,14 @@ function downloadFile(url: string, timeoutMs = 60000, redirectCount = 0): Promis
           reject(new Error(`Invalid redirect URL: ${response.headers.location}`));
           return;
         }
+        // Re-validate the redirect target to prevent SSRF via open redirect.
+        // An attacker-controlled redirect could point to internal IPs, localhost,
+        // or cloud metadata endpoints even if the original URL was validated.
+        const redirectError = validateUrl(redirectUrl);
+        if (redirectError) {
+          reject(new Error(`Redirect target blocked: ${redirectError}`));
+          return;
+        }
         downloadFile(redirectUrl, timeoutMs, redirectCount + 1).then(resolve).catch(reject);
         return;
       }

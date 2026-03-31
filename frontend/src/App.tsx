@@ -70,7 +70,7 @@ function useDarkMode(): [boolean, () => void] {
 }
 
 export default function App() {
-  const { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged } = useAuth();
+  const { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged, mfaRequired, submitMfaCode } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [collections, setCollections] = useState<Collection[]>([]);
   const [isDark, toggleDark] = useDarkMode();
@@ -96,7 +96,7 @@ export default function App() {
   }, [isAuthenticated, loadCollections]);
 
   if (!isAuthenticated) {
-    return <ToastProvider><ErrorBoundary fallbackMessage="Login encountered an error. Please refresh the page."><LoginForm onLogin={login} /></ErrorBoundary></ToastProvider>;
+    return <ToastProvider><ErrorBoundary fallbackMessage="Login encountered an error. Please refresh the page."><LoginForm onLogin={login} mfaRequired={mfaRequired} onMfaSubmit={submitMfaCode} /></ErrorBoundary></ToastProvider>;
   }
 
   if (mustChangePassword) {
@@ -142,6 +142,7 @@ export default function App() {
     <ToastProvider>
     <ConfirmProvider>
     <div style={styles.app} className="hex-pattern">
+      <a href="#main-content" className="skip-to-content">Skip to main content</a>
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.logoGroup}>
@@ -208,7 +209,7 @@ export default function App() {
         <div style={styles.idleBlockerOverlay} aria-hidden="true" />
       )}
 
-      <main style={styles.main}>
+      <main id="main-content" style={styles.main}>
         <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
           {activeTab === 'chat' && <ChatInterface collections={collections} />}
           {activeTab === 'search' && <DocumentSearch collections={collections} />}

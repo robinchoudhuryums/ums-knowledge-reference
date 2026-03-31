@@ -27,6 +27,6 @@ CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS idx_documents_status_ready
   ON documents(collection_id, id) WHERE status = 'ready';
 
-INSERT INTO schema_migrations (version) VALUES ('003') ON CONFLICT DO NOTHING;
+INSERT INTO schema_migrations (version, name) VALUES (3, '003_add_fk_indexes') ON CONFLICT (version) DO NOTHING;
 
 COMMIT;

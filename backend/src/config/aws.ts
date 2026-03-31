@@ -100,6 +100,12 @@ export async function verifyS3BucketConfig(): Promise<void> {
   }
 }
 
+// ─── Bedrock Circuit Breaker ────────────────────────────────────────────────
+// Prevents cascading failures when Bedrock is down by fast-failing after
+// repeated errors rather than hanging on every request.
+import { CircuitBreaker } from '../utils/resilience';
+export const bedrockCircuitBreaker = new CircuitBreaker('bedrock-generation', 5, 60_000);
+
 export const BEDROCK_EMBEDDING_MODEL = process.env.BEDROCK_EMBEDDING_MODEL || 'amazon.titan-embed-text-v2:0';
 // Default to Haiku 4.5 via cross-region inference profile (required for newer models).
 // For a RAG tool, retrieval quality drives answer quality more than model size.

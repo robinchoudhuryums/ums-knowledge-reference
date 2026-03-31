@@ -65,12 +65,12 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `papAccountCreation.ts` — PAP/CPAP Account Creation form submission
 - **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `database.ts` (PostgreSQL connection pool with RDS SSL), `migrate.ts` (SQL migration runner), `formRules.ts` (CMN form type rules)
 - **Database layer** (`backend/src/db/`): Hybrid S3/RDS access layer. `index.ts` routes to PostgreSQL when DATABASE_URL is configured, falls back to S3 JSON. `users.ts` (user CRUD), `documents.ts` (document/collection CRUD with document count aggregation), `vectorStore.ts` (pgvector-backed similarity search with IVFFlat index).
-- **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index), `003_add_fk_indexes.sql` (indexes on FK columns: usage_records, audit_logs, query_logs, feedback, jobs by user_id + partial index on documents where status='ready')
-- **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, async lockout check in middleware, lockout cache for S3 outage resilience, revokeAllUserTokens on password reset)
-- **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `phiRedactor.ts` (PHI scrubbing with natural language DOB, MRN, SSN, phone, email, address, Medicare/Medicaid), `htmlEscape.ts` (HTML entity escaping for safe email template interpolation), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout), `metrics.ts` (in-memory request metrics with per-route latency percentiles)
+- **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index), `003_add_fk_indexes.sql` (indexes on FK columns: usage_records, audit_logs, query_logs, feedback, jobs by user_id + partial index on documents where status='ready'), `004_add_fk_constraints.sql` (FK constraints with cascade deletes: documents→collections, documents→users, usage_records→users, feedback→users/traces, jobs→users, ppd→users, sources→collections)
+- **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, async lockout check in middleware, lockout cache for S3 outage resilience, revokeAllUserTokens on password reset), `authConfig.ts` (JWT config, password validation, lockout logic), `tokenService.ts` (token creation/revocation, cookie management)
+- **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `traceSpan.ts` (OpenTelemetry custom span helpers for RAG pipeline), `phiRedactor.ts` (PHI scrubbing with natural language DOB, MRN, SSN, phone, email, address, Medicare/Medicaid), `htmlEscape.ts` (HTML entity escaping for safe email template interpolation), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout), `metrics.ts` (in-memory request metrics with per-route latency percentiles)
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): 705 total tests across 48 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
+- **Tests** (`backend/src/__tests__/`): 731 total tests across 49 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
 - **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`
 
 ### Frontend (`frontend/`)
@@ -164,10 +164,44 @@ cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v 
 - **Input truncation**: 8K chars for embeddings, 100K for extraction, 2K for user queries
 - **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
 
+## Development Roadmap
+See `ROADMAP.md` for the full prioritized roadmap covering: code quality, RAG quality (medical embeddings, cross-encoder re-ranking, evaluation framework), HIPAA hardening (MFA, field-level encryption, audit immutability), scalability (Redis, HNSW, worker queues), UI/UX (mobile responsive, WCAG AA), and testing/observability.
+
 ## Cross-Project Port Tracking
 When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to track which changes are candidates for porting to the multi-tenant [Observatory QA](https://github.com/robinchoudhuryums/observatory-qa) platform. The log tracks porting status (Ported/Pending/N/A) across security, RAG quality, compliance, and observability categories.
 
 ## Recent Changes (reverse chronological)
+- **Scalability improvements — database, performance, metrics**:
+  - **Database**: Migration 004 adds FK constraints with cascade deletes across 8 tables (documents→collections/users, usage→users, feedback→users/traces, jobs→users, ppd→users, sources→collections). Migration 003 syntax fix.
+  - **Performance**: Incremental IDF updates — add/remove operations update running doc-frequency counts in O(changed chunks) instead of rebuilding from O(corpus). Full rebuild only on first query after startup.
+  - **Performance**: Audit log retrieval now fetches S3 objects in parallel batches of 10 (was sequential), ~10x faster for high-volume days.
+  - **Metrics**: `/api/metrics` now includes database connection pool stats (totalConnections, idleConnections, waitingRequests) when PostgreSQL is configured.
+- **Codebase audit round 2 — bug fixes + quality improvements**:
+  - **Bug fix**: SPA fallback now returns JSON 404 for unmatched `/api/*` routes instead of serving `index.html`
+  - **Bug fix**: Document selection state (selectedIds) now resets when switching collections, preventing bulk operations on wrong documents
+  - **Bug fix**: Medical synonym self-reference removed (`hospital bed` no longer maps to itself)
+  - **Security**: Collection ACL enforced on document delete, version history, tags list, and text search endpoints (previously admin-only but no collection restriction)
+  - **Security**: reset-admin.ts script respects `DB_SSL_REJECT_UNAUTHORIZED` env var (was hardcoded `false`)
+  - **Security**: Email error messages no longer leaked to clients (account creation, PAP routes)
+  - **Security**: ReactMarkdown `skipHtml` prevents raw HTML injection in chat responses
+  - **Refactor**: Extracted shared `runQueryPipeline()` from streaming/non-streaming query endpoints (~100 lines deduplicated)
+  - **Documentation**: Added `ROADMAP.md` with prioritized multi-sprint improvement plan, referenced from CLAUDE.md
+- **RAG quality improvements — 4 enhancements**:
+  - **Medical synonyms**: Expanded from 30 to 75+ synonym groups — added DME equipment (ventilator, commode, lift, TENS, trapeze, mattress, mask, tubing), clinical abbreviations (MS, SCI, TBI, ESRD, AFib, PE, RA, OA), and billing terms (denial, appeal, modifier, MBI, HICN, ADL, MRADL, DMRC, CBA, AOB, EOB)
+  - **Confidence scoring**: Added score-spread awareness (penalize single-result queries), confidence upgrade path (PARTIAL→HIGH when top retrieval score >0.65), and `computeEffectiveScore()` utility
+  - **Chunk deduplication**: Post-retrieval Jaccard similarity dedup (>80% token overlap = near-duplicate) removes redundant chunks from overlapping documents, freeing context window slots
+  - **Query routing**: `classifyQuery()` detects pure code/crosswalk/checklist lookups and serves structured data directly, skipping embedding + vector search + LLM generation (~2-4s savings, zero Bedrock cost for structured queries)
+  - **Security**: Source monitor redirect targets now validated for SSRF (prevents redirect to internal IPs/metadata endpoints)
+  - **Bug fix**: Data retention date validation prevents date rollover (Feb 31 → Mar 2 no longer silently deletes wrong files)
+  - **Bug fix**: HTML entity decoding uses `String.fromCodePoint()` instead of `fromCharCode()` for full Unicode support (emoji, supplementary planes)
+  - **Performance**: Health check endpoint uses top-level imports instead of dynamic `await import()` on every request
+  - **Type safety**: `ConversationTurn.isError` added to types (was used but not declared)
+  - **Accessibility**: PopoutButton aria-label added, ChangePasswordForm uses CSS variables instead of hardcoded hex colors for dark mode support
+  - **Accessibility**: Skip-to-content link for keyboard navigation, `focus-visible` styles on all interactive elements, `id="main-content"` landmark
+  - **Accessibility**: PHI detection uses async ConfirmDialog modal instead of blocking `window.confirm()`
+  - **Responsive**: Improved tablet breakpoint (icon-only tabs at ≤900px), mobile nav wraps to full width at ≤640px
+  - **UX**: Clipboard write error handled gracefully (no uncaught promise rejection)
+  - **Documentation**: Updated AUDIT_REPORT.md with comprehensive ratings and improvement paths
 - **Comprehensive codebase audit — 40 fixes + 172 new tests** (PR #52, 11 commits):
   - **Test coverage**: 533 → 705 tests across 40 → 48 files. New route-level tests: documents (36), extraction (20), PPD (25), queryLog (15), coverage (11), HCPCS (10), ICD-10 (10), s3Storage (42). CI thresholds raised: 30% → 50% lines, new 40% branch threshold.
   - **HIPAA**: SSL cert validation defaults to `rejectUnauthorized: true` (opt out via `DB_SSL_REJECT_UNAUTHORIZED=false`). PHI redaction on PPD queue logging. Collection ACL on `GET /documents/:id`. Predictable user IDs → `crypto.randomUUID()`. Bulk delete array mutation fix. Audit date range loop fix. Data retention treats invalid dates as expired.

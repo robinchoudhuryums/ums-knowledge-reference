@@ -40,7 +40,10 @@ async function main() {
   if (process.env.DATABASE_URL) {
     try {
       const { Pool } = await import('pg');
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' },
+      });
       const passwordHash = await bcrypt.hash(newPassword, 12);
 
       const result = await pool.query(

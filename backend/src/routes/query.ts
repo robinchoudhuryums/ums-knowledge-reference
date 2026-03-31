@@ -8,10 +8,11 @@ import { logQuery } from '../services/queryLog';
 import { generateTraceId, logRagTrace } from '../services/ragTrace';
 import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';
 import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
-import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
+import { bedrockClient, BEDROCK_GENERATION_MODEL, bedrockCircuitBreaker } from '../config/aws';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
-import { enrichQueryWithStructuredData } from '../services/referenceEnrichment';
+import { enrichQueryWithStructuredData, classifyQuery } from '../services/referenceEnrichment';
+import { withSpan } from '../utils/traceSpan';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -116,6 +117,8 @@ function buildSystemBlocks(): Array<{ type: 'text'; text: string; cache_control?
 // - Weak match: <0.40 (tangentially related content)
 const LOW_CONFIDENCE_THRESHOLD = 0.35;
 const PARTIAL_CONFIDENCE_THRESHOLD = 0.45;
+// If the top score is very high, the model's PARTIAL can be upgraded to HIGH
+const UPGRADE_TOP_SCORE_THRESHOLD = 0.65;
 
 /**
  * Summarize older conversation turns into a compact context string.
@@ -205,10 +208,32 @@ function buildSourceCitations(searchResults: SearchResult[]): SourceCitation[] {
 }
 
 /**
+ * Compute a blended effective score from retrieval metrics.
+ * Considers average score, top score, and score spread to produce a single
+ * quality signal. A tight cluster of mediocre scores is weaker than a spread
+ * with one strong match.
+ */
+function computeEffectiveScore(avgScore: number, topScore?: number, resultCount?: number): number {
+  const top = topScore ?? avgScore;
+  // Blend avg (60%) and top (40%) — a single strong match lifts confidence
+  let effective = avgScore * 0.6 + top * 0.4;
+
+  // Penalize when we got very few results — less evidence to draw from
+  if (resultCount !== undefined && resultCount <= 1 && effective > 0) {
+    effective *= 0.85;
+  }
+
+  return effective;
+}
+
+/**
  * Parse the confidence tag from the LLM response and strip it from the visible answer.
  * Falls back to score-based confidence if no tag is found.
- * When using score-based fallback, considers both the average score and the top score
- * to better reflect retrieval quality (a single strong match is still useful).
+ *
+ * Reconciliation logic:
+ * - Downgrades model HIGH→PARTIAL when retrieval scores are weak (prevents hallucination)
+ * - Downgrades model non-LOW→LOW when retrieval is very weak
+ * - Upgrades model PARTIAL→HIGH when top retrieval score is very strong (model may underestimate)
  */
 // If retrieval scores are below this threshold, the model's confidence tag
 // is downgraded even if it says HIGH. This prevents the model from being
@@ -218,37 +243,33 @@ const RECONCILIATION_FLOOR = 0.25;
 function parseConfidence(
   rawAnswer: string,
   avgScore: number,
-  topScore?: number
+  topScore?: number,
+  resultCount?: number
 ): { answer: string; confidence: 'high' | 'partial' | 'low' } {
+  const effectiveScore = computeEffectiveScore(avgScore, topScore, resultCount);
   const tagMatch = rawAnswer.match(/\[CONFIDENCE:\s*(HIGH|PARTIAL|LOW)\]\s*$/i);
 
   if (tagMatch) {
     let confidence = tagMatch[1].toLowerCase() as 'high' | 'partial' | 'low';
     const answer = rawAnswer.slice(0, tagMatch.index).trimEnd();
 
-    // Reconciliation: if retrieval scores are very low but the model says HIGH,
-    // the model may be hallucinating or over-extrapolating from weak context.
-    // Downgrade confidence to prevent misleading users.
-    const effectiveScore = topScore !== undefined
-      ? avgScore * 0.6 + topScore * 0.4
-      : avgScore;
-
+    // Reconciliation: downgrade if retrieval is weak
     if (confidence === 'high' && effectiveScore < RECONCILIATION_FLOOR) {
       confidence = 'partial';
     } else if (confidence !== 'low' && effectiveScore < RECONCILIATION_FLOOR * 0.5) {
       confidence = 'low';
     }
 
+    // Upgrade: if model says PARTIAL but retrieval is very strong, the model
+    // may be conservatively hedging. Upgrade to reflect strong source support.
+    if (confidence === 'partial' && (topScore ?? 0) >= UPGRADE_TOP_SCORE_THRESHOLD && avgScore >= PARTIAL_CONFIDENCE_THRESHOLD) {
+      confidence = 'high';
+    }
+
     return { answer, confidence };
   }
 
-  // Fallback: use retrieval scores with blended signal.
-  // Blend average and top score — a single strong match should lift confidence,
-  // but uniformly weak results should pull it down.
-  const effectiveScore = topScore !== undefined
-    ? avgScore * 0.6 + topScore * 0.4
-    : avgScore;
-
+  // Fallback: use retrieval scores when model didn't output a confidence tag
   let confidence: 'high' | 'partial' | 'low';
   if (effectiveScore >= PARTIAL_CONFIDENCE_THRESHOLD) confidence = 'high';
   else if (effectiveScore >= LOW_CONFIDENCE_THRESHOLD) confidence = 'partial';
@@ -389,61 +410,167 @@ function sanitizeConversationHistory(history?: ConversationTurn[]): Conversation
   return valid;
 }
 
+/**
+ * Shared pre-generation pipeline: validates input, checks usage, runs retrieval.
+ * Returns null and sends error response if validation fails, otherwise returns
+ * all data needed for generation.
+ */
+interface PipelineResult {
+  question: string;
+  conversationHistory: ConversationTurn[];
+  collectionIds?: string[];
+  effectiveCollectionIds?: string[];
+  traceId: string;
+  pipelineStart: number;
+  searchQuery: string;
+  searchResults: SearchResult[];
+  embeddingTimeMs: number;
+  retrievalTimeMs: number;
+  avgScore: number;
+  topScore: number;
+  sources: SourceCitation[];
+  enrichments: Array<{ contextBlock: string; sourceLabel: string }>;
+  context: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /** 'structured' = skip LLM, return enrichments directly; 'hybrid'/'rag' = normal flow */
+  queryRoute: 'structured' | 'hybrid' | 'rag';
+}
+
+async function runQueryPipeline(
+  req: AuthRequest,
+  res: Response,
+  label: string,
+): Promise<PipelineResult | null> {
+  const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK }: QueryRequest = req.body;
+  const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
+  const conversationHistory = sanitizeConversationHistory(rawHistory);
+
+  if (!question) {
+    res.status(400).json({ error: 'Question is required' });
+    return null;
+  }
+
+  const injectionCheck = detectPromptInjection(question);
+  if (injectionCheck.detected) {
+    logger.warn(`Prompt injection detected in ${label}`, { userId: req.user!.id, reason: injectionCheck.reason });
+    res.status(400).json({ error: 'Your query contains patterns that cannot be processed. Please rephrase your question.' });
+    return null;
+  }
+
+  const usageCheck = await checkAndRecordQuery(req.user!.id);
+  if (!usageCheck.allowed) {
+    res.status(429).json({ error: usageCheck.reason, usage: usageCheck.usage });
+    return null;
+  }
+
+  const traceId = generateTraceId();
+  const pipelineStart = Date.now();
+  logger.info(`${label} query received`, { question, userId: req.user!.id, traceId });
+
+  // Enforce collection-level access control
+  const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+  let effectiveCollectionIds = collectionIds;
+  if (allowedCollections) {
+    effectiveCollectionIds = collectionIds?.length
+      ? collectionIds.filter(id => allowedCollections.includes(id))
+      : allowedCollections;
+  }
+
+  // Classify query: can it be answered from structured data alone?
+  const queryRoute = classifyQuery(question);
+  const enrichments = enrichQueryWithStructuredData(question);
+
+  // If the query is purely about structured data (code lookups, crosswalks, checklists)
+  // and we have enrichments to show, skip the expensive embedding + vector search + LLM pipeline.
+  // This saves ~2-4 seconds and avoids unnecessary Bedrock API costs.
+  if (queryRoute === 'structured' && enrichments.length > 0) {
+    logger.info('Query routed to structured-only path', { traceId, enrichmentCount: enrichments.length });
+    const context = buildContext([], enrichments);
+    const messages = buildMessages(question, context, conversationHistory);
+    return {
+      question, conversationHistory, collectionIds, effectiveCollectionIds,
+      traceId, pipelineStart, searchQuery: question, searchResults: [],
+      embeddingTimeMs: 0, retrievalTimeMs: 0, avgScore: 0, topScore: 0,
+      sources: [], enrichments, context, messages, queryRoute,
+    };
+  }
+
+  const searchQuery = await reformulateQuery(question, conversationHistory);
+
+  const embeddingStart = Date.now();
+  const queryEmbedding = await withSpan('rag.embedding', { model: 'titan-embed-v2', queryLength: searchQuery.length }, async () => {
+    return generateEmbedding(searchQuery);
+  });
+  const embeddingTimeMs = Date.now() - embeddingStart;
+
+  const retrievalStart = Date.now();
+  const searchResults = await withSpan('rag.retrieval', { topK: topK ?? 6 }, async (span) => {
+    const results = await searchVectorStore(queryEmbedding, searchQuery, {
+      topK: topK ?? 6,
+      collectionIds: effectiveCollectionIds,
+    });
+    span.setAttribute('results.count', results.length);
+    if (results.length > 0) {
+      span.setAttribute('results.topScore', Math.max(...results.map(r => r.score)));
+    }
+    return results;
+  });
+  const retrievalTimeMs = Date.now() - retrievalStart;
+
+  const avgScore = searchResults.length > 0
+    ? searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length
+    : 0;
+  const topScore = searchResults.length > 0 ? Math.max(...searchResults.map(r => r.score)) : 0;
+  const sources = buildSourceCitations(searchResults);
+  const context = buildContext(searchResults, enrichments);
+  const messages = buildMessages(question, context, conversationHistory);
+
+  return {
+    question, conversationHistory, collectionIds, effectiveCollectionIds,
+    traceId, pipelineStart, searchQuery, searchResults,
+    embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
+    sources, enrichments, context, messages, queryRoute,
+  };
+}
+
 // Standard (non-streaming) query endpoint
 router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Response) => {
   try {
-    const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK }: QueryRequest = req.body;
-    const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
-    const conversationHistory = sanitizeConversationHistory(rawHistory);
+    const pipeline = await runQueryPipeline(req, res, 'Standard');
+    if (!pipeline) return; // Response already sent by pipeline
 
-    if (!question) {
-      res.status(400).json({ error: 'Question is required' });
+    const {
+      question, collectionIds, effectiveCollectionIds,
+      traceId, pipelineStart, searchQuery, searchResults,
+      embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
+      sources, enrichments, messages, queryRoute,
+    } = pipeline;
+
+    // Structured-only route: return enrichments directly without LLM call.
+    // Saves ~2-4s and avoids Bedrock API costs for pure code/checklist lookups.
+    if (queryRoute === 'structured' && enrichments.length > 0) {
+      const answer = enrichments.map(e => `**${e.sourceLabel}**\n${e.contextBlock}`).join('\n\n');
+      const responseTimeMs = Date.now() - pipelineStart;
+      const response: QueryResponse = { answer, sources: [], confidence: 'high', traceId };
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'query', {
+        question: redactPhi(question).text, confidence: 'high', traceId,
+        queryRoute: 'structured', enrichmentCount: enrichments.length,
+      });
+      logRagTrace({
+        traceId, timestamp: new Date().toISOString(),
+        userId: req.user!.id, username: req.user!.username,
+        queryText: redactPhi(question).text,
+        retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
+        chunksPassedToModel: 0, modelId: 'structured-only',
+        responseText: answer, confidence: 'high',
+        responseTimeMs, embeddingTimeMs: 0, retrievalTimeMs: 0,
+        collectionIds, streamed: false,
+      }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
+
+      res.json(response);
       return;
     }
-
-    // Detect prompt injection attempts before processing
-    const injectionCheck = detectPromptInjection(question);
-    if (injectionCheck.detected) {
-      logger.warn('Prompt injection detected', { userId: req.user!.id, reason: injectionCheck.reason });
-      res.status(400).json({ error: 'Your query contains patterns that cannot be processed. Please rephrase your question.' });
-      return;
-    }
-
-    // Atomically check usage limit and record the query to prevent races
-    const usageCheck = await checkAndRecordQuery(req.user!.id);
-    if (!usageCheck.allowed) {
-      res.status(429).json({ error: usageCheck.reason, usage: usageCheck.usage });
-      return;
-    }
-
-    const traceId = generateTraceId();
-    const pipelineStart = Date.now();
-
-    logger.info('Query received', { question, userId: req.user!.id, traceId });
-
-    // Enforce collection-level access control
-    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
-    let effectiveCollectionIds = collectionIds;
-    if (allowedCollections) {
-      // User has collection restrictions — intersect requested with allowed
-      effectiveCollectionIds = collectionIds?.length
-        ? collectionIds.filter(id => allowedCollections.includes(id))
-        : allowedCollections;
-    }
-
-    // Reformulate follow-up questions for better retrieval
-    const searchQuery = await reformulateQuery(question, conversationHistory);
-
-    const embeddingStart = Date.now();
-    const queryEmbedding = await generateEmbedding(searchQuery);
-    const embeddingTimeMs = Date.now() - embeddingStart;
-
-    const retrievalStart = Date.now();
-    const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
-      topK: topK || 6,
-      collectionIds: effectiveCollectionIds,
-    });
-    const retrievalTimeMs = Date.now() - retrievalStart;
 
     if (searchResults.length === 0) {
       // Usage already recorded by checkAndRecordQuery above
@@ -465,16 +592,10 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
         responseText: response.answer, confidence: 'low',
         responseTimeMs, embeddingTimeMs, retrievalTimeMs,
         collectionIds, streamed: false,
-      }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
+      }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
       res.json(response);
       return;
     }
-
-    // Enrich with structured reference data (HCPCS, ICD-10, checklists)
-    const enrichments = enrichQueryWithStructuredData(question);
-
-    const context = buildContext(searchResults, enrichments);
-    const messages = buildMessages(question, context, conversationHistory);
 
     const generationStart = Date.now();
     const command = new InvokeModelCommand({
@@ -490,11 +611,19 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       }),
     });
 
-    const bedrockResponse = await bedrockClient.send(command);
+    const bedrockResponse = await withSpan('rag.generation', { model: BEDROCK_GENERATION_MODEL }, async (span) => {
+      const resp = await bedrockCircuitBreaker.execute(() => bedrockClient.send(command));
+      const body = JSON.parse(new TextDecoder().decode(resp.body));
+      if (body.usage) {
+        span.setAttribute('tokens.input', body.usage.input_tokens || 0);
+        span.setAttribute('tokens.output', body.usage.output_tokens || 0);
+        if (body.usage.cache_read_input_tokens) span.setAttribute('tokens.cache_read', body.usage.cache_read_input_tokens);
+      }
+      return { resp, body };
+    });
     const generationTimeMs = Date.now() - generationStart;
-    const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
+    const responseBody = bedrockResponse.body;
     const rawAnswer = responseBody.content?.[0]?.text || 'Unable to generate a response.';
-    // Log cache usage if available (cache_read_input_tokens / cache_creation_input_tokens)
     if (responseBody.usage?.cache_read_input_tokens || responseBody.usage?.cache_creation_input_tokens) {
       logger.info('Prompt cache stats', {
         traceId,
@@ -505,9 +634,7 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
     const inputTokens = responseBody.usage?.input_tokens;
     const outputTokens = responseBody.usage?.output_tokens;
 
-    const avgScore = searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length;
-    const topScore = searchResults.length > 0 ? Math.max(...searchResults.map(r => r.score)) : 0;
-    let { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore);
+    let { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore, searchResults.length);
 
     // Output-side guardrail: detect if the response shows signs of injection bypass
     const outputCheck = detectOutputAnomaly(answer);
@@ -531,7 +658,6 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       });
     }
 
-    const sources = buildSourceCitations(searchResults);
     const responseTimeMs = Date.now() - pipelineStart;
 
     // Usage already recorded by checkAndRecordQuery above
@@ -565,14 +691,14 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
       collectionIds, streamed: false,
       inputTokens, outputTokens,
-    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
+    }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
 
     const response: QueryResponse = { answer, sources, confidence, traceId, ...(phiDetectedInResponse && { phiDetected: true }) };
     res.json(response);
   } catch (error) {
     logger.error('Query failed', { error: String(error) });
     // Roll back usage so users don't lose quota on failed queries
-    rollbackQuery(req.user!.id).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
+    rollbackQuery(req.user!.id).catch(err => logger.warn('Async operation failed', { error: String(err) }));
     res.status(500).json({ error: 'Query processing failed' });
   }
 });
@@ -580,43 +706,15 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
 // Streaming query endpoint — sends answer tokens as Server-Sent Events
 router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res: Response) => {
   try {
-    const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK }: QueryRequest = req.body;
-    const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
-    const conversationHistory = sanitizeConversationHistory(rawHistory);
+    const pipeline = await runQueryPipeline(req, res, 'Streaming');
+    if (!pipeline) return; // Response already sent by pipeline
 
-    if (!question) {
-      res.status(400).json({ error: 'Question is required' });
-      return;
-    }
-
-    // Detect prompt injection attempts before processing
-    const injectionCheck = detectPromptInjection(question);
-    if (injectionCheck.detected) {
-      logger.warn('Prompt injection detected in stream', { userId: req.user!.id, reason: injectionCheck.reason });
-      res.status(400).json({ error: 'Your query contains patterns that cannot be processed. Please rephrase your question.' });
-      return;
-    }
-
-    // Atomically check usage limit and record the query to prevent races
-    const usageCheck = await checkAndRecordQuery(req.user!.id);
-    if (!usageCheck.allowed) {
-      res.status(429).json({ error: usageCheck.reason, usage: usageCheck.usage });
-      return;
-    }
-
-    const traceId = generateTraceId();
-    const pipelineStart = Date.now();
-
-    logger.info('Streaming query received', { question, userId: req.user!.id, traceId });
-
-    // Enforce collection-level access control
-    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
-    let effectiveCollectionIds = collectionIds;
-    if (allowedCollections) {
-      effectiveCollectionIds = collectionIds?.length
-        ? collectionIds.filter(id => allowedCollections.includes(id))
-        : allowedCollections;
-    }
+    const {
+      question, collectionIds, effectiveCollectionIds,
+      traceId, pipelineStart, searchQuery, searchResults,
+      embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
+      sources, enrichments, messages, queryRoute,
+    } = pipeline;
 
     // SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -625,27 +723,34 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    // Reformulate follow-up questions for better retrieval
-    const searchQuery = await reformulateQuery(question, conversationHistory);
+    // Structured-only route: stream enrichments directly without LLM call
+    if (queryRoute === 'structured' && enrichments.length > 0) {
+      const answer = enrichments.map(e => `**${e.sourceLabel}**\n${e.contextBlock}`).join('\n\n');
+      res.write(`data: ${JSON.stringify({ type: 'sources', sources: [] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'text', text: answer })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'confidence', confidence: 'high' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+      res.end();
 
-    const embeddingStart = Date.now();
-    const queryEmbedding = await generateEmbedding(searchQuery);
-    const embeddingTimeMs = Date.now() - embeddingStart;
+      logAuditEvent(req.user!.id, req.user!.username, 'query', {
+        question: redactPhi(question).text, confidence: 'high', traceId,
+        queryRoute: 'structured', streamed: true,
+      }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
+      logRagTrace({
+        traceId, timestamp: new Date().toISOString(),
+        userId: req.user!.id, username: req.user!.username,
+        queryText: redactPhi(question).text,
+        retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
+        chunksPassedToModel: 0, modelId: 'structured-only',
+        responseText: answer, confidence: 'high',
+        responseTimeMs: Date.now() - pipelineStart, embeddingTimeMs: 0, retrievalTimeMs: 0,
+        collectionIds, streamed: true,
+      }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
+      return;
+    }
 
-    const retrievalStart = Date.now();
-    const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
-      topK: topK || 6,
-      collectionIds: effectiveCollectionIds,
-    });
-    const retrievalTimeMs = Date.now() - retrievalStart;
-
-    const avgScore = searchResults.length > 0
-      ? searchResults.reduce((sum, r) => sum + r.score, 0) / searchResults.length
-      : 0;
-    const topScore = searchResults.length > 0 ? Math.max(...searchResults.map(r => r.score)) : 0;
-
-    // Send sources and initial confidence hint
-    const sources = buildSourceCitations(searchResults);
+    // Send sources to client
     res.write(`data: ${JSON.stringify({ type: 'sources', sources })}\n\n`);
 
     if (searchResults.length === 0) {
@@ -665,15 +770,9 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
         responseText: noResultAnswer, confidence: 'low',
         responseTimeMs: Date.now() - pipelineStart, embeddingTimeMs, retrievalTimeMs,
         collectionIds, streamed: true,
-      }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
+      }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
       return;
     }
-
-    // Enrich with structured reference data (HCPCS, ICD-10, checklists)
-    const enrichments = enrichQueryWithStructuredData(question);
-
-    const context = buildContext(searchResults, enrichments);
-    const messages = buildMessages(question, context, conversationHistory);
 
     const generationStart = Date.now();
     const command = new InvokeModelWithResponseStreamCommand({
@@ -689,7 +788,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       }),
     });
 
-    const bedrockResponse = await bedrockClient.send(command);
+    const bedrockResponse = await bedrockCircuitBreaker.execute(() => bedrockClient.send(command));
 
     let fullAnswer = '';
     let streamInputTokens: number | undefined;
@@ -712,7 +811,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
     const generationTimeMs = Date.now() - generationStart;
 
     // Parse confidence from the completed answer
-    let { confidence } = parseConfidence(fullAnswer, avgScore, topScore);
+    let { confidence } = parseConfidence(fullAnswer, avgScore, topScore, searchResults.length);
 
     // Output-side guardrail for streaming: check completed answer for anomalies.
     // Since text was already streamed, we send a warning event so the frontend can
@@ -753,10 +852,10 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       confidence,
       streamed: true,
       traceId,
-    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
+    }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
     // Log query for analytics / CSV export
-    const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore, topScore);
-    logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
+    const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore, topScore, searchResults.length);
+    logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(err => logger.warn('Async operation failed', { error: String(err) }));
     // Log RAG trace (fire and forget)
     // Redact query and reformulated query — may contain PHI from conversation context
     const redactedStreamReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
@@ -773,11 +872,11 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
       collectionIds, streamed: true,
       inputTokens: streamInputTokens, outputTokens: streamOutputTokens,
-    }).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
+    }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
   } catch (error) {
     logger.error('Streaming query failed', { error: String(error) });
     // Roll back usage so users don't lose quota on failed queries
-    rollbackQuery(req.user!.id).catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }));
+    rollbackQuery(req.user!.id).catch(err => logger.warn('Async operation failed', { error: String(err) }));
     if (res.headersSent) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: 'Query processing failed' })}\n\n`);
       res.end();

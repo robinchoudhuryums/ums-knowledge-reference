@@ -42,11 +42,13 @@ export interface QueryResponse {
 }
 
 export interface ConversationTurn {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
   sources?: SourceCitation[];
   confidence?: 'high' | 'partial' | 'low';
   traceId?: string;
+  isError?: boolean;
 }
 
 export interface FeedbackRequest {
@@ -64,6 +66,7 @@ export interface User {
   id: string;
   username: string;
   role: 'admin' | 'user';
+  mfaEnabled?: boolean;
 }
 
 export interface AuthState {

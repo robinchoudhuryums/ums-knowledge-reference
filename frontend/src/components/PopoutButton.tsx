@@ -20,7 +20,7 @@ export function PopoutButton() {
   }, []);
 
   return (
-    <button onClick={handlePopout} style={styles.button} title="Open chat in a pop-up window">
+    <button onClick={handlePopout} style={styles.button} title="Open chat in a pop-up window" aria-label="Open chat in pop-out window">
       &#8599; Pop Out
     </button>
   );

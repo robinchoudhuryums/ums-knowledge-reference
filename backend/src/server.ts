@@ -1,6 +1,10 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// OpenTelemetry must be initialized before any other imports so auto-instrumentation
+// hooks are registered before Express, HTTP, and AWS SDK modules load.
+import './tracing';
+
 import path from 'path';
 import crypto from 'crypto';
 import express from 'express';
@@ -13,7 +17,9 @@ import { runWithCorrelationId } from './utils/correlationId';
 import { recordRequest, getMetricsSnapshot } from './utils/metrics';
 import { validateEnv } from './utils/envValidation';
 import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
-import { initializeVectorStore } from './services/vectorStore';
+import { initializeVectorStore, getVectorStoreStats } from './services/vectorStore';
+import { s3Client, S3_BUCKET } from './config/aws';
+import { checkDatabaseConnection } from './config/database';
 import { startReindexScheduler } from './services/reindexer';
 import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
 import { startSourceMonitor } from './services/sourceMonitor';
@@ -201,7 +207,6 @@ app.get('/api/health', async (_req, res) => {
   // S3 connectivity check (lightweight HeadBucket)
   try {
     const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
-    const { s3Client, S3_BUCKET } = await import('./config/aws');
     await s3Client.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
     checks.s3 = 'ok';
   } catch {
@@ -213,7 +218,6 @@ app.get('/api/health', async (_req, res) => {
   // Database is optional: when DATABASE_URL is not set, the app uses S3 JSON fallback.
   // Only mark unhealthy if database IS configured but unreachable (connection error).
   try {
-    const { checkDatabaseConnection } = await import('./config/database');
     const dbOk = await checkDatabaseConnection();
     if (dbOk) {
       checks.database = 'ok';
@@ -230,7 +234,6 @@ app.get('/api/health', async (_req, res) => {
   }
 
   // Vector store loaded check
-  const { getVectorStoreStats } = await import('./services/vectorStore');
   const vsStats = await getVectorStoreStats();
   checks.vectorStore = vsStats.lastUpdated ? 'ok' : 'error';
   if (checks.vectorStore === 'error') healthy = false;
@@ -255,6 +258,12 @@ app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/users', authenticate, requireAdmin, (req, res) => createUserHandler(req as AuthRequest, res));
 app.post('/api/auth/change-password', authenticate, (req, res) => changePasswordHandler(req as AuthRequest, res));
 app.post('/api/auth/logout', authenticate, (req, res) => logoutHandler(req as AuthRequest, res));
+
+// MFA routes
+import { mfaSetupHandler, mfaVerifyHandler, mfaDisableHandler } from './middleware/auth';
+app.post('/api/auth/mfa/setup', authenticate, (req, res) => mfaSetupHandler(req as AuthRequest, res));
+app.post('/api/auth/mfa/verify', authenticate, (req, res) => mfaVerifyHandler(req as AuthRequest, res));
+app.post('/api/auth/mfa/disable', authenticate, (req, res) => mfaDisableHandler(req as AuthRequest, res));
 
 // Document routes
 app.use('/api/documents', documentRoutes);
@@ -303,7 +312,11 @@ if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.resolve(__dirname, '../../frontend/dist');
   app.use(express.static(frontendPath));
 
-  // SPA fallback: any non-API route serves index.html
+  // SPA fallback: any non-API route serves index.html.
+  // API routes that don't match any handler get a proper JSON 404 instead of index.html.
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  });
   app.get('*', (_req, res) => {
     res.sendFile(path.join(frontendPath, 'index.html'));
   });
@@ -326,17 +339,38 @@ async function start() {
     const { verifyS3BucketConfig } = await import('./config/aws');
     await verifyS3BucketConfig();
 
-    // Run database migrations if PostgreSQL is configured
-    try {
-      const { checkDatabaseConnection } = await import('./config/database');
-      if (await checkDatabaseConnection()) {
-        const { runMigrations } = await import('./config/migrate');
-        await runMigrations();
-      } else {
-        logger.info('Database not configured — running in S3-only mode');
+    // Run database migrations if PostgreSQL is configured.
+    // Retry connection up to 3 times with exponential backoff to handle
+    // cold-start delays when RDS is waking up or network is initializing.
+    if (process.env.DATABASE_URL || process.env.DB_HOST) {
+      let dbConnected = false;
+      const DB_RETRY_ATTEMPTS = 3;
+      const DB_RETRY_BASE_MS = 2000;
+
+      for (let attempt = 1; attempt <= DB_RETRY_ATTEMPTS; attempt++) {
+        try {
+          if (await checkDatabaseConnection()) {
+            const { runMigrations } = await import('./config/migrate');
+            await runMigrations();
+            dbConnected = true;
+            break;
+          }
+        } catch (dbErr) {
+          if (attempt < DB_RETRY_ATTEMPTS) {
+            const delay = DB_RETRY_BASE_MS * Math.pow(2, attempt - 1);
+            logger.warn(`Database connection attempt ${attempt}/${DB_RETRY_ATTEMPTS} failed, retrying in ${delay}ms`, { error: String(dbErr) });
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            logger.warn(`Database connection failed after ${DB_RETRY_ATTEMPTS} attempts — continuing in S3-only mode`, { error: String(dbErr) });
+          }
+        }
       }
-    } catch (dbErr) {
-      logger.warn('Database migration check failed — continuing in S3-only mode', { error: String(dbErr) });
+
+      if (!dbConnected) {
+        logger.info('Database not reachable — running in S3-only mode');
+      }
+    } else {
+      logger.info('Database not configured — running in S3-only mode');
     }
 
     // Initialize auth (create default admin if needed)

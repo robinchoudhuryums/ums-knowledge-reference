@@ -206,8 +206,9 @@ function extractHtml(buffer: Buffer): ExtractedText {
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
     // Decode numeric entities (decimal and hex): &#160; &#x00A0;
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_m, dec) => String.fromCharCode(parseInt(dec, 10)))
+    // Use fromCodePoint (not fromCharCode) to handle supplementary plane characters (emoji, etc.)
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_m, dec) => String.fromCodePoint(parseInt(dec, 10)))
     // Strip any remaining named entities we didn't handle above
     .replace(/&[a-zA-Z]+;/g, ' ');
 

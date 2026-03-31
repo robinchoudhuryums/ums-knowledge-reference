@@ -62,7 +62,8 @@ router.post('/submit', authenticate, submitLimiter, async (req: AuthRequest, res
       });
 
       if (!emailResult.success) {
-        res.status(500).json({ error: `Email failed: ${emailResult.error}` });
+        logger.error('PAP account creation email failed', { error: emailResult.error });
+        res.status(500).json({ error: 'Failed to send email. Please try again.' });
         return;
       }
 

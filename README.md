@@ -126,7 +126,7 @@ docker run -p 3001:3001 --env-file backend/.env ums-knowledge
 ### Production Deployment (EC2)
 
 The app auto-deploys to EC2 via GitHub Actions when code is pushed to `main`:
-1. CI runs (lint, type-check, 533 tests)
+1. CI runs (lint, type-check, 705 tests)
 2. SSHes into EC2 → `git pull` → `docker build` → restart container
 3. Health check verification at `/api/health`
 
@@ -144,7 +144,7 @@ docker run -d --name ums-knowledge --restart unless-stopped --env-file ~/ums-kno
 # Type-check
 cd backend && npx tsc --noEmit
 
-# Run tests (533 tests across 40 test files)
+# Run tests (705 tests across 48 test files)
 cd backend && npm test
 
 # Lint
@@ -152,6 +152,9 @@ cd backend && npm run lint
 
 # Build frontend for production
 cd frontend && npm run build
+
+# Reset admin password (on EC2, loads production env vars)
+cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v '^#' | xargs) npx tsx src/scripts/reset-admin.ts
 ```
 
 ## AWS IAM Permissions

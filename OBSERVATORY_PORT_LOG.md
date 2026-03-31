@@ -26,6 +26,9 @@ Tracks improvements made in UMS Knowledge Reference that are candidates for port
 | Output guardrails (prompt leakage, role deviation) | 2026-03-28 | **Ported** | `ai-guardrails.ts`, not yet wired into call analysis output |
 | Frontend idle timeout (15min + 2min warning) | 2026-03-28 | **Ported** | `useIdleTimeout` hook + overlay component |
 | Embedding dimension validation | 2026-03-28 | **Ported** | Validates 1024-dim response from Titan |
+| Unicode normalization in injection detection | 2026-03-31 | **Pending** | Cyrillic look-alike character mapping before regex matching |
+| Conversation history injection validation | 2026-03-31 | **Pending** | User turns in history checked for injection before inclusion |
+| SSL cert validation default true | 2026-03-31 | N/A | Observatory uses managed DB with valid certs |
 
 ## RAG Quality
 
@@ -37,6 +40,10 @@ Tracks improvements made in UMS Knowledge Reference that are candidates for port
 | Medical-term-aware tokenizer | 2026-03-28 | **Ported** | Generalized: preserves ICD-10, CPT, CDT, HCPCS, 26 short clinical abbreviations |
 | Blended confidence scoring (60% top + 40% avg) | 2026-03-28 | **Ported** | `computeConfidence()` with 4 levels |
 | Conversation history validation (20 turns, 50K chars) | 2026-03-28 | **Ported** | `validateConversationHistory()` exported but not yet wired into call analysis |
+| IDF cache invalidation fix (version increment) | 2026-03-31 | **Pending** | `removeDocumentChunks` must increment idfVersion, not just null cache |
+| Minimum score threshold (0.1) | 2026-03-31 | **Pending** | Filter out noise results below relevance threshold |
+| Embedding cache key includes model ID | 2026-03-31 | **Pending** | Auto-invalidates cache on model change |
+| FormAnalyzer polling/pagination separation | 2026-03-31 | **Pending** | Prevents infinite loop from attempt-- on pagination |
 | NaN guards on combined retrieval scores | 2026-03-28 | **Ported** | Falls back to semantic-only score |
 | Prompt caching on Bedrock calls | 2026-03-28 | **Ported** | `cachePoint` on system prompt blocks, cache hit/miss logging |
 | Content-hash deduplication (rejects identical uploads) | 2026-03-28 | **Ported** | SHA256 hash check in onboarding.ts before createReferenceDocument |

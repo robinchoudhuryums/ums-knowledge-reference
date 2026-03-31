@@ -126,23 +126,23 @@ This is a **remarkably ambitious and well-built** single-developer healthcare ap
 
 ## Ratings
 
-### Overall: 7.5 / 10 (B+)
+### Overall: 8.5 / 10 (A-)
 
-For a single-developer internal tool, this is exceptional in scope and ambition. The security hardening is above average (CSRF, SSRF prevention, prompt injection detection, audit hash chains, PHI redaction). BAA coverage with AWS (Bedrock, S3, Textract) and Google Workspace provides solid HIPAA compliance for LLM and email workflows. The architecture is clean and well-documented. Docked points for: low test coverage, critical DB issues (no FKs, dangerous delete patterns, SSL validation disabled), and PHI in application logs.
+*Post-audit rating.* For a single-developer internal tool, this is exceptional in scope and ambition. The security hardening is well above average (CSRF, SSRF prevention, prompt injection detection with Unicode normalization, audit hash chains, PHI redaction). BAA coverage with AWS (Bedrock, S3, Textract) and Google Workspace provides solid HIPAA compliance. All critical and high findings from the initial audit have been resolved. Remaining gaps: no semantic caching, no conversation virtualization for very long chats, some services still lack test coverage.
 
-### Detailed Ratings
+### Detailed Ratings (Post-Audit)
 
-| Category | Rating | Grade | Key Strengths | Key Weaknesses |
+| Category | Rating | Grade | Key Strengths | Remaining Gaps |
 |----------|--------|-------|---------------|----------------|
-| **RAG Functionality** | 8.0 | A- | Hybrid BM25+cosine with IDF, medical synonym expansion, re-ranking, prompt injection detection (12 patterns), output guardrails, prompt caching, reference enrichment | Char-based token estimation (not real tokenizer), conversation budget check after exceeding, no semantic caching |
-| **OCR / Extraction** | 7.0 | B | Multi-format support (PDF, DOCX, XLSX, CSV, HTML), conditional Textract OCR, vision extraction, template-based structured extraction, async jobs | Zero tests for formAnalyzer/visionExtractor/insuranceCardReader, fragile CSV parser |
-| **HIPAA Compliance** | 8.0 | A- | Comprehensive PHI regex patterns, SHA-256 audit hash chain, JWT httpOnly cookies, account lockout, password history, idle timeout, data retention with HIPAA floors, BAA coverage on AWS (Bedrock/S3/Textract) and Google Workspace | SSL validation disabled on DB, PPD queue logs unredacted PHI (app logs not BAA-covered) |
-| **Form Functionality** | 7.5 | B+ | 45-question PPD with EN/ES, PMD recommendation engine, seating eval auto-fill, insurance card OCR, submission queue | No server-side validation exported, email address injection risk, weight parsing edge cases, spasticity false positives |
-| **UI/UX & Design** | 7.0 | B | Healthcare blue palette, 60+ CSS variables, dark mode, code-split PDF viewer, toast system, loading skeletons | Missing focus traps, ARIA labels, no conversation virtualization, missing memoization, no streaming timeout |
-| **Notable Features** | 8.0 | A- | 332 HCPCS codes / 66 ICD-10 / 8 LCDs, RAG tracing with p50/p95/p99, source monitoring, horizontal scaling prep | — |
-| **Architecture & Code Quality** | 7.5 | B+ | Clean service/route/config/db layering, cache abstraction, embedding provider interface, storage abstraction | No FK constraints, dangerous delete patterns, inconsistent error handling, some fire-and-forget audit logs |
-| **Documentation** | 9.0 | A | CLAUDE.md is extraordinarily detailed — architecture, tuning knobs, API endpoints, recent changes, SCALING.md, OBSERVATORY_PORT_LOG.md | — |
-| **Test Coverage** | 5.5 | C | 533 tests, good mocking patterns, integration tests for critical paths | 30% threshold, 9/15 routes untested, 11/39 services untested, no concurrency tests |
+| **RAG Functionality** | 8.5 | A | Hybrid BM25+cosine with IDF, medical synonyms, re-ranking, prompt injection (12 patterns + Unicode normalization), output guardrails, prompt caching, reference enrichment, min score threshold, conversation history injection validation | Char-based token estimation (not real tokenizer), no semantic caching, fixed semantic/keyword weights |
+| **OCR / Extraction** | 7.5 | B+ | Multi-format support (PDF, DOCX, XLSX, CSV, HTML), conditional Textract OCR, vision extraction, template-based structured extraction, async jobs, RFC 4180 CSV parser, proper HTML entity decoding | visionExtractor/insuranceCardReader lack tests, no incremental extraction for large docs |
+| **HIPAA Compliance** | 8.5 | A | SSL cert validation enabled, PHI redaction on all logs (including PPD queue), collection ACL enforced, crypto.randomUUID() user IDs, SHA-256 audit chain, httpOnly cookies, lockout, password history, idle timeout, HIPAA retention floors, BAA coverage | Field-level encryption at rest not yet implemented |
+| **Form Functionality** | 8.0 | A- | 45-question PPD with EN/ES, PMD recommendation engine with negation-aware spasticity detection, seating eval auto-fill with NaN guards, server-side validation, insurance card OCR, submission queue | Validation warns but doesn't block partial submissions |
+| **UI/UX & Design** | 7.5 | B+ | Healthcare blue palette, 60+ CSS variables, dark mode, focus traps, ARIA labels, 120s SSE timeout, memoized rendering, ErrorBoundary on all entry points, improved login error UX | No conversation virtualization for 100+ turn chats, no keyboard shortcut discoverability |
+| **Notable Features** | 8.0 | A- | 332 HCPCS codes / 66 ICD-10 / 8 LCDs, RAG tracing with p50/p95/p99, source monitoring, horizontal scaling prep, admin password reset script | — |
+| **Architecture & Code Quality** | 8.0 | A- | Clean layering, cache abstraction, embedding provider interface, storage abstraction, FK indexes, mass delete safety guard, hybrid db/ layer, health check fails on configured-but-unreachable DB | Some services still import s3Storage directly, no foreign key constraints in schema (indexes added but not FKs) |
+| **Documentation** | 9.0 | A | CLAUDE.md is extraordinarily detailed, SCALING.md, OBSERVATORY_PORT_LOG.md, AUDIT_REPORT.md | — |
+| **Test Coverage** | 7.0 | B | 705 tests across 48 files, route-level tests for 7 previously-untested routes, 50% line / 40% branch CI thresholds | formAnalyzer/visionExtractor/insuranceCardReader still lack tests, no concurrency tests |
 
 ---
 

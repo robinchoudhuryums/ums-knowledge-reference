@@ -65,12 +65,13 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `papAccountCreation.ts` — PAP/CPAP Account Creation form submission
 - **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `database.ts` (PostgreSQL connection pool with RDS SSL), `migrate.ts` (SQL migration runner), `formRules.ts` (CMN form type rules)
 - **Database layer** (`backend/src/db/`): Hybrid S3/RDS access layer. `index.ts` routes to PostgreSQL when DATABASE_URL is configured, falls back to S3 JSON. `users.ts` (user CRUD), `documents.ts` (document/collection CRUD with document count aggregation), `vectorStore.ts` (pgvector-backed similarity search with IVFFlat index).
-- **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index)
+- **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index), `003_add_fk_indexes.sql` (indexes on FK columns: usage_records, audit_logs, query_logs, feedback, jobs by user_id + partial index on documents where status='ready')
 - **Middleware** (`backend/src/middleware/`): `auth.ts` (JWT auth with role support, async lockout check in middleware, lockout cache for S3 outage resilience, revokeAllUserTokens on password reset)
 - **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `phiRedactor.ts` (PHI scrubbing with natural language DOB, MRN, SSN, phone, email, address, Medicare/Medicaid), `htmlEscape.ts` (HTML entity escaping for safe email template interpolation), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout), `metrics.ts` (in-memory request metrics with per-route latency percentiles)
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): 533 total tests across 40 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, and FAQ analytics.
+- **Tests** (`backend/src/__tests__/`): 705 total tests across 48 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
+- **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
@@ -133,6 +134,9 @@ cd frontend && npm run build                # Production build
 
 # Full build (Docker)
 docker build -t ums-knowledge .
+
+# Admin password reset (on EC2, loads production env vars)
+cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v '^#' | xargs) npx tsx src/scripts/reset-admin.ts [optional-password]
 ```
 
 ## Key Configuration
@@ -157,13 +161,22 @@ docker build -t ums-knowledge .
 - **Embedding batching**: `embeddings.ts` processes chunks in parallel batches of 20 via `Promise.all`
 - **Retry with exponential backoff**: Embedding calls retry up to 3x (1s, 2s, 4s delays)
 - **Model selection**: Haiku 4.5 for RAG (fast/cheap), Sonnet 4.6 for extraction (accurate)
-- **Input truncation**: 8K chars for embeddings, 80K for extraction, 2K for user queries
+- **Input truncation**: 8K chars for embeddings, 100K for extraction, 2K for user queries
 - **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
 
 ## Cross-Project Port Tracking
 When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to track which changes are candidates for porting to the multi-tenant [Observatory QA](https://github.com/robinchoudhuryums/observatory-qa) platform. The log tracks porting status (Ported/Pending/N/A) across security, RAG quality, compliance, and observability categories.
 
 ## Recent Changes (reverse chronological)
+- **Comprehensive codebase audit — 40 fixes + 172 new tests** (PR #52, 11 commits):
+  - **Test coverage**: 533 → 705 tests across 40 → 48 files. New route-level tests: documents (36), extraction (20), PPD (25), queryLog (15), coverage (11), HCPCS (10), ICD-10 (10), s3Storage (42). CI thresholds raised: 30% → 50% lines, new 40% branch threshold.
+  - **HIPAA**: SSL cert validation defaults to `rejectUnauthorized: true` (opt out via `DB_SSL_REJECT_UNAUTHORIZED=false`). PHI redaction on PPD queue logging. Collection ACL on `GET /documents/:id`. Predictable user IDs → `crypto.randomUUID()`. Bulk delete array mutation fix. Audit date range loop fix. Data retention treats invalid dates as expired.
+  - **UI/UX**: ARIA labels + `aria-pressed` on feedback buttons. Focus traps in SourceViewer/FeedbackForm modals. `role="dialog"` + `aria-modal`. 120s SSE streaming timeout. Event listener leak fix in useIdleTimeout. ErrorBoundary wraps LoginForm. Type-safe localStorage parsing. Memoized deduplicateSources. Login error UX improved with bold headers and lockout icon.
+  - **RAG**: IDF cache invalidation fix (idfVersion++). Minimum score threshold (0.1). Conversation history injection validation. Unicode normalization in prompt injection detection (Cyrillic look-alikes). Chunker forward-progress warning log. Embedding cache key includes model ID.
+  - **OCR/Extraction**: FormAnalyzer pagination infinite loop fix (separated polling from pagination, capped MAX_RESULT_PAGES=100). Extraction text limit 80K → 100K with truncation warning. CSV parser handles RFC 4180 escaped quotes. HTML entity decoding: hex entities, precise fallback.
+  - **Forms**: Spasticity detection negation check + expanded keywords. Server-side validation for Account Creation and PAP forms. Seating evaluation NaN guard on armStrength.
+  - **Architecture**: Mass delete safety guard in db/users.ts. Health check returns 503 when configured DB unreachable. orphanCleanup uses hybrid db/ layer. Migration 003: FK indexes + partial index.
+  - **Admin tooling**: Password reset script (`backend/src/scripts/reset-admin.ts`) for locked/lost admin credentials.
 - **Test coverage expansion** (10 new test files, 142 new tests): Added tests for htmlEscape, hcpcsLookup, icd10Mapping, pmdCatalog, coverageChecklists, formRules, accountCreation, papAccountCreation, referenceEnrichment, and faqAnalytics. Total: 391 → 533 tests across 30 → 40 test files.
 - **Security and DevOps hardening**: HTML escaping utility (`htmlEscape.ts`) applied to all email HTML builders (PPD, Account Creation, PAP) to prevent XSS. CRLF sanitization on email subjects. `requireAdmin` added to PPD status update endpoint (was missing authorization). JWT `jti` changed from predictable `user-id-timestamp` to `crypto.randomUUID()`. CORS origin validation prevents `*` with credentials. Rate limiting added to Account Creation and PAP submit endpoints (10/15min) and query endpoints (30/15min). Lockout timing removed from error messages. `.nvmrc` (Node 20), `.github/dependabot.yml` (weekly npm + GitHub Actions updates).
 - **UI/UX improvements**: Semantic CSS variable system with 30+ new tokens for status colors (success/error/warning/info) and confidence colors (high/partial/low) with proper dark mode variants. Replaced hard-coded hex colors across 15+ components. Toast notifications use Heroicons with semantic theming. ConfirmDialog supports Escape key dismiss and danger-variant auto-focus. DocumentSearch adds loading skeleton, search hint, and no-results empty state. ObservabilityDashboard period buttons unified to brand palette. PpdQueueViewer, InsuranceCardUpload, IntakeAutoFill, ChatInterface confidence badges, ErrorBoundary all converted to CSS variables.

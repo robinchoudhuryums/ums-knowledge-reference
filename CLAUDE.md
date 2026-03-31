@@ -181,6 +181,11 @@ When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to t
   - **Security**: ReactMarkdown `skipHtml` prevents raw HTML injection in chat responses
   - **Refactor**: Extracted shared `runQueryPipeline()` from streaming/non-streaming query endpoints (~100 lines deduplicated)
   - **Documentation**: Added `ROADMAP.md` with prioritized multi-sprint improvement plan, referenced from CLAUDE.md
+- **RAG quality improvements — 4 enhancements**:
+  - **Medical synonyms**: Expanded from 30 to 75+ synonym groups — added DME equipment (ventilator, commode, lift, TENS, trapeze, mattress, mask, tubing), clinical abbreviations (MS, SCI, TBI, ESRD, AFib, PE, RA, OA), and billing terms (denial, appeal, modifier, MBI, HICN, ADL, MRADL, DMRC, CBA, AOB, EOB)
+  - **Confidence scoring**: Added score-spread awareness (penalize single-result queries), confidence upgrade path (PARTIAL→HIGH when top retrieval score >0.65), and `computeEffectiveScore()` utility
+  - **Chunk deduplication**: Post-retrieval Jaccard similarity dedup (>80% token overlap = near-duplicate) removes redundant chunks from overlapping documents, freeing context window slots
+  - **Query routing**: `classifyQuery()` detects pure code/crosswalk/checklist lookups and serves structured data directly, skipping embedding + vector search + LLM generation (~2-4s savings, zero Bedrock cost for structured queries)
   - **Security**: Source monitor redirect targets now validated for SSRF (prevents redirect to internal IPs/metadata endpoints)
   - **Bug fix**: Data retention date validation prevents date rollover (Feb 31 → Mar 2 no longer silently deletes wrong files)
   - **Bug fix**: HTML entity decoding uses `String.fromCodePoint()` instead of `fromCharCode()` for full Unicode support (emoji, supplementary planes)

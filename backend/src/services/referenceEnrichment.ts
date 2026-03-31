@@ -45,6 +45,54 @@ const ICD10_KEYWORDS = [
  * Analyze a query and return structured reference data if applicable.
  * Returns an array of enrichment blocks to inject into the LLM context.
  */
+/**
+ * Classify whether a query can be fully answered from structured reference data
+ * without needing the full RAG pipeline (embedding → vector search → LLM).
+ *
+ * Returns 'structured' if the query is a pure code/crosswalk/checklist lookup,
+ * 'hybrid' if it benefits from both structured data and document context,
+ * or 'rag' if no structured data is relevant.
+ *
+ * Structured-only queries save ~2-4 seconds (no embedding, no vector search, no LLM call).
+ */
+export function classifyQuery(question: string): 'structured' | 'hybrid' | 'rag' {
+  const lower = question.toLowerCase();
+
+  // Detect explicit code references
+  const hasHcpcsCode = HCPCS_PATTERN.test(question);
+  HCPCS_PATTERN.lastIndex = 0; // reset regex state
+  const hasIcd10Code = ICD10_PATTERN.test(question);
+  ICD10_PATTERN.lastIndex = 0;
+  const hasCodeKeywords = HCPCS_KEYWORDS.some(kw => lower.includes(kw)) ||
+                          ICD10_KEYWORDS.some(kw => lower.includes(kw));
+  const hasCoverageKeywords = COVERAGE_KEYWORDS.some(kw => lower.includes(kw));
+
+  // Pure structured queries: asking specifically about a code, crosswalk, or checklist
+  // These are short factual lookups that don't need document context.
+  const structuredPatterns = [
+    /^what\s+(?:is|are)\s+(?:hcpcs|hcpc|code)\s/i,
+    /^(?:look\s*up|find|search|get)\s+(?:hcpcs|icd|code|diagnosis)/i,
+    /^what\s+(?:hcpcs|billing|procedure)\s+codes?\s/i,
+    /^what\s+(?:icd|diagnosis)\s+codes?\s/i,
+    /^(?:hcpcs|icd-?10?)\s+(?:code\s+)?[A-Z]\d{2}/i,
+    /^what\s+(?:are|is)\s+the\s+(?:coverage|documentation)\s+(?:criteria|requirements)\s+for\s+[A-Z]\d{4}/i,
+  ];
+
+  const isStructuredPattern = structuredPatterns.some(p => p.test(question));
+
+  if (isStructuredPattern && (hasHcpcsCode || hasIcd10Code || hasCodeKeywords)) {
+    return 'structured';
+  }
+
+  // Hybrid: has code references or coverage keywords, but also has contextual
+  // elements that might benefit from document search
+  if (hasHcpcsCode || hasIcd10Code || hasCodeKeywords || hasCoverageKeywords) {
+    return 'hybrid';
+  }
+
+  return 'rag';
+}
+
 export function enrichQueryWithStructuredData(question: string): EnrichmentResult[] {
   const results: EnrichmentResult[] = [];
   const questionLower = question.toLowerCase();

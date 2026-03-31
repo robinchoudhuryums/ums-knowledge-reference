@@ -11,7 +11,7 @@ import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-s
 import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
-import { enrichQueryWithStructuredData } from '../services/referenceEnrichment';
+import { enrichQueryWithStructuredData, classifyQuery } from '../services/referenceEnrichment';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -116,6 +116,8 @@ function buildSystemBlocks(): Array<{ type: 'text'; text: string; cache_control?
 // - Weak match: <0.40 (tangentially related content)
 const LOW_CONFIDENCE_THRESHOLD = 0.35;
 const PARTIAL_CONFIDENCE_THRESHOLD = 0.45;
+// If the top score is very high, the model's PARTIAL can be upgraded to HIGH
+const UPGRADE_TOP_SCORE_THRESHOLD = 0.65;
 
 /**
  * Summarize older conversation turns into a compact context string.
@@ -205,10 +207,32 @@ function buildSourceCitations(searchResults: SearchResult[]): SourceCitation[] {
 }
 
 /**
+ * Compute a blended effective score from retrieval metrics.
+ * Considers average score, top score, and score spread to produce a single
+ * quality signal. A tight cluster of mediocre scores is weaker than a spread
+ * with one strong match.
+ */
+function computeEffectiveScore(avgScore: number, topScore?: number, resultCount?: number): number {
+  const top = topScore ?? avgScore;
+  // Blend avg (60%) and top (40%) — a single strong match lifts confidence
+  let effective = avgScore * 0.6 + top * 0.4;
+
+  // Penalize when we got very few results — less evidence to draw from
+  if (resultCount !== undefined && resultCount <= 1 && effective > 0) {
+    effective *= 0.85;
+  }
+
+  return effective;
+}
+
+/**
  * Parse the confidence tag from the LLM response and strip it from the visible answer.
  * Falls back to score-based confidence if no tag is found.
- * When using score-based fallback, considers both the average score and the top score
- * to better reflect retrieval quality (a single strong match is still useful).
+ *
+ * Reconciliation logic:
+ * - Downgrades model HIGH→PARTIAL when retrieval scores are weak (prevents hallucination)
+ * - Downgrades model non-LOW→LOW when retrieval is very weak
+ * - Upgrades model PARTIAL→HIGH when top retrieval score is very strong (model may underestimate)
  */
 // If retrieval scores are below this threshold, the model's confidence tag
 // is downgraded even if it says HIGH. This prevents the model from being
@@ -218,37 +242,33 @@ const RECONCILIATION_FLOOR = 0.25;
 function parseConfidence(
   rawAnswer: string,
   avgScore: number,
-  topScore?: number
+  topScore?: number,
+  resultCount?: number
 ): { answer: string; confidence: 'high' | 'partial' | 'low' } {
+  const effectiveScore = computeEffectiveScore(avgScore, topScore, resultCount);
   const tagMatch = rawAnswer.match(/\[CONFIDENCE:\s*(HIGH|PARTIAL|LOW)\]\s*$/i);
 
   if (tagMatch) {
     let confidence = tagMatch[1].toLowerCase() as 'high' | 'partial' | 'low';
     const answer = rawAnswer.slice(0, tagMatch.index).trimEnd();
 
-    // Reconciliation: if retrieval scores are very low but the model says HIGH,
-    // the model may be hallucinating or over-extrapolating from weak context.
-    // Downgrade confidence to prevent misleading users.
-    const effectiveScore = topScore !== undefined
-      ? avgScore * 0.6 + topScore * 0.4
-      : avgScore;
-
+    // Reconciliation: downgrade if retrieval is weak
     if (confidence === 'high' && effectiveScore < RECONCILIATION_FLOOR) {
       confidence = 'partial';
     } else if (confidence !== 'low' && effectiveScore < RECONCILIATION_FLOOR * 0.5) {
       confidence = 'low';
     }
 
+    // Upgrade: if model says PARTIAL but retrieval is very strong, the model
+    // may be conservatively hedging. Upgrade to reflect strong source support.
+    if (confidence === 'partial' && (topScore ?? 0) >= UPGRADE_TOP_SCORE_THRESHOLD && avgScore >= PARTIAL_CONFIDENCE_THRESHOLD) {
+      confidence = 'high';
+    }
+
     return { answer, confidence };
   }
 
-  // Fallback: use retrieval scores with blended signal.
-  // Blend average and top score — a single strong match should lift confidence,
-  // but uniformly weak results should pull it down.
-  const effectiveScore = topScore !== undefined
-    ? avgScore * 0.6 + topScore * 0.4
-    : avgScore;
-
+  // Fallback: use retrieval scores when model didn't output a confidence tag
   let confidence: 'high' | 'partial' | 'low';
   if (effectiveScore >= PARTIAL_CONFIDENCE_THRESHOLD) confidence = 'high';
   else if (effectiveScore >= LOW_CONFIDENCE_THRESHOLD) confidence = 'partial';
@@ -411,6 +431,8 @@ interface PipelineResult {
   enrichments: Array<{ contextBlock: string; sourceLabel: string }>;
   context: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /** 'structured' = skip LLM, return enrichments directly; 'hybrid'/'rag' = normal flow */
+  queryRoute: 'structured' | 'hybrid' | 'rag';
 }
 
 async function runQueryPipeline(
@@ -453,6 +475,25 @@ async function runQueryPipeline(
       : allowedCollections;
   }
 
+  // Classify query: can it be answered from structured data alone?
+  const queryRoute = classifyQuery(question);
+  const enrichments = enrichQueryWithStructuredData(question);
+
+  // If the query is purely about structured data (code lookups, crosswalks, checklists)
+  // and we have enrichments to show, skip the expensive embedding + vector search + LLM pipeline.
+  // This saves ~2-4 seconds and avoids unnecessary Bedrock API costs.
+  if (queryRoute === 'structured' && enrichments.length > 0) {
+    logger.info('Query routed to structured-only path', { traceId, enrichmentCount: enrichments.length });
+    const context = buildContext([], enrichments);
+    const messages = buildMessages(question, context, conversationHistory);
+    return {
+      question, conversationHistory, collectionIds, effectiveCollectionIds,
+      traceId, pipelineStart, searchQuery: question, searchResults: [],
+      embeddingTimeMs: 0, retrievalTimeMs: 0, avgScore: 0, topScore: 0,
+      sources: [], enrichments, context, messages, queryRoute,
+    };
+  }
+
   const searchQuery = await reformulateQuery(question, conversationHistory);
 
   const embeddingStart = Date.now();
@@ -471,7 +512,6 @@ async function runQueryPipeline(
     : 0;
   const topScore = searchResults.length > 0 ? Math.max(...searchResults.map(r => r.score)) : 0;
   const sources = buildSourceCitations(searchResults);
-  const enrichments = enrichQueryWithStructuredData(question);
   const context = buildContext(searchResults, enrichments);
   const messages = buildMessages(question, context, conversationHistory);
 
@@ -479,7 +519,7 @@ async function runQueryPipeline(
     question, conversationHistory, collectionIds, effectiveCollectionIds,
     traceId, pipelineStart, searchQuery, searchResults,
     embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
-    sources, enrichments, context, messages,
+    sources, enrichments, context, messages, queryRoute,
   };
 }
 
@@ -493,8 +533,34 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       question, collectionIds, effectiveCollectionIds,
       traceId, pipelineStart, searchQuery, searchResults,
       embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
-      sources, messages,
+      sources, enrichments, messages, queryRoute,
     } = pipeline;
+
+    // Structured-only route: return enrichments directly without LLM call.
+    // Saves ~2-4s and avoids Bedrock API costs for pure code/checklist lookups.
+    if (queryRoute === 'structured' && enrichments.length > 0) {
+      const answer = enrichments.map(e => `**${e.sourceLabel}**\n${e.contextBlock}`).join('\n\n');
+      const responseTimeMs = Date.now() - pipelineStart;
+      const response: QueryResponse = { answer, sources: [], confidence: 'high', traceId };
+
+      await logAuditEvent(req.user!.id, req.user!.username, 'query', {
+        question: redactPhi(question).text, confidence: 'high', traceId,
+        queryRoute: 'structured', enrichmentCount: enrichments.length,
+      });
+      logRagTrace({
+        traceId, timestamp: new Date().toISOString(),
+        userId: req.user!.id, username: req.user!.username,
+        queryText: redactPhi(question).text,
+        retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
+        chunksPassedToModel: 0, modelId: 'structured-only',
+        responseText: answer, confidence: 'high',
+        responseTimeMs, embeddingTimeMs: 0, retrievalTimeMs: 0,
+        collectionIds, streamed: false,
+      }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
+
+      res.json(response);
+      return;
+    }
 
     if (searchResults.length === 0) {
       // Usage already recorded by checkAndRecordQuery above
@@ -550,7 +616,7 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
     const inputTokens = responseBody.usage?.input_tokens;
     const outputTokens = responseBody.usage?.output_tokens;
 
-    let { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore);
+    let { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore, searchResults.length);
 
     // Output-side guardrail: detect if the response shows signs of injection bypass
     const outputCheck = detectOutputAnomaly(answer);
@@ -629,7 +695,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       question, collectionIds, effectiveCollectionIds,
       traceId, pipelineStart, searchQuery, searchResults,
       embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
-      sources, messages,
+      sources, enrichments, messages, queryRoute,
     } = pipeline;
 
     // SSE headers
@@ -638,6 +704,33 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+
+    // Structured-only route: stream enrichments directly without LLM call
+    if (queryRoute === 'structured' && enrichments.length > 0) {
+      const answer = enrichments.map(e => `**${e.sourceLabel}**\n${e.contextBlock}`).join('\n\n');
+      res.write(`data: ${JSON.stringify({ type: 'sources', sources: [] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'text', text: answer })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'confidence', confidence: 'high' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+      res.end();
+
+      logAuditEvent(req.user!.id, req.user!.username, 'query', {
+        question: redactPhi(question).text, confidence: 'high', traceId,
+        queryRoute: 'structured', streamed: true,
+      }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
+      logRagTrace({
+        traceId, timestamp: new Date().toISOString(),
+        userId: req.user!.id, username: req.user!.username,
+        queryText: redactPhi(question).text,
+        retrievedChunkIds: [], retrievalScores: [], avgRetrievalScore: 0,
+        chunksPassedToModel: 0, modelId: 'structured-only',
+        responseText: answer, confidence: 'high',
+        responseTimeMs: Date.now() - pipelineStart, embeddingTimeMs: 0, retrievalTimeMs: 0,
+        collectionIds, streamed: true,
+      }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
+      return;
+    }
 
     // Send sources to client
     res.write(`data: ${JSON.stringify({ type: 'sources', sources })}\n\n`);
@@ -700,7 +793,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
     const generationTimeMs = Date.now() - generationStart;
 
     // Parse confidence from the completed answer
-    let { confidence } = parseConfidence(fullAnswer, avgScore, topScore);
+    let { confidence } = parseConfidence(fullAnswer, avgScore, topScore, searchResults.length);
 
     // Output-side guardrail for streaming: check completed answer for anomalies.
     // Since text was already streamed, we send a warning event so the frontend can
@@ -743,7 +836,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       traceId,
     }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
     // Log query for analytics / CSV export
-    const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore, topScore);
+    const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore, topScore, searchResults.length);
     logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(err => logger.warn('Async operation failed', { error: String(err) }));
     // Log RAG trace (fire and forget)
     // Redact query and reformulated query — may contain PHI from conversation context

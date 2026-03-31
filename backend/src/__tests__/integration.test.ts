@@ -136,7 +136,8 @@ vi.mock('../utils/malwareScan', () => ({
 
 // Mock reference enrichment — pass through
 vi.mock('../services/referenceEnrichment', () => ({
-  enrichQueryWithStructuredData: vi.fn(async () => ''),
+  enrichQueryWithStructuredData: vi.fn(() => []),
+  classifyQuery: vi.fn(() => 'rag'),
 }));
 
 // Mock PHI redactor — pass through

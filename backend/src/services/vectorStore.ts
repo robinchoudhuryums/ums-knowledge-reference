@@ -35,21 +35,47 @@ const MEDICAL_SYNONYMS: ReadonlyMap<string, readonly string[]> = new Map([
   ['oxygen', ['o2', 'supplemental oxygen']],
   ['concentrator', ['oxygen concentrator', 'poc', 'portable oxygen concentrator']],
   ['nebulizer', ['neb', 'aerosol therapy']],
-  ['catheter', ['cath', 'foley', 'intermittent catheter']],
+  ['catheter', ['cath', 'foley', 'intermittent catheter', 'straight cath']],
   ['hospital bed', ['semi-electric bed', 'full-electric bed']],
   ['walker', ['rollator', 'rolling walker']],
   ['scooter', ['pov', 'power operated vehicle', 'mobility scooter']],
   ['pmd', ['power mobility device', 'power wheelchair', 'power chair']],
+  ['ventilator', ['vent', 'mechanical ventilation', 'life support']],
+  ['suction', ['suction machine', 'aspirator']],
+  ['commode', ['bedside commode', 'bsc', '3-in-1 commode']],
+  ['lift', ['patient lift', 'hoyer lift', 'hoyer']],
+  ['tens', ['tens unit', 'transcutaneous electrical nerve stimulation']],
+  ['cane', ['quad cane', 'straight cane']],
+  ['crutches', ['forearm crutches', 'axillary crutches']],
+  ['trapeze', ['bed trapeze', 'overhead trapeze']],
+  ['mattress', ['pressure mattress', 'alternating pressure', 'overlay']],
+  ['mask', ['nasal mask', 'full face mask', 'nasal pillow']],
+  ['tubing', ['oxygen tubing', 'cpap tubing', 'circuit']],
+  ['humidifier', ['heated humidifier', 'hme']],
 
   // Clinical abbreviations
   ['copd', ['chronic obstructive pulmonary disease']],
-  ['chf', ['congestive heart failure']],
-  ['osa', ['obstructive sleep apnea']],
+  ['chf', ['congestive heart failure', 'heart failure']],
+  ['osa', ['obstructive sleep apnea', 'sleep apnea']],
   ['als', ['amyotrophic lateral sclerosis', 'lou gehrig']],
   ['cva', ['cerebrovascular accident', 'stroke']],
   ['dvt', ['deep vein thrombosis']],
   ['uti', ['urinary tract infection']],
   ['bmi', ['body mass index']],
+  ['ard', ['acute respiratory distress']],
+  ['ms', ['multiple sclerosis']],
+  ['sci', ['spinal cord injury']],
+  ['tbi', ['traumatic brain injury']],
+  ['esrd', ['end stage renal disease', 'dialysis']],
+  ['iddm', ['insulin dependent diabetes']],
+  ['niddm', ['non-insulin dependent diabetes']],
+  ['cab', ['coronary artery bypass']],
+  ['afib', ['atrial fibrillation', 'a-fib']],
+  ['pe', ['pulmonary embolism']],
+  ['ra', ['rheumatoid arthritis']],
+  ['oa', ['osteoarthritis']],
+
+  // DME industry / billing terms
   ['abn', ['advance beneficiary notice']],
   ['cmn', ['certificate of medical necessity']],
   ['lcd', ['local coverage determination']],
@@ -58,9 +84,21 @@ const MEDICAL_SYNONYMS: ReadonlyMap<string, readonly string[]> = new Map([
   ['snf', ['skilled nursing facility']],
   ['alf', ['assisted living facility']],
   ['f2f', ['face to face', 'face-to-face']],
-  ['spo2', ['oxygen saturation', 'pulse oximetry']],
+  ['spo2', ['oxygen saturation', 'pulse oximetry', 'pulse ox']],
   ['abg', ['arterial blood gas']],
-  ['pft', ['pulmonary function test']],
+  ['pft', ['pulmonary function test', 'spirometry']],
+  ['lmn', ['lifelong medical necessity']],
+  ['dmrc', ['dme regional carrier', 'dme mac']],
+  ['cba', ['competitive bidding area']],
+  ['aob', ['assignment of benefits']],
+  ['eob', ['explanation of benefits']],
+  ['par', ['participating provider']],
+  ['npi', ['national provider identifier']],
+  ['ptan', ['provider transaction access number']],
+  ['mbi', ['medicare beneficiary identifier']],
+  ['hicn', ['health insurance claim number']],
+  ['adl', ['activities of daily living']],
+  ['mradl', ['mobility related activities of daily living']],
 
   // Billing/insurance terms
   ['prior auth', ['prior authorization', 'pa']],
@@ -68,6 +106,9 @@ const MEDICAL_SYNONYMS: ReadonlyMap<string, readonly string[]> = new Map([
   ['deductible', ['ded']],
   ['coinsurance', ['coins']],
   ['allowable', ['allowed amount', 'fee schedule']],
+  ['denial', ['denied', 'claim denial', 'rejected']],
+  ['appeal', ['redetermination', 'reconsideration']],
+  ['modifier', ['hcpcs modifier', 'cpt modifier']],
 ]);
 
 // Build reverse lookup: for any synonym, find its group
@@ -324,6 +365,66 @@ export function reRankResults(
 }
 
 /**
+ * Deduplicate near-identical chunks in search results.
+ * When overlapping documents are uploaded, the same text can appear in multiple
+ * chunks across different documents. This wastes context window slots by sending
+ * redundant information to the LLM.
+ *
+ * Uses Jaccard similarity on token sets: if two chunks share >80% of their tokens,
+ * the lower-scored one is dropped. This is fast (O(n^2) on a small result set)
+ * and doesn't require pre-computed hashes.
+ */
+const DEDUP_JACCARD_THRESHOLD = 0.80;
+
+export function deduplicateResults(
+  results: Array<{ chunk: StoredChunk; document: Document; score: number }>
+): Array<{ chunk: StoredChunk; document: Document; score: number }> {
+  if (results.length <= 1) return results;
+
+  // Pre-tokenize all chunks
+  const tokenSets = results.map(r => new Set(tokenize(r.chunk.text)));
+
+  const kept: Array<{ chunk: StoredChunk; document: Document; score: number }> = [];
+  const dropped = new Set<number>();
+
+  for (let i = 0; i < results.length; i++) {
+    if (dropped.has(i)) continue;
+
+    kept.push(results[i]);
+
+    // Mark near-duplicates of this chunk for removal
+    for (let j = i + 1; j < results.length; j++) {
+      if (dropped.has(j)) continue;
+
+      const setA = tokenSets[i];
+      const setB = tokenSets[j];
+
+      // Jaccard similarity: |intersection| / |union|
+      let intersection = 0;
+      for (const token of setA) {
+        if (setB.has(token)) intersection++;
+      }
+      const union = setA.size + setB.size - intersection;
+      const jaccard = union > 0 ? intersection / union : 0;
+
+      if (jaccard >= DEDUP_JACCARD_THRESHOLD) {
+        dropped.add(j);
+      }
+    }
+  }
+
+  if (dropped.size > 0) {
+    logger.info('Deduplicated near-identical chunks from results', {
+      before: results.length,
+      after: kept.length,
+      dropped: dropped.size,
+    });
+  }
+
+  return kept;
+}
+
+/**
  * Initialize the vector store by loading from S3.
  * Uses a lock to prevent concurrent initialization from racing.
  */
@@ -562,8 +663,11 @@ export async function searchVectorStore(
   const MIN_SCORE_THRESHOLD = 0.1;
   const thresholded = reRanked.filter(r => r.score >= MIN_SCORE_THRESHOLD);
 
+  // Deduplicate near-identical chunks (from overlapping documents) before final selection
+  const deduped = deduplicateResults(thresholded);
+
   // Build final results with clean chunk objects
-  return thresholded.slice(0, topK).map(r => ({
+  return deduped.slice(0, topK).map(r => ({
     chunk: {
       id: r.chunk.id,
       documentId: r.chunk.documentId,

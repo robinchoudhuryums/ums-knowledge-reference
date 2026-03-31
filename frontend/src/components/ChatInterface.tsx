@@ -372,7 +372,7 @@ export function ChatInterface({ collections }: Props) {
               <div style={styles.userText}>{turn.content}</div>
             ) : (
               <div className="markdown-content" style={styles.markdownContent}>
-                <ReactMarkdown>{turn.content}</ReactMarkdown>
+                <ReactMarkdown skipHtml>{turn.content}</ReactMarkdown>
               </div>
             )}
             {turn.sources && turn.sources.length > 0 && (
@@ -426,7 +426,7 @@ export function ChatInterface({ collections }: Props) {
             </div>
             {streamingText ? (
               <div className="markdown-content" style={styles.markdownContent}>
-                <ReactMarkdown>{streamingText}</ReactMarkdown>
+                <ReactMarkdown skipHtml>{streamingText}</ReactMarkdown>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '4px 0' }}>

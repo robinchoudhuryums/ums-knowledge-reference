@@ -164,6 +164,9 @@ cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v 
 - **Input truncation**: 8K chars for embeddings, 100K for extraction, 2K for user queries
 - **Token right-sizing**: Max tokens set per task (150 reformulation, 4096 RAG, 8192 extraction)
 
+## Development Roadmap
+See `ROADMAP.md` for the full prioritized roadmap covering: code quality, RAG quality (medical embeddings, cross-encoder re-ranking, evaluation framework), HIPAA hardening (MFA, field-level encryption, audit immutability), scalability (Redis, HNSW, worker queues), UI/UX (mobile responsive, WCAG AA), and testing/observability.
+
 ## Cross-Project Port Tracking
 When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to track which changes are candidates for porting to the multi-tenant [Observatory QA](https://github.com/robinchoudhuryums/observatory-qa) platform. The log tracks porting status (Ported/Pending/N/A) across security, RAG quality, compliance, and observability categories.
 
@@ -175,6 +178,9 @@ When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to t
   - **Security**: Collection ACL enforced on document delete, version history, tags list, and text search endpoints (previously admin-only but no collection restriction)
   - **Security**: reset-admin.ts script respects `DB_SSL_REJECT_UNAUTHORIZED` env var (was hardcoded `false`)
   - **Security**: Email error messages no longer leaked to clients (account creation, PAP routes)
+  - **Security**: ReactMarkdown `skipHtml` prevents raw HTML injection in chat responses
+  - **Refactor**: Extracted shared `runQueryPipeline()` from streaming/non-streaming query endpoints (~100 lines deduplicated)
+  - **Documentation**: Added `ROADMAP.md` with prioritized multi-sprint improvement plan, referenced from CLAUDE.md
   - **Security**: Source monitor redirect targets now validated for SSRF (prevents redirect to internal IPs/metadata endpoints)
   - **Bug fix**: Data retention date validation prevents date rollover (Feb 31 → Mar 2 no longer silently deletes wrong files)
   - **Bug fix**: HTML entity decoding uses `String.fromCodePoint()` instead of `fromCharCode()` for full Unicode support (emoji, supplementary planes)

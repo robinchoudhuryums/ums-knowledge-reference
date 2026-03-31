@@ -42,6 +42,7 @@ export interface QueryResponse {
 }
 
 export interface ConversationTurn {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
   sources?: SourceCitation[];

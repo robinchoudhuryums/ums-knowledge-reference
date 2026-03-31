@@ -106,7 +106,7 @@ export function ChatInterface({ collections }: Props) {
 
     setQuestion('');
     setFailedQuery(null);
-    setConversation(prev => [...prev, { role: 'user', content: userMessage }]);
+    setConversation(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: userMessage }]);
     setLoading(true);
     setStreamingText('');
     setStreamingSources([]);
@@ -140,7 +140,7 @@ export function ChatInterface({ collections }: Props) {
               setStreamingTraceId(tid => {
                 setConversation(conv => [
                   ...conv,
-                  { role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined },
+                  { id: crypto.randomUUID(), role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined },
                 ]);
                 return null;
               });
@@ -157,7 +157,7 @@ export function ChatInterface({ collections }: Props) {
       (error) => {
         setConversation(prev => [
           ...prev,
-          { role: 'assistant', content: `Error: ${error}`, isError: true } as ConversationTurn,
+          { id: crypto.randomUUID(), role: 'assistant', content: `Error: ${error}`, isError: true },
         ]);
         setFailedQuery(userMessage);
         setStreamingText('');
@@ -289,7 +289,7 @@ export function ChatInterface({ collections }: Props) {
         )}
 
         {conversation.map((turn, i) => (
-          <div key={i} style={turn.role === 'user' ? styles.userMessage : styles.assistantMessage}>
+          <div key={turn.id} style={turn.role === 'user' ? styles.userMessage : styles.assistantMessage}>
             <div style={styles.messageHeader}>
               <span style={styles.messageLabel}>
                 {turn.role === 'user' ? 'You' : 'Knowledge Base'}

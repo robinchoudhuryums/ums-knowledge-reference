@@ -5,6 +5,7 @@ import { AuditLogEntry } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
+import { createMutex } from '../utils/asyncMutex';
 
 const GENESIS_HASH = 'GENESIS';
 
@@ -14,23 +15,7 @@ let chainInitialized = false;
 
 // Mutex to serialize audit writes and prevent concurrent entries from
 // reading the same lastEntryHash, which would break the hash chain.
-let auditMutexPromise: Promise<void> | null = null;
-
-async function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
-  while (auditMutexPromise) {
-    await auditMutexPromise;
-  }
-
-  let resolve: () => void;
-  auditMutexPromise = new Promise<void>(r => { resolve = r; });
-
-  try {
-    return await fn();
-  } finally {
-    auditMutexPromise = null;
-    resolve!();
-  }
-}
+const withAuditLock = createMutex();
 
 /**
  * Compute SHA-256 hash of a string.

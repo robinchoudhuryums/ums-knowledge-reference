@@ -440,7 +440,7 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
 
     const retrievalStart = Date.now();
     const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
-      topK: topK || 6,
+      topK: topK ?? 6,
       collectionIds: effectiveCollectionIds,
     });
     const retrievalTimeMs = Date.now() - retrievalStart;
@@ -634,7 +634,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
 
     const retrievalStart = Date.now();
     const searchResults = await searchVectorStore(queryEmbedding, searchQuery, {
-      topK: topK || 6,
+      topK: topK ?? 6,
       collectionIds: effectiveCollectionIds,
     });
     const retrievalTimeMs = Date.now() - retrievalStart;

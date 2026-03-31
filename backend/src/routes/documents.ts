@@ -185,6 +185,13 @@ router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: 
 
     const doc = docs[docIndex];
 
+    // Enforce collection-level ACL for restricted admins
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+    if (allowedCollections && !allowedCollections.includes(doc.collectionId)) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
     // Remove from vector store
     await removeDocumentChunks(doc.id);
 
@@ -346,6 +353,13 @@ router.get('/:id/versions', authenticate, async (req: AuthRequest, res: Response
       return;
     }
 
+    // Enforce collection-level ACL
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+    if (allowedCollections && !allowedCollections.includes(targetDoc.collectionId)) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
     // Find all versions of this document (same name + collection)
     const allVersions = docs
       .filter(d => d.originalName === targetDoc.originalName && d.collectionId === targetDoc.collectionId)
@@ -497,12 +511,15 @@ router.put('/:id/tags', authenticate, requireAdmin, async (req: AuthRequest, res
   }
 });
 
-// List all unique tags across all documents
-router.get('/tags/list', authenticate, async (_req: AuthRequest, res: Response) => {
+// List all unique tags across all documents (filtered by collection ACL)
+router.get('/tags/list', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const docs = await getDocumentsIndex();
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
     const tagSet = new Set<string>();
     for (const doc of docs) {
+      // Skip documents in collections the user can't access
+      if (allowedCollections && !allowedCollections.includes(doc.collectionId)) continue;
       if (doc.tags) doc.tags.forEach(t => tagSet.add(t));
     }
     res.json({ tags: Array.from(tagSet).sort() });
@@ -521,7 +538,19 @@ router.get('/search/text', authenticate, async (req: AuthRequest, res: Response)
       return;
     }
 
-    const collectionId = req.query.collectionId as string | undefined;
+    // Enforce collection-level ACL on text search
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+    let collectionId = req.query.collectionId as string | undefined;
+    if (collectionId && allowedCollections && !allowedCollections.includes(collectionId)) {
+      res.status(403).json({ error: 'Collection not accessible' });
+      return;
+    }
+    // If user has restrictions but didn't specify a collection, search only allowed ones
+    // (searchChunksByKeyword only takes a single collectionId, so pick the first one)
+    if (!collectionId && allowedCollections && allowedCollections.length > 0) {
+      collectionId = allowedCollections[0];
+    }
+
     const results = await searchChunksByKeyword(query.trim(), collectionId);
 
     res.json({ results });

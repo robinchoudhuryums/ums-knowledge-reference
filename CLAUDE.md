@@ -168,6 +168,14 @@ cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v 
 When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to track which changes are candidates for porting to the multi-tenant [Observatory QA](https://github.com/robinchoudhuryums/observatory-qa) platform. The log tracks porting status (Ported/Pending/N/A) across security, RAG quality, compliance, and observability categories.
 
 ## Recent Changes (reverse chronological)
+- **Codebase audit round 2 — bug fixes + quality improvements**:
+  - **Bug fix**: SPA fallback now returns JSON 404 for unmatched `/api/*` routes instead of serving `index.html`
+  - **Bug fix**: Document selection state (selectedIds) now resets when switching collections, preventing bulk operations on wrong documents
+  - **Bug fix**: Medical synonym self-reference removed (`hospital bed` no longer maps to itself)
+  - **Performance**: Health check endpoint uses top-level imports instead of dynamic `await import()` on every request
+  - **Type safety**: `ConversationTurn.isError` added to types (was used but not declared)
+  - **Accessibility**: PopoutButton aria-label added, ChangePasswordForm uses CSS variables instead of hardcoded hex colors for dark mode support
+  - **Documentation**: Updated AUDIT_REPORT.md with comprehensive ratings and improvement paths
 - **Comprehensive codebase audit — 40 fixes + 172 new tests** (PR #52, 11 commits):
   - **Test coverage**: 533 → 705 tests across 40 → 48 files. New route-level tests: documents (36), extraction (20), PPD (25), queryLog (15), coverage (11), HCPCS (10), ICD-10 (10), s3Storage (42). CI thresholds raised: 30% → 50% lines, new 40% branch threshold.
   - **HIPAA**: SSL cert validation defaults to `rejectUnauthorized: true` (opt out via `DB_SSL_REJECT_UNAUTHORIZED=false`). PHI redaction on PPD queue logging. Collection ACL on `GET /documents/:id`. Predictable user IDs → `crypto.randomUUID()`. Bulk delete array mutation fix. Audit date range loop fix. Data retention treats invalid dates as expired.

@@ -47,6 +47,7 @@ export interface ConversationTurn {
   sources?: SourceCitation[];
   confidence?: 'high' | 'partial' | 'low';
   traceId?: string;
+  isError?: boolean;
 }
 
 export interface FeedbackRequest {

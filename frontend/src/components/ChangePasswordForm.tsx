@@ -85,8 +85,8 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
                   { label: 'At least one number', met: /[0-9]/.test(newPassword) },
                 ].map(rule => (
                   <div key={rule.label} style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    <span style={{ color: rule.met ? '#16a34a' : '#dc2626' }}>{rule.met ? '\u2713' : '\u2717'}</span>
-                    <span style={{ color: rule.met ? '#16a34a' : '#dc2626' }}>{rule.label}</span>
+                    <span style={{ color: rule.met ? 'var(--ums-success-text)' : 'var(--ums-error-text)' }}>{rule.met ? '\u2713' : '\u2717'}</span>
+                    <span style={{ color: rule.met ? 'var(--ums-success-text)' : 'var(--ums-error-text)' }}>{rule.label}</span>
                   </div>
                 ))}
               </div>

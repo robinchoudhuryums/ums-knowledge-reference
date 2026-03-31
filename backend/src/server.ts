@@ -13,7 +13,9 @@ import { runWithCorrelationId } from './utils/correlationId';
 import { recordRequest, getMetricsSnapshot } from './utils/metrics';
 import { validateEnv } from './utils/envValidation';
 import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
-import { initializeVectorStore } from './services/vectorStore';
+import { initializeVectorStore, getVectorStoreStats } from './services/vectorStore';
+import { s3Client, S3_BUCKET } from './config/aws';
+import { checkDatabaseConnection } from './config/database';
 import { startReindexScheduler } from './services/reindexer';
 import { startFeeScheduleFetcher } from './services/feeScheduleFetcher';
 import { startSourceMonitor } from './services/sourceMonitor';
@@ -201,7 +203,6 @@ app.get('/api/health', async (_req, res) => {
   // S3 connectivity check (lightweight HeadBucket)
   try {
     const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
-    const { s3Client, S3_BUCKET } = await import('./config/aws');
     await s3Client.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
     checks.s3 = 'ok';
   } catch {
@@ -213,7 +214,6 @@ app.get('/api/health', async (_req, res) => {
   // Database is optional: when DATABASE_URL is not set, the app uses S3 JSON fallback.
   // Only mark unhealthy if database IS configured but unreachable (connection error).
   try {
-    const { checkDatabaseConnection } = await import('./config/database');
     const dbOk = await checkDatabaseConnection();
     if (dbOk) {
       checks.database = 'ok';
@@ -230,7 +230,6 @@ app.get('/api/health', async (_req, res) => {
   }
 
   // Vector store loaded check
-  const { getVectorStoreStats } = await import('./services/vectorStore');
   const vsStats = await getVectorStoreStats();
   checks.vectorStore = vsStats.lastUpdated ? 'ok' : 'error';
   if (checks.vectorStore === 'error') healthy = false;
@@ -303,7 +302,11 @@ if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.resolve(__dirname, '../../frontend/dist');
   app.use(express.static(frontendPath));
 
-  // SPA fallback: any non-API route serves index.html
+  // SPA fallback: any non-API route serves index.html.
+  // API routes that don't match any handler get a proper JSON 404 instead of index.html.
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  });
   app.get('*', (_req, res) => {
     res.sendFile(path.join(frontendPath, 'index.html'));
   });
@@ -328,7 +331,6 @@ async function start() {
 
     // Run database migrations if PostgreSQL is configured
     try {
-      const { checkDatabaseConnection } = await import('./config/database');
       if (await checkDatabaseConnection()) {
         const { runMigrations } = await import('./config/migrate');
         await runMigrations();

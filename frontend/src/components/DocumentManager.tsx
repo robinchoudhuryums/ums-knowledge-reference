@@ -78,8 +78,8 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     loadTags();
   }, [selectedCollection]);
 
-  // Reset page when collection or sort changes
-  useEffect(() => { setPage(1); }, [selectedCollection, sortField, sortDir, pageSize]);
+  // Reset page and selection when collection or sort changes
+  useEffect(() => { setPage(1); setSelectedIds(new Set()); }, [selectedCollection, sortField, sortDir, pageSize]);
 
   // Sorted + paginated documents
   const sortedDocuments = useMemo(() => {

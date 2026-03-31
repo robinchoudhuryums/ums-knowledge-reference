@@ -36,7 +36,7 @@ const MEDICAL_SYNONYMS: ReadonlyMap<string, readonly string[]> = new Map([
   ['concentrator', ['oxygen concentrator', 'poc', 'portable oxygen concentrator']],
   ['nebulizer', ['neb', 'aerosol therapy']],
   ['catheter', ['cath', 'foley', 'intermittent catheter']],
-  ['hospital bed', ['hospital bed', 'semi-electric bed', 'full-electric bed']],
+  ['hospital bed', ['semi-electric bed', 'full-electric bed']],
   ['walker', ['rollator', 'rolling walker']],
   ['scooter', ['pov', 'power operated vehicle', 'mobility scooter']],
   ['pmd', ['power mobility device', 'power wheelchair', 'power chair']],

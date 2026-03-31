@@ -75,9 +75,11 @@ const DATE_REGEX = /(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))/;
 function extractDateFromKey(key: string): string | null {
   const match = key.match(DATE_REGEX);
   if (!match) return null;
-  // Double-check that JavaScript can parse this as a valid date
+  // Double-check that JavaScript can parse this as a valid date.
+  // Also verify no date rollover occurred (e.g., Feb 31 → Mar 2).
   const d = new Date(match[1] + 'T00:00:00Z');
   if (isNaN(d.getTime())) return null;
+  if (d.toISOString().split('T')[0] !== match[1]) return null;
   return match[1];
 }
 

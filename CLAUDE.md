@@ -172,6 +172,9 @@ When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to t
   - **Bug fix**: SPA fallback now returns JSON 404 for unmatched `/api/*` routes instead of serving `index.html`
   - **Bug fix**: Document selection state (selectedIds) now resets when switching collections, preventing bulk operations on wrong documents
   - **Bug fix**: Medical synonym self-reference removed (`hospital bed` no longer maps to itself)
+  - **Security**: Source monitor redirect targets now validated for SSRF (prevents redirect to internal IPs/metadata endpoints)
+  - **Bug fix**: Data retention date validation prevents date rollover (Feb 31 → Mar 2 no longer silently deletes wrong files)
+  - **Bug fix**: HTML entity decoding uses `String.fromCodePoint()` instead of `fromCharCode()` for full Unicode support (emoji, supplementary planes)
   - **Performance**: Health check endpoint uses top-level imports instead of dynamic `await import()` on every request
   - **Type safety**: `ConversationTurn.isError` added to types (was used but not declared)
   - **Accessibility**: PopoutButton aria-label added, ChangePasswordForm uses CSS variables instead of hardcoded hex colors for dark mode support

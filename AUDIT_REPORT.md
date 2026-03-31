@@ -109,85 +109,100 @@ This is a **mature, well-architected** internal tool that covers an impressive b
 
 ### Critical / High Priority
 
-#### 1. SPA Fallback Serves HTML for Missing API Routes
-**File:** `backend/src/server.ts:307`
-**Issue:** `app.get('*')` doesn't exclude `/api/*` routes, so a 404 on an API endpoint serves `index.html` instead of JSON error.
-**Fix:** Add guard: `if (req.path.startsWith('/api/')) { res.status(404).json({ error: 'Not found' }); return; }`
+#### 1. SPA Fallback Serves HTML for Missing API Routes — **FIXED**
+**File:** `backend/src/server.ts:308-310`
+**Fix:** Added `app.all('/api/*')` handler before SPA fallback to return JSON 404 for unmatched API routes.
 
-#### 2. Health Check Uses Dynamic Imports on Every Request
-**File:** `backend/src/server.ts:203-233`
-**Issue:** `await import(...)` for HeadBucketCommand, s3Client, checkDatabaseConnection on every health check request. Should be imported at module level.
+#### 2. Health Check Uses Dynamic Imports on Every Request — **FIXED**
+**File:** `backend/src/server.ts:16-18`
+**Fix:** Moved s3Client, S3_BUCKET, checkDatabaseConnection, getVectorStoreStats to top-level imports.
 
-#### 3. ReactMarkdown XSS Surface
+#### 3. ReactMarkdown XSS Surface — **FIXED**
 **File:** `frontend/src/components/ChatInterface.tsx:375,429`
-**Issue:** Raw API response text rendered with ReactMarkdown without `skipHtml={true}` or disallowed elements.
-**Fix:** Add `<ReactMarkdown skipHtml={true}>` to prevent raw HTML rendering.
+**Fix:** Added `skipHtml` prop to both ReactMarkdown instances to prevent raw HTML injection.
 
-#### 4. Message List Key Anti-Pattern
+#### 4. Message List Key Anti-Pattern — **FIXED**
 **File:** `frontend/src/components/ChatInterface.tsx:291`
-**Issue:** Conversation array mapped with numeric index as key (`key={i}`). If messages are reordered/inserted, React will incorrectly recycle component state.
-**Fix:** Add `id` field to ConversationTurn and use as key.
+**Fix:** Added `id: string` to ConversationTurn type, generated via `crypto.randomUUID()`, used as React key.
 
-#### 5. Document Selection Not Reset on Collection Change
+#### 5. Document Selection Not Reset on Collection Change — **FIXED**
 **File:** `frontend/src/components/DocumentManager.tsx`
-**Issue:** When `selectedCollection` changes, `selectedIds` is not cleared. User can have IDs selected from the old collection, leading to bulk operations on wrong documents.
-**Fix:** Add `useEffect(() => setSelectedIds(new Set()), [selectedCollection])`.
+**Fix:** Added useEffect to reset selectedIds when selectedCollection changes.
 
-#### 6. Medical Synonym Self-Reference
+#### 6. Medical Synonym Self-Reference — **FIXED**
 **File:** `backend/src/services/vectorStore.ts:39`
-**Issue:** `'hospital bed'` maps to `['hospital bed', ...]` — the key is the same as the first synonym, creating a self-referential entry that wastes processing.
+**Fix:** Removed `'hospital bed'` from its own synonym list.
 
-### Medium Priority
+#### 7. Collection ACL Missing on 5 Endpoints — **FIXED**
+**Files:** `backend/src/routes/documents.ts` (delete, versions, tags/list, search/text)
+**Fix:** Added `getUserAllowedCollections()` checks to all affected endpoints.
 
-#### 7. Query Route Duplication
+#### 8. Source Monitor SSRF on Redirects — **FIXED**
+**File:** `backend/src/services/sourceMonitor.ts:185`
+**Fix:** Added `validateUrl()` call on redirect targets before following.
+
+#### 9. Data Retention Date Rollover — **FIXED**
+**File:** `backend/src/services/dataRetention.ts:80`
+**Fix:** Added rollover check (`d.toISOString().split('T')[0] !== match[1]`).
+
+#### 10. Unicode Entity Decoding — **FIXED**
+**File:** `backend/src/services/textExtractor.ts:209-210`
+**Fix:** Changed `String.fromCharCode()` to `String.fromCodePoint()` for full Unicode support.
+
+#### 11. reset-admin.ts SSL Validation — **FIXED**
+**File:** `backend/src/scripts/reset-admin.ts:43`
+**Fix:** Reads `DB_SSL_REJECT_UNAUTHORIZED` env var instead of hardcoding `false`.
+
+#### 12. Email Error Leak — **FIXED**
+**Files:** `backend/src/routes/accountCreation.ts:76`, `papAccountCreation.ts:65`
+**Fix:** Log errors server-side, return generic message to client.
+
+#### 13. Query Route Duplication — **FIXED**
 **File:** `backend/src/routes/query.ts`
-**Issue:** ~200 lines of near-identical code between streaming and non-streaming endpoints. Should extract shared pipeline logic.
+**Fix:** Extracted shared `runQueryPipeline()` (~100 lines deduplicated).
 
-#### 8. Repeated Mutex Pattern
-**Files:** `ingestion.ts`, `audit.ts`, `usage.ts`
-**Issue:** Nearly identical mutex lock implementations. Should extract shared `withMutex()` utility.
+#### 14. Repeated Mutex Pattern — **FIXED**
+**Files:** `ingestion.ts`, `audit.ts`
+**Fix:** Extracted shared `createMutex()` and `createOnceLock()` in `utils/asyncMutex.ts`.
 
-#### 9. Repeated Fire-and-Forget Pattern
-**Multiple files**
-**Issue:** `.catch(err => logger.warn('Fire-and-forget operation failed', { error: String(err) }))` repeated verbatim many times. Extract as utility.
+#### 15. topK Falsy Coalescing — **FIXED**
+**File:** `backend/src/routes/query.ts`
+**Fix:** Changed `topK || 6` to `topK ?? 6` to handle explicit `topK=0`.
 
-#### 10. IDF Rebuild is O(n) on Every Corpus Change
+### Remaining Medium Priority
+
+#### 16. IDF Rebuild is O(n) on Every Corpus Change
 **File:** `backend/src/services/vectorStore.ts`
 **Issue:** `buildIdfMap` iterates ALL chunks on every add/remove. For large corpora, consider incremental IDF updates.
 
-#### 11. Audit Log Retrieval is O(n) S3 GETs
+#### 17. Audit Log Retrieval is O(n) S3 GETs
 **File:** `backend/src/services/audit.ts:170-206`
 **Issue:** `getAuditLogs` fetches ALL individual S3 objects sequentially for a date. For high-volume days, very slow.
 
-#### 12. Frontend Token/CSRF Code Duplication
+#### 18. Frontend Token/CSRF Code Duplication
 **Files:** `api.ts`, `errorReporting.ts`
 **Issue:** `getLegacyToken()` and `getCsrfToken()` defined in both files. Extract to shared utility.
 
-#### 13. Focus Trap Duplication
+#### 19. Focus Trap Duplication
 **Files:** `FeedbackForm.tsx`, `SourceViewer.tsx`
 **Issue:** Nearly identical focus trap implementations. Extract to `useFocusTrap()` hook.
 
-#### 14. ChangePasswordForm Hardcoded Colors
+#### 20. ChangePasswordForm Hardcoded Colors
 **File:** `frontend/src/components/ChangePasswordForm.tsx:87-91`
 **Issue:** Password requirement validation uses hardcoded hex colors instead of CSS variables. Doesn't respect dark mode.
 
-#### 15. ConversationTurn Type Safety
-**File:** `frontend/src/components/ChatInterface.tsx:160`
-**Issue:** Adds `isError: true` property to ConversationTurn that doesn't exist in `types/index.ts`. Type-unsafe cast.
+#### 21. ConversationTurn Type Safety — **FIXED** (isError added to type, id field added)
 
 ### Low Priority
 
-#### 16. PopoutButton Missing aria-label
-**File:** `frontend/src/components/PopoutButton.tsx:22-27`
-
-#### 17. Clipboard API Error Not Handled
+#### 22. Clipboard API Error Not Handled
 **File:** `frontend/src/components/ChatInterface.tsx:344`
 
-#### 18. Silent Collection Load Failure
+#### 23. Silent Collection Load Failure
 **File:** `frontend/src/App.tsx:83-90`
 **Issue:** Error caught silently with no user feedback.
 
-#### 19. PHI Detection Uses window.confirm()
+#### 24. PHI Detection Uses window.confirm()
 **File:** `frontend/src/components/ChatInterface.tsx:100-104`
 **Issue:** Blocking `window.confirm()` should be replaced with modal dialog.
 

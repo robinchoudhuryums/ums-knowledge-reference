@@ -15,6 +15,7 @@ import bcrypt from 'bcryptjs';
 import { User } from '../types';
 import { getUsers as dbGetUsers, saveUsers as dbSaveUsers } from '../db';
 import { logger } from '../utils/logger';
+import { generateMfaSecret, verifyMfaCode } from '../services/mfa';
 
 // Re-export from sub-modules so existing callers don't break
 export {
@@ -123,7 +124,7 @@ export async function initializeAuth(): Promise<void> {
 // ─── Route Handlers ─────────────────────────────────────────────────────────
 
 export async function loginHandler(req: Request, res: Response): Promise<void> {
-  const { username, password } = req.body;
+  const { username, password, mfaCode } = req.body;
 
   if (!username || !password) {
     res.status(400).json({ error: 'Username and password are required' });
@@ -157,6 +158,25 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  // MFA check: if user has MFA enabled, require a valid TOTP code
+  if (user.mfaEnabled && user.mfaSecret) {
+    if (!mfaCode) {
+      // Password correct but MFA code not provided — tell frontend to prompt for it
+      res.status(200).json({ mfaRequired: true });
+      return;
+    }
+    if (!verifyMfaCode(user.mfaSecret, mfaCode)) {
+      // Invalid MFA code — count as a failed attempt
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+        user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
+      }
+      await saveUsers(users);
+      res.status(401).json({ error: 'Invalid MFA code' });
+      return;
+    }
+  }
+
   user.failedLoginAttempts = 0;
   user.lockedUntil = undefined;
   user.lastLogin = new Date().toISOString();
@@ -170,6 +190,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     token,
     user: { id: user.id, username: user.username, role: user.role },
     mustChangePassword: !!user.mustChangePassword,
+    mfaEnabled: !!user.mfaEnabled,
   });
 }
 
@@ -263,6 +284,104 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
   await saveUsers(users);
 
   res.status(201).json({ user: { id: newUser.id, username: newUser.username, role: newUser.role } });
+}
+
+// ─── MFA Handlers ───────────────────────────────────────────────────────────
+
+/**
+ * Start MFA setup — generates a secret and returns the otpauth URI.
+ * The secret is stored on the user but mfaEnabled remains false until verified.
+ */
+export async function mfaSetupHandler(req: AuthRequest, res: Response): Promise<void> {
+  const users = await getUsers();
+  const user = users.find(u => u.id === req.user!.id);
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  if (user.mfaEnabled) {
+    res.status(400).json({ error: 'MFA is already enabled. Disable it first to reconfigure.' });
+    return;
+  }
+
+  const { secret, uri } = generateMfaSecret(user.username);
+  user.mfaSecret = secret;
+  user.mfaEnabled = false; // Not enabled until verified
+  await saveUsers(users);
+
+  logger.info('MFA setup initiated', { userId: user.id });
+  res.json({ uri, secret });
+}
+
+/**
+ * Verify MFA setup — confirms the user's authenticator app is working
+ * by validating a TOTP code. Enables MFA on success.
+ */
+export async function mfaVerifyHandler(req: AuthRequest, res: Response): Promise<void> {
+  const { code } = req.body;
+  if (!code || typeof code !== 'string') {
+    res.status(400).json({ error: 'MFA code is required' });
+    return;
+  }
+
+  const users = await getUsers();
+  const user = users.find(u => u.id === req.user!.id);
+  if (!user || !user.mfaSecret) {
+    res.status(400).json({ error: 'MFA setup has not been initiated. Call /api/auth/mfa/setup first.' });
+    return;
+  }
+
+  if (user.mfaEnabled) {
+    res.status(400).json({ error: 'MFA is already enabled.' });
+    return;
+  }
+
+  if (!verifyMfaCode(user.mfaSecret, code)) {
+    res.status(400).json({ error: 'Invalid code. Make sure your authenticator app shows the correct code and try again.' });
+    return;
+  }
+
+  user.mfaEnabled = true;
+  await saveUsers(users);
+
+  logger.info('MFA enabled', { userId: user.id });
+  res.json({ message: 'MFA is now enabled. You will need your authenticator app for future logins.' });
+}
+
+/**
+ * Disable MFA for the current user. Requires the current password for security.
+ */
+export async function mfaDisableHandler(req: AuthRequest, res: Response): Promise<void> {
+  const { password } = req.body;
+  if (!password) {
+    res.status(400).json({ error: 'Password is required to disable MFA' });
+    return;
+  }
+
+  const users = await getUsers();
+  const user = users.find(u => u.id === req.user!.id);
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  if (!user.mfaEnabled) {
+    res.status(400).json({ error: 'MFA is not currently enabled.' });
+    return;
+  }
+
+  if (!(await bcrypt.compare(password, user.passwordHash))) {
+    res.status(401).json({ error: 'Incorrect password' });
+    return;
+  }
+
+  user.mfaSecret = undefined;
+  user.mfaEnabled = false;
+  await saveUsers(users);
+
+  logger.info('MFA disabled', { userId: user.id });
+  res.json({ message: 'MFA has been disabled.' });
 }
 
 // ─── Middleware ──────────────────────────────────────────────────────────────

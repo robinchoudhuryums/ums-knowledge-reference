@@ -73,10 +73,29 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 // Auth
-export async function login(username: string, password: string): Promise<{ token: string; user: User }> {
+export async function login(username: string, password: string, mfaCode?: string): Promise<{ token: string; user: User; mfaRequired?: boolean }> {
   return request('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, ...(mfaCode && { mfaCode }) }),
+  });
+}
+
+// MFA
+export async function mfaSetup(): Promise<{ uri: string; secret: string }> {
+  return request('/auth/mfa/setup', { method: 'POST' });
+}
+
+export async function mfaVerify(code: string): Promise<{ message: string }> {
+  return request('/auth/mfa/verify', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function mfaDisable(password: string): Promise<{ message: string }> {
+  return request('/auth/mfa/disable', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
   });
 }
 

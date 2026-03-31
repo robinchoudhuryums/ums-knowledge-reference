@@ -66,6 +66,7 @@ export interface User {
   id: string;
   username: string;
   role: 'admin' | 'user';
+  mfaEnabled?: boolean;
 }
 
 export interface AuthState {

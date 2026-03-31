@@ -70,7 +70,7 @@ function useDarkMode(): [boolean, () => void] {
 }
 
 export default function App() {
-  const { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged } = useAuth();
+  const { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged, mfaRequired, submitMfaCode } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [collections, setCollections] = useState<Collection[]>([]);
   const [isDark, toggleDark] = useDarkMode();
@@ -96,7 +96,7 @@ export default function App() {
   }, [isAuthenticated, loadCollections]);
 
   if (!isAuthenticated) {
-    return <ToastProvider><ErrorBoundary fallbackMessage="Login encountered an error. Please refresh the page."><LoginForm onLogin={login} /></ErrorBoundary></ToastProvider>;
+    return <ToastProvider><ErrorBoundary fallbackMessage="Login encountered an error. Please refresh the page."><LoginForm onLogin={login} mfaRequired={mfaRequired} onMfaSubmit={submitMfaCode} /></ErrorBoundary></ToastProvider>;
   }
 
   if (mustChangePassword) {

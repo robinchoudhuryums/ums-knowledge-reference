@@ -63,6 +63,10 @@ export interface User {
   lastLogin?: string;
   /** Collection IDs this user can access. Admins bypass this. Empty/undefined = all collections. */
   allowedCollections?: string[];
+  /** TOTP MFA secret (base32-encoded). Present when MFA is set up. */
+  mfaSecret?: string;
+  /** Whether MFA is fully enabled (secret set AND verified with a code). */
+  mfaEnabled?: boolean;
 }
 
 export interface SearchResult {

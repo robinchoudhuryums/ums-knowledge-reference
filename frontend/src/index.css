@@ -252,6 +252,37 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(27, 111, 201, 0.12);
 }
 
+/* Keyboard focus ring — only shows for keyboard navigation (not mouse clicks) */
+*:focus-visible {
+  outline: 2px solid var(--ums-brand-primary);
+  outline-offset: 2px;
+}
+
+/* Remove focus-visible outline from elements that have their own focus styling */
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: none;
+}
+
+/* Skip-to-content link — visually hidden until focused via keyboard */
+.skip-to-content {
+  position: fixed;
+  top: -100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  padding: 8px 24px;
+  background: var(--ums-brand-primary);
+  color: var(--ums-text-inverse);
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 0 0 8px 8px;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-to-content:focus {
+  top: 0;
+}
+
 /* Button hover effects */
 button:hover:not(:disabled) {
   filter: brightness(0.97);
@@ -334,24 +365,47 @@ tr:hover td {
   .doc-main {
     padding: 16px !important;
   }
+  /* Header: hide tab labels on tablet, show icons only */
+  header nav button span:not(.sr-only) {
+    display: none;
+  }
+  header nav button {
+    padding: 6px 10px !important;
+  }
+  /* Compact user badge */
+  .user-badge-name,
+  .user-badge-role {
+    display: none;
+  }
 }
 
 /* Responsive: mobile */
 @media (max-width: 640px) {
-  /* Header: wrap nav tabs */
+  /* Header: wrap nav tabs, stack logo above nav */
   header {
     flex-wrap: wrap;
     height: auto !important;
     padding: 8px 12px !important;
-    gap: 8px;
+    gap: 6px;
+  }
+  /* Let left/right sections wrap to full width */
+  header > div {
+    flex-wrap: wrap;
   }
   header nav {
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 2px;
+    order: 2;
+    width: 100%;
+    justify-content: center;
   }
   header nav button {
-    font-size: 12px !important;
-    padding: 5px 8px !important;
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+  }
+  /* Show tab labels on mobile since there's room when wrapped */
+  header nav button span:not(.sr-only) {
+    display: inline;
   }
   /* Admin dashboard */
   .admin-grid {
@@ -360,5 +414,9 @@ tr:hover td {
   /* Intake form grid */
   .intake-grid {
     grid-template-columns: 1fr !important;
+  }
+  /* Chat input area */
+  .chat-input-area {
+    padding: 8px !important;
   }
 }

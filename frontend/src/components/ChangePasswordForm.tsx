@@ -62,7 +62,7 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
               autoFocus
             />
             {touched.currentPassword && !currentPassword && (
-              <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>Current password is required</div>
+              <div style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Current password is required</div>
             )}
           </div>
           <div style={styles.field}>
@@ -103,7 +103,7 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
               required
             />
             {touched.confirmPassword && confirmPassword && newPassword !== confirmPassword && (
-              <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>Passwords do not match</div>
+              <div style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Passwords do not match</div>
             )}
           </div>
 
@@ -209,10 +209,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   error: {
     padding: '10px 14px',
-    background: '#FEF2F2',
-    border: '1px solid #FECACA',
+    background: 'var(--ums-error-light)',
+    border: '1px solid var(--ums-error-border)',
     borderRadius: '8px',
-    color: '#DC2626',
+    color: 'var(--ums-error-text)',
     fontSize: '13px',
   },
   button: {

@@ -4,6 +4,7 @@ import { ConversationTurn, SourceCitation, Collection } from '../types';
 import { queryKnowledgeBaseStream, submitTraceFeedback } from '../services/api';
 import { SourceViewer } from './SourceViewer';
 import { FeedbackForm } from './FeedbackForm';
+import { useConfirm } from './ConfirmDialog';
 
 interface Props {
   collections: Collection[];
@@ -38,6 +39,7 @@ function detectPotentialPhi(text: string): string[] {
 }
 
 export function ChatInterface({ collections }: Props) {
+  const { confirm } = useConfirm();
   const [conversation, setConversation] = useState<ConversationTurn[]>([]);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -97,10 +99,13 @@ export function ChatInterface({ collections }: Props) {
     // Warn user if their query appears to contain PHI
     const phiTypes = detectPotentialPhi(userMessage);
     if (phiTypes.length > 0) {
-      const proceed = window.confirm(
-        `Your query may contain sensitive information (${phiTypes.join(', ')}). ` +
-        `PHI should not be entered in the chat. Do you want to continue anyway?`
-      );
+      const proceed = await confirm({
+        title: 'Potential PHI Detected',
+        message: `Your query may contain sensitive information (${phiTypes.join(', ')}). PHI should not be entered in the chat. Do you want to continue anyway?`,
+        confirmLabel: 'Send Anyway',
+        cancelLabel: 'Edit Query',
+        variant: 'danger',
+      });
       if (!proceed) return;
     }
 
@@ -341,7 +346,7 @@ export function ChatInterface({ collections }: Props) {
               {turn.role === 'assistant' && (
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(turn.content);
+                    navigator.clipboard.writeText(turn.content).catch(() => {/* clipboard not available */});
                     setCopiedIndex(i);
                     setTimeout(() => setCopiedIndex(prev => prev === i ? null : prev), 2000);
                   }}

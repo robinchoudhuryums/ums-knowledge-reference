@@ -142,6 +142,7 @@ export default function App() {
     <ToastProvider>
     <ConfirmProvider>
     <div style={styles.app} className="hex-pattern">
+      <a href="#main-content" className="skip-to-content">Skip to main content</a>
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.logoGroup}>
@@ -208,7 +209,7 @@ export default function App() {
         <div style={styles.idleBlockerOverlay} aria-hidden="true" />
       )}
 
-      <main style={styles.main}>
+      <main id="main-content" style={styles.main}>
         <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
           {activeTab === 'chat' && <ChatInterface collections={collections} />}
           {activeTab === 'search' && <DocumentSearch collections={collections} />}

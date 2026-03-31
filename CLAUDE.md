@@ -192,6 +192,10 @@ When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to t
   - **Performance**: Health check endpoint uses top-level imports instead of dynamic `await import()` on every request
   - **Type safety**: `ConversationTurn.isError` added to types (was used but not declared)
   - **Accessibility**: PopoutButton aria-label added, ChangePasswordForm uses CSS variables instead of hardcoded hex colors for dark mode support
+  - **Accessibility**: Skip-to-content link for keyboard navigation, `focus-visible` styles on all interactive elements, `id="main-content"` landmark
+  - **Accessibility**: PHI detection uses async ConfirmDialog modal instead of blocking `window.confirm()`
+  - **Responsive**: Improved tablet breakpoint (icon-only tabs at ≤900px), mobile nav wraps to full width at ≤640px
+  - **UX**: Clipboard write error handled gracefully (no uncaught promise rejection)
   - **Documentation**: Updated AUDIT_REPORT.md with comprehensive ratings and improvement paths
 - **Comprehensive codebase audit — 40 fixes + 172 new tests** (PR #52, 11 commits):
   - **Test coverage**: 533 → 705 tests across 40 → 48 files. New route-level tests: documents (36), extraction (20), PPD (25), queryLog (15), coverage (11), HCPCS (10), ICD-10 (10), s3Storage (42). CI thresholds raised: 30% → 50% lines, new 40% branch threshold.

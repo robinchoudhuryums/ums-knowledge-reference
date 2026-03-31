@@ -148,11 +148,15 @@ export async function logAuditEvent(
   });
 }
 
+/** Concurrency limit for parallel S3 GETs during audit log retrieval */
+const AUDIT_FETCH_CONCURRENCY = 10;
+
 export async function getAuditLogs(date: string): Promise<AuditLogEntry[]> {
   const prefix = `${S3_PREFIXES.audit}${date}/`;
 
   try {
-    const entries: AuditLogEntry[] = [];
+    // Phase 1: List all keys (sequential pagination)
+    const keys: string[] = [];
     let continuationToken: string | undefined;
 
     do {
@@ -164,24 +168,39 @@ export async function getAuditLogs(date: string): Promise<AuditLogEntry[]> {
 
       if (listResult.Contents) {
         for (const obj of listResult.Contents) {
-          if (!obj.Key) continue;
-          try {
-            const getResult = await s3Client.send(new GetObjectCommand({
-              Bucket: S3_BUCKET,
-              Key: obj.Key,
-            }));
-            const body = await getResult.Body?.transformToString();
-            if (body) {
-              entries.push(JSON.parse(body));
-            }
-          } catch (readErr) {
-            logger.warn('Failed to read individual audit log entry', { key: obj.Key, error: String(readErr) });
-          }
+          if (obj.Key) keys.push(obj.Key);
         }
       }
 
       continuationToken = listResult.IsTruncated ? listResult.NextContinuationToken : undefined;
     } while (continuationToken);
+
+    if (keys.length === 0) return [];
+
+    // Phase 2: Fetch entries in parallel batches (much faster than sequential)
+    const entries: AuditLogEntry[] = [];
+
+    for (let i = 0; i < keys.length; i += AUDIT_FETCH_CONCURRENCY) {
+      const batch = keys.slice(i, i + AUDIT_FETCH_CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(async (key) => {
+          const getResult = await s3Client.send(new GetObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key,
+          }));
+          const body = await getResult.Body?.transformToString();
+          return body ? JSON.parse(body) as AuditLogEntry : null;
+        })
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          entries.push(result.value);
+        } else if (result.status === 'rejected') {
+          logger.warn('Failed to read audit log entry', { error: String(result.reason) });
+        }
+      }
+    }
 
     return entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   } catch (error) {

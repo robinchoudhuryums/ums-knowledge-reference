@@ -21,6 +21,13 @@ let currentIdfVersion = -1;
 // Used by BM25 for length normalization instead of a hardcoded constant.
 let cachedAvgDocLength = 0;
 
+// Incremental IDF support: maintain running doc-frequency counts and total tokens
+// so we can update IDF without scanning all chunks on every add/remove.
+// These are populated on initial build and updated incrementally thereafter.
+let docFreqCounts: Map<string, number> | null = null;
+let totalCorpusTokens = 0;
+let corpusChunkCount = 0;
+
 // ---------------------------------------------------------------------------
 // Medical synonym map for query expansion.
 // When a user searches for one form, we also match the other forms.
@@ -247,10 +254,16 @@ export function tokenize(text: string): string[] {
  * Build IDF (Inverse Document Frequency) map from the corpus.
  * IDF(term) = ln((N - df + 0.5) / (df + 0.5) + 1)
  * Also computes the average document (chunk) length in tokens for BM25 normalization.
+ * Populates the running docFreq counts for incremental updates.
  */
 export function buildIdfMap(chunks: StoredChunk[]): { idf: Map<string, number>; avgDocLength: number } {
   const N = chunks.length;
-  if (N === 0) return { idf: new Map(), avgDocLength: 0 };
+  if (N === 0) {
+    docFreqCounts = new Map();
+    totalCorpusTokens = 0;
+    corpusChunkCount = 0;
+    return { idf: new Map(), avgDocLength: 0 };
+  }
 
   const docFreq = new Map<string, number>();
   let totalTokens = 0;
@@ -264,12 +277,85 @@ export function buildIdfMap(chunks: StoredChunk[]): { idf: Map<string, number>; 
     }
   }
 
+  // Store running counts for incremental updates
+  docFreqCounts = docFreq;
+  totalCorpusTokens = totalTokens;
+  corpusChunkCount = N;
+
   const idf = new Map<string, number>();
   for (const [term, df] of docFreq) {
     idf.set(term, Math.log((N - df + 0.5) / (df + 0.5) + 1));
   }
 
   return { idf, avgDocLength: totalTokens / N };
+}
+
+/**
+ * Compute IDF values from the running docFreq counts.
+ * O(vocabulary) instead of O(chunks) — much faster after initial build.
+ */
+function recomputeIdfFromCounts(): Map<string, number> {
+  const idf = new Map<string, number>();
+  if (!docFreqCounts || corpusChunkCount === 0) return idf;
+  const N = corpusChunkCount;
+  for (const [term, df] of docFreqCounts) {
+    if (df > 0) {
+      idf.set(term, Math.log((N - df + 0.5) / (df + 0.5) + 1));
+    }
+  }
+  return idf;
+}
+
+/**
+ * Incrementally update IDF stats when chunks are added.
+ * Avoids scanning the entire corpus — only processes the new chunks.
+ */
+function incrementalIdfAdd(newChunks: StoredChunk[]): void {
+  if (!docFreqCounts) return; // No initial build yet — will do full build on first search
+
+  for (const chunk of newChunks) {
+    const terms = tokenize(chunk.text);
+    totalCorpusTokens += terms.length;
+    corpusChunkCount++;
+    const uniqueTerms = new Set(terms);
+    for (const term of uniqueTerms) {
+      docFreqCounts.set(term, (docFreqCounts.get(term) || 0) + 1);
+    }
+  }
+
+  // Recompute IDF from updated counts (O(vocabulary), not O(corpus))
+  idfCache = recomputeIdfFromCounts();
+  cachedAvgDocLength = corpusChunkCount > 0 ? totalCorpusTokens / corpusChunkCount : 0;
+  idfVersion++;
+  currentIdfVersion = idfVersion;
+}
+
+/**
+ * Incrementally update IDF stats when chunks are removed.
+ * Decrements doc-frequency counts for terms in removed chunks.
+ */
+function incrementalIdfRemove(removedChunks: StoredChunk[]): void {
+  if (!docFreqCounts) return;
+
+  for (const chunk of removedChunks) {
+    const terms = tokenize(chunk.text);
+    totalCorpusTokens -= terms.length;
+    corpusChunkCount--;
+    const uniqueTerms = new Set(terms);
+    for (const term of uniqueTerms) {
+      const current = docFreqCounts.get(term) || 0;
+      if (current <= 1) {
+        docFreqCounts.delete(term);
+      } else {
+        docFreqCounts.set(term, current - 1);
+      }
+    }
+  }
+
+  idfCache = recomputeIdfFromCounts();
+  cachedAvgDocLength = corpusChunkCount > 0 ? totalCorpusTokens / corpusChunkCount : 0;
+  idfVersion++;
+  currentIdfVersion = idfVersion;
 }
 
 function getIdfMap(chunks: StoredChunk[]): Map<string, number> {
@@ -514,8 +600,8 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
   cachedIndex!.embeddingModel = ep.modelId;
   cachedIndex!.embeddingDimensions = ep.dimensions;
 
-  // Invalidate IDF cache since corpus changed (bump version so next search rebuilds)
-  idfVersion++;
+  // Incrementally update IDF stats instead of full rebuild (O(new chunks) not O(corpus))
+  incrementalIdfAdd(storedChunks);
 
   await saveVectorIndex(cachedIndex!);
   logger.info('Chunks added to vector store', { addedCount: storedChunks.length, totalCount: cachedIndex!.chunks.length });
@@ -531,14 +617,15 @@ export async function removeDocumentChunks(documentId: string): Promise<void> {
 
   if (!cachedIndex) await initializeVectorStore();
 
-  const before = cachedIndex!.chunks.length;
+  // Collect removed chunks before filtering so we can update IDF incrementally
+  const removedChunks = cachedIndex!.chunks.filter(c => c.documentId === documentId);
   cachedIndex!.chunks = cachedIndex!.chunks.filter(c => c.documentId !== documentId);
-  const removed = before - cachedIndex!.chunks.length;
+  const removed = removedChunks.length;
 
-  // Invalidate IDF cache — must increment version (not just null) so concurrent
-  // requests with a stale currentIdfVersion will rebuild on next access
-  idfVersion++;
-  idfCache = null;
+  // Incrementally update IDF stats (O(removed chunks) not O(corpus))
+  if (removed > 0) {
+    incrementalIdfRemove(removedChunks);
+  }
 
   cachedIndex!.lastUpdated = new Date().toISOString();
   await saveVectorIndex(cachedIndex!);

@@ -125,6 +125,20 @@ export function getMetricsSnapshot(): {
     })
     .sort((a, b) => b.requests - a.requests);
 
+  // Database pool metrics (if pool is available)
+  let database: { totalConnections: number; idleConnections: number; waitingRequests: number } | undefined;
+  try {
+    const { getPool } = require('../config/database');
+    const pool = getPool();
+    database = {
+      totalConnections: pool.totalCount ?? 0,
+      idleConnections: pool.idleCount ?? 0,
+      waitingRequests: pool.waitingCount ?? 0,
+    };
+  } catch {
+    // Database not configured
+  }
+
   return {
     uptime: Math.round((Date.now() - startedAt) / 1000),
     windowSeconds,
@@ -137,5 +151,6 @@ export function getMetricsSnapshot(): {
       heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
       rssMB: Math.round(mem.rss / 1024 / 1024),
     },
+    ...(database && { database }),
   };
 }

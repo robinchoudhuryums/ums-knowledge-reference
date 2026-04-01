@@ -13,6 +13,22 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
+
+// Redis-backed rate limit store (shared across instances) when REDIS_URL is set
+let rateLimitStore: undefined | import('express-rate-limit').Store;
+if (process.env.REDIS_URL) {
+  try {
+    const { RedisStore } = require('rate-limit-redis');
+    const { getRedisClient } = require('./cache/redisCache');
+    const client = getRedisClient();
+    if (client) {
+      rateLimitStore = new RedisStore({ sendCommand: (...args: string[]) => client.call(...args) });
+      logger.info('[RateLimit] Using Redis store');
+    }
+  } catch {
+    logger.warn('[RateLimit] Redis store init failed, using in-memory');
+  }
+}
 import { runWithCorrelationId } from './utils/correlationId';
 import { recordRequest, getMetricsSnapshot } from './utils/metrics';
 import { validateEnv } from './utils/envValidation';
@@ -159,6 +175,7 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  ...(rateLimitStore && { store: rateLimitStore }),
 });
 
 const apiLimiter = rateLimit({
@@ -167,6 +184,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
+  ...(rateLimitStore && { store: rateLimitStore }),
 });
 
 // Per-user rate limiting — keyed by JWT user ID to prevent one user from exhausting
@@ -177,6 +195,7 @@ const perUserLimiter = rateLimit({
   message: { error: 'Too many requests from your account. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
+  ...(rateLimitStore && { store: rateLimitStore }),
   keyGenerator: (req) => {
     // Extract user ID from JWT cookie or Authorization header without full verification
     // (rate limiting runs before auth middleware, so we best-effort extract the key)

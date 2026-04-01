@@ -409,13 +409,14 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
     return;
   }
 
-  if ((decoded.jti && isTokenRevoked(decoded.jti)) || isUserRevoked(decoded.id)) {
-    res.status(401).json({ error: 'Token has been revoked' });
-    return;
-  }
-
-  // Async lockout check
+  // Async revocation + lockout check
   (async () => {
+    // Check server-side revocation (individual token or all tokens for user)
+    if ((decoded.jti && await isTokenRevoked(decoded.jti)) || await isUserRevoked(decoded.id)) {
+      res.status(401).json({ error: 'Token has been revoked' });
+      return;
+    }
+
     try {
       const users = await getUsers();
       updateLockoutCache(users);

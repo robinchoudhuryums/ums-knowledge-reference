@@ -1,38 +1,34 @@
 /**
  * JWT token management — creation, revocation, cookie handling.
  *
- * Server-side token revocation uses in-memory sets (acceptable for single-instance
- * deployments since JWTs are short-lived at 30min). For multi-instance deployments,
- * move to Redis.
+ * Token revocation uses the cache abstraction layer:
+ * - Single instance: in-memory sets (cleared on restart, acceptable for 30min JWTs)
+ * - Multi-instance: Redis sets (shared across instances via REDIS_URL)
  */
 
 import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
 import { JWT_SECRET, JWT_EXPIRY } from './authConfig';
+import { getSets } from '../cache';
 
 // Cookie name for httpOnly JWT token
 export const AUTH_COOKIE = 'ums_auth_token';
 
+const TOKEN_REVOCATION_TTL_MS = 35 * 60 * 1000; // 35 min (JWT expiry + buffer)
+
 // ─── Cookie Management ──────────────────────────────────────────────────────
 
-/**
- * Set the JWT token as an httpOnly cookie on the response.
- * This prevents XSS attacks from stealing the token via JavaScript.
- */
 export function setAuthCookie(res: Response, token: string): void {
   res.cookie(AUTH_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     path: '/',
-    maxAge: 30 * 60 * 1000, // 30 minutes (matches JWT expiry)
+    maxAge: 30 * 60 * 1000,
   });
 }
 
-/**
- * Clear the auth cookie on logout.
- */
 export function clearAuthCookie(res: Response): void {
   res.clearCookie(AUTH_COOKIE, {
     httpOnly: true,
@@ -53,28 +49,21 @@ export function verifyToken(token: string): { id: string; username: string; role
 }
 
 // ─── Token Revocation ───────────────────────────────────────────────────────
-// In-memory sets cleared on server restart (acceptable since JWTs are short-lived).
-
-const revokedTokens = new Set<string>();
-const revokedUserIds = new Set<string>();
+// Uses SetProvider — automatically backed by Redis when REDIS_URL is configured,
+// falls back to in-memory for single-instance deployments.
 
 export function revokeToken(jti: string): void {
-  revokedTokens.add(jti);
-  setTimeout(() => revokedTokens.delete(jti), 35 * 60 * 1000);
+  getSets().add('revoked-tokens', jti, TOKEN_REVOCATION_TTL_MS).catch(() => {});
 }
 
-/**
- * Revoke all tokens for a user (used after admin password reset).
- */
 export function revokeAllUserTokens(userId: string): void {
-  revokedUserIds.add(userId);
-  setTimeout(() => revokedUserIds.delete(userId), 35 * 60 * 1000);
+  getSets().add('revoked-users', userId, TOKEN_REVOCATION_TTL_MS).catch(() => {});
 }
 
-export function isTokenRevoked(jti: string): boolean {
-  return revokedTokens.has(jti);
+export async function isTokenRevoked(jti: string): Promise<boolean> {
+  return getSets().has('revoked-tokens', jti);
 }
 
-export function isUserRevoked(userId: string): boolean {
-  return revokedUserIds.has(userId);
+export async function isUserRevoked(userId: string): Promise<boolean> {
+  return getSets().has('revoked-users', userId);
 }

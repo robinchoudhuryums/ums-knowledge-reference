@@ -25,6 +25,13 @@ vi.mock('@aws-sdk/client-s3', () => ({
   S3Client: vi.fn(),
 }));
 
+// Mock database — audit chain DB coordination should fall back to in-process
+vi.mock('../config/database', () => ({
+  checkDatabaseConnection: vi.fn(async () => false),
+  getPool: vi.fn(() => null),
+  closeDatabasePool: vi.fn(async () => {}),
+}));
+
 vi.mock('../config/aws', () => ({
   s3Client: { send: (...args: unknown[]) => mockSend(...args) },
   S3_BUCKET: 'test-bucket',

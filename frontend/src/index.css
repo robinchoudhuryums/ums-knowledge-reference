@@ -15,6 +15,8 @@
   --ums-bg-hover: #F5F9FE;
   --ums-bg-active: rgba(27, 111, 201, 0.08);
   --ums-bg-input: #FFFFFF;
+  --ums-bg-glass: rgba(255, 255, 255, 0.75);
+  --ums-bg-glass-header: rgba(240, 247, 255, 0.85);
 
   /* Text */
   --ums-text-primary: #0D2137;
@@ -79,6 +81,8 @@
   --ums-bg-hover: #243242;
   --ums-bg-active: rgba(66, 165, 245, 0.12);
   --ums-bg-input: #1E2A3A;
+  --ums-bg-glass: rgba(26, 35, 50, 0.75);
+  --ums-bg-glass-header: rgba(30, 42, 58, 0.85);
 
   --ums-text-primary: #E8EFF5;
   --ums-text-secondary: #C8D6E0;

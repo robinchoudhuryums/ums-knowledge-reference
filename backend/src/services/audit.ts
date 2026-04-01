@@ -12,6 +12,7 @@ const GENESIS_HASH = 'GENESIS';
 // Module-level variable tracking the hash of the last written entry
 let lastEntryHash: string = GENESIS_HASH;
 let chainInitialized = false;
+// Database-backed chain is attempted automatically when PostgreSQL is available
 
 // Mutex to serialize audit writes and prevent concurrent entries from
 // reading the same lastEntryHash, which would break the hash chain.
@@ -93,22 +94,62 @@ async function recoverHashChain(): Promise<void> {
   }
 }
 
+/**
+ * Database-backed hash chain for multi-instance coordination.
+ * Uses PostgreSQL SELECT FOR UPDATE to atomically read and update the
+ * last hash, preventing concurrent instances from reading the same
+ * previousHash value. Falls back to in-process mutex when DB is unavailable.
+ */
+async function dbAtomicChainWrite(entry: AuditLogEntry): Promise<string> {
+  try {
+    const { checkDatabaseConnection } = await import('../config/database');
+    if (!(await checkDatabaseConnection())) throw new Error('DB not connected');
+
+    const { getPool } = await import('../config/database');
+    const pool = getPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Atomically read and lock the last hash row
+      const result = await client.query(
+        `SELECT value FROM audit_chain_state WHERE key = 'last_hash' FOR UPDATE`
+      );
+
+      const previousHash = result.rows.length > 0 ? result.rows[0].value : GENESIS_HASH;
+      entry.previousHash = previousHash;
+      entry.entryHash = computeEntryHash(entry);
+
+      // Update the stored hash atomically
+      await client.query(
+        `INSERT INTO audit_chain_state (key, value) VALUES ('last_hash', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        [entry.entryHash]
+      );
+
+      await client.query('COMMIT');
+      return entry.entryHash;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch {
+    // DB not available — fall back to in-process chain
+    return '';
+  }
+}
+
 export async function logAuditEvent(
   userId: string,
   username: string,
   action: AuditLogEntry['action'],
   details: Record<string, unknown>
 ): Promise<void> {
-  // Deep-redact PHI from all string values at any depth in the details payload.
-  // This catches nested objects like { userInfo: { name: "John Doe" } } and arrays
-  // like { documents: ["file with SSN 123-45-6789"] } that shallow redaction missed.
   const sanitizedDetails = deepRedactPhi(details) as Record<string, unknown>;
 
-  // Serialize audit writes under a mutex to ensure each entry's previousHash
-  // correctly references the preceding entry. Without this, concurrent writes
-  // would both read the same lastEntryHash, producing a broken chain.
   await withAuditLock(async () => {
-    // On first write after restart, recover the chain from S3
     await recoverHashChain();
 
     const entry: AuditLogEntry = {
@@ -121,10 +162,14 @@ export async function logAuditEvent(
       previousHash: lastEntryHash,
     };
 
-    // Compute and attach the entry's own hash (covers all fields except entryHash itself)
-    entry.entryHash = computeEntryHash(entry);
+    // Try database-backed atomic chain first (multi-instance safe)
+    const dbHash = await dbAtomicChainWrite(entry);
 
-    // Store audit logs by date for easy retrieval
+    if (!dbHash) {
+      // Fallback: in-process chain (single instance only)
+      entry.entryHash = computeEntryHash(entry);
+    }
+
     const date = new Date().toISOString().split('T')[0];
     const key = `${S3_PREFIXES.audit}${date}/${entry.id}.json`;
 
@@ -137,12 +182,9 @@ export async function logAuditEvent(
         ServerSideEncryption: 'AES256',
       }));
 
-      // Update the chain: next entry will reference this entry's hash
-      lastEntryHash = entry.entryHash;
-
+      lastEntryHash = entry.entryHash!;
       logger.info('Audit event logged', { action, userId, entryId: entry.id });
     } catch (error) {
-      // Audit logging should not break the main flow, but we log the failure
       logger.error('Failed to write audit log', { error: String(error), action, entryId: entry.id });
     }
   });

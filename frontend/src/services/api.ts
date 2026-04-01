@@ -19,7 +19,7 @@ function getLegacyToken(): string | null {
  * Read the CSRF token from the cookie set by the server.
  * The server sets this as a non-httpOnly cookie so JS can read it.
  */
-function getCsrfToken(): string | null {
+export function getCsrfToken(): string | null {
   const match = document.cookie.match(/(^|;\s*)csrf_token=([^;]*)/);
   return match ? decodeURIComponent(match[2]) : null;
 }

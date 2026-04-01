@@ -280,8 +280,12 @@ function parseConfidence(
 
 /**
  * Sanitize user input: trim whitespace, enforce max length, strip control characters.
+ * Max 2000 chars for the current question (queries should be concise).
+ * Conversation history turns have a separate 5000 char limit (assistant responses are longer).
  */
-function sanitizeInput(text: string, maxLength: number = 2000): string {
+const MAX_QUESTION_LENGTH = 2000;
+
+function sanitizeInput(text: string, maxLength: number = MAX_QUESTION_LENGTH): string {
   // Remove control characters except newlines and tabs
   return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim().slice(0, maxLength);
 }
@@ -291,7 +295,8 @@ function sanitizeInput(text: string, maxLength: number = 2000): string {
  * Returns true if the query contains suspicious patterns that attempt to
  * override system instructions or manipulate the LLM's behavior.
  */
-function detectPromptInjection(text: string): { detected: boolean; reason?: string } {
+/** @internal Exported for testing */
+export function detectPromptInjection(text: string): { detected: boolean; reason?: string } {
   // Normalize Unicode to NFC to prevent bypass via decomposed characters (e.g., Cyrillic 'і' for Latin 'i')
   // Also replace common look-alike Unicode characters with ASCII equivalents
   const normalized = text.normalize('NFC')
@@ -338,7 +343,8 @@ function detectPromptInjection(text: string): { detected: boolean; reason?: stri
  * instructions, reveals internal prompts, or deviates from the knowledge-base role,
  * we replace it with a safe fallback rather than forwarding to the user.
  */
-function detectOutputAnomaly(responseText: string): { anomaly: boolean; reason?: string } {
+/** @internal Exported for testing */
+export function detectOutputAnomaly(responseText: string): { anomaly: boolean; reason?: string } {
   const lower = responseText.toLowerCase();
 
   // Check if the model leaked/referenced the system prompt or its instructions
@@ -377,6 +383,7 @@ const OUTPUT_ANOMALY_REPLACEMENT =
  */
 const MAX_HISTORY_TURNS = 20;
 const MAX_HISTORY_CHARS = 50_000;
+const MAX_TURN_CHARS = 5_000;  // Per-turn limit (assistant responses can be long)
 
 function sanitizeConversationHistory(history?: ConversationTurn[]): ConversationTurn[] {
   if (!history || !Array.isArray(history)) return [];
@@ -392,7 +399,7 @@ function sanitizeConversationHistory(history?: ConversationTurn[]): Conversation
         (turn.role !== 'user' && turn.role !== 'assistant')) {
       continue; // Skip malformed turns
     }
-    const content = turn.content.slice(0, 5000); // Cap individual turn at 5K chars
+    const content = turn.content.slice(0, MAX_TURN_CHARS);
 
     // Check user turns in conversation history for injection attempts
     if (turn.role === 'user') {

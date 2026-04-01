@@ -306,15 +306,17 @@ export async function mfaSetupHandler(req: AuthRequest, res: Response): Promise<
     return;
   }
 
-  const { secret, uri } = generateMfaSecret(user.username);
-  user.mfaSecret = secret;
-  user.mfaEnabled = false; // Not enabled until verified
+  const { secret, uri, rawSecret } = generateMfaSecret(user.username);
+  user.mfaSecret = secret;  // Encrypted at rest (if FIELD_ENCRYPTION_KEY is set)
+  user.mfaEnabled = false;
   await saveUsers(users);
 
   logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_setup_initiated' })
     .catch(err => logger.warn('Audit log failed', { error: String(err) }));
   logger.info('MFA setup initiated', { userId: user.id });
-  res.json({ uri, secret });
+  // Return the raw (unencrypted) secret for the user to enter in their authenticator app.
+  // This is the only time the raw secret is exposed — it's stored encrypted.
+  res.json({ uri, secret: rawSecret });
 }
 
 /**

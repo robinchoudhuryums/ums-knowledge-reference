@@ -149,8 +149,8 @@ router.post('/:id/reset-password', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // Generate a random temporary password (16 chars, URL-safe)
-    const tempPassword = crypto.randomBytes(12).toString('base64url').slice(0, 16);
+    // Generate a random temporary password (20 chars, 128-bit entropy, URL-safe)
+    const tempPassword = crypto.randomBytes(16).toString('base64url').slice(0, 20);
 
     // Push current hash into password history before overwriting
     const history = user.passwordHistory || [];

@@ -13,6 +13,7 @@
  */
 
 import { TOTP, Secret } from 'otpauth';
+import { encryptField, decryptField } from '../utils/fieldEncryption';
 
 const ISSUER = 'UMS Knowledge Base';
 const ALGORITHM = 'SHA1';
@@ -23,7 +24,7 @@ const PERIOD = 30; // seconds
  * Generate a new TOTP secret for a user.
  * Returns the secret (base32) and the otpauth URI for QR code generation.
  */
-export function generateMfaSecret(username: string): { secret: string; uri: string } {
+export function generateMfaSecret(username: string): { secret: string; uri: string; rawSecret: string } {
   const secret = new Secret({ size: 20 }); // 160-bit secret
 
   const totp = new TOTP({
@@ -36,8 +37,12 @@ export function generateMfaSecret(username: string): { secret: string; uri: stri
   });
 
   return {
-    secret: secret.base32,
+    // Encrypt the secret before storage; the raw base32 is returned to the user
+    // for authenticator app setup, but stored encrypted in the database.
+    secret: encryptField(secret.base32),
     uri: totp.toString(),
+    // Raw secret for display to user (NOT stored — only shown once during setup)
+    rawSecret: secret.base32,
   };
 }
 
@@ -45,7 +50,10 @@ export function generateMfaSecret(username: string): { secret: string; uri: stri
  * Verify a TOTP code against a stored secret.
  * Allows a 1-period window (±30s) to account for clock drift.
  */
-export function verifyMfaCode(secret: string, code: string): boolean {
+export function verifyMfaCode(storedSecret: string, code: string): boolean {
+  // Decrypt the secret if it was encrypted at rest
+  const secret = decryptField(storedSecret);
+
   const totp = new TOTP({
     issuer: ISSUER,
     algorithm: ALGORITHM,

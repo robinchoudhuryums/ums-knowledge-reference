@@ -63,7 +63,20 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],  // React inline styles require unsafe-inline
+      imgSrc: ["'self'", 'data:', 'blob:'],     // data: for base64 images, blob: for PDF preview
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      connectSrc: ["'self'"],                    // API calls to same origin
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  } : false,
   crossOriginEmbedderPolicy: false,
 }));
 

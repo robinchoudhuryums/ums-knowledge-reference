@@ -19,8 +19,8 @@
   /* Text */
   --ums-text-primary: #0D2137;
   --ums-text-secondary: #1A2B3C;
-  --ums-text-muted: #5F7A8F;
-  --ums-text-placeholder: #9BB0C4;
+  --ums-text-muted: #4E6A7F;
+  --ums-text-placeholder: #708CA2;
   --ums-text-inverse: #FFFFFF;
 
   /* Brand / Accent */
@@ -82,8 +82,8 @@
 
   --ums-text-primary: #E8EFF5;
   --ums-text-secondary: #C8D6E0;
-  --ums-text-muted: #8BA3B8;
-  --ums-text-placeholder: #5C7A94;
+  --ums-text-muted: #9DB5C8;
+  --ums-text-placeholder: #6E8FA6;
   --ums-text-inverse: #0F1720;
 
   --ums-brand-primary: #42A5F5;

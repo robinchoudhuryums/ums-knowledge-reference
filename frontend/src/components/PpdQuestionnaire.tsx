@@ -63,7 +63,7 @@ const sty = {
   headerTitle: { margin: 0, fontSize: 20, fontWeight: 600 } as React.CSSProperties,
   patientInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: 280 } as React.CSSProperties,
   langToggle: { display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid #fff' } as React.CSSProperties,
-  progressRing: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '8px 0' } as React.CSSProperties,
+  progressRing: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '12px 18px', background: 'var(--ums-bg-glass)', backdropFilter: 'blur(12px)', borderRadius: 10, border: '1px solid var(--ums-border)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' } as React.CSSProperties,
   progressRingText: { fontSize: 13, color: 'var(--ums-text-muted)', fontWeight: 500 } as React.CSSProperties,
   section: { border: '1px solid var(--ums-border)', borderRadius: 10, marginBottom: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', transition: 'box-shadow 0.3s ease', background: 'var(--ums-bg-glass)', backdropFilter: 'blur(12px)' } as React.CSSProperties,
   sectionHeader: { background: 'var(--ums-bg-glass-header)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s', borderBottom: '1px solid var(--ums-border-light)' } as React.CSSProperties,
@@ -520,7 +520,7 @@ export function PpdQuestionnaire() {
       {/* Progress ring */}
       <div style={sty.progressRing}>
         <svg width="60" height="60" viewBox="0 0 60 60">
-          <circle cx="30" cy="30" r="25" fill="none" stroke="#e9ecef" strokeWidth="5" />
+          <circle cx="30" cy="30" r="25" fill="none" stroke="var(--ums-border)" strokeWidth="5" />
           <circle cx="30" cy="30" r="25" fill="none"
             stroke={progressPct < 25 ? '#dee2e6' : progressPct < 75 ? '#ffc107' : '#28a745'}
             strokeWidth="5" strokeLinecap="round"

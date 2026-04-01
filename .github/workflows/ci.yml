@@ -27,21 +27,22 @@ jobs:
         run: npm ci
 
       - name: Audit dependencies
-        # xlsx has known vulnerabilities with no fix (unmaintained package).
-        # We accept this risk: upload file validation mitigates it, and xlsx
-        # is only used for text extraction in a sandboxed ingestion pipeline.
+        # Accepted risks (no fix available from upstream):
+        # - xlsx: unmaintained, prototype pollution — mitigated by file validation in ingestion pipeline
+        # - @xmldom/xmldom: XML injection via CDATA — mitigated because mammoth only READS docx (no serialization)
         # All OTHER high-severity vulnerabilities will fail the build.
         run: |
           npm audit --audit-level=high 2>&1 || {
-            # Check if xlsx is the only remaining high vulnerability
+            ACCEPTED_PKGS="xlsx @xmldom/xmldom"
             VULN_PKGS=$(npm audit --json 2>/dev/null | node -e "
               const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
               const v=d.vulnerabilities||{};
-              const high=Object.entries(v).filter(([,i])=>i.severity==='high').map(([n])=>n);
-              console.log(high.filter(n=>n!=='xlsx').join(','));
+              const accepted=new Set('$ACCEPTED_PKGS'.split(' '));
+              const high=Object.entries(v).filter(([,i])=>i.severity==='high'||i.severity==='critical').map(([n])=>n);
+              console.log(high.filter(n=>!accepted.has(n)).join(','));
             " 2>/dev/null || echo "parse_error");
             if [ -z "$VULN_PKGS" ]; then
-              echo "::warning::Only xlsx vulnerability found (accepted risk) — continuing";
+              echo "::warning::Only accepted-risk vulnerabilities found — continuing";
             else
               echo "::error::High-severity vulnerabilities in: $VULN_PKGS";
               exit 1;

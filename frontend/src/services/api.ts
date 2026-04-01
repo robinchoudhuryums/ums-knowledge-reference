@@ -99,6 +99,66 @@ export async function mfaDisable(password: string): Promise<{ message: string }>
   });
 }
 
+// ─── User Management (Admin) ─────────────────────────────────────────────────
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  role: 'admin' | 'user';
+  createdAt: string;
+  lastLogin?: string;
+  mustChangePassword?: boolean;
+  failedLoginAttempts?: number;
+  lockedUntil?: string;
+  mfaEnabled?: boolean;
+  allowedCollections?: string[];
+}
+
+export async function listUsers(): Promise<{ users: AdminUser[] }> {
+  return request('/users');
+}
+
+export async function createUser(username: string, password: string, role: 'admin' | 'user'): Promise<{ user: AdminUser }> {
+  return request('/auth/users', {
+    method: 'POST',
+    body: JSON.stringify({ username, password, role }),
+  });
+}
+
+export async function updateUserRole(userId: string, role: 'admin' | 'user'): Promise<{ user: AdminUser }> {
+  return request(`/users/${userId}/role`, {
+    method: 'PUT',
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  return request(`/users/${userId}`, { method: 'DELETE' });
+}
+
+export async function resetUserPassword(userId: string): Promise<{ temporaryPassword: string; message: string }> {
+  return request(`/users/${userId}/reset-password`, { method: 'POST' });
+}
+
+export async function disableUserMfa(userId: string): Promise<{ message: string }> {
+  return request(`/users/${userId}/mfa`, { method: 'DELETE' });
+}
+
+// Forgot password
+export async function forgotPassword(username: string): Promise<{ message: string }> {
+  return request('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ username }),
+  });
+}
+
+export async function resetPasswordWithCode(username: string, code: string, newPassword: string): Promise<{ message: string }> {
+  return request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ username, code, newPassword }),
+  });
+}
+
 // Change password
 export async function changePassword(currentPassword: string, newPassword: string): Promise<{ token: string; user: User }> {
   return request('/auth/change-password', {

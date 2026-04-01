@@ -17,6 +17,7 @@ import { getUsers as dbGetUsers, saveUsers as dbSaveUsers } from '../db';
 import { logger } from '../utils/logger';
 import { generateMfaSecret, verifyMfaCode } from '../services/mfa';
 import { logAuditEvent } from '../services/audit';
+import { sendEmail, isEmailConfigured } from '../services/emailService';
 
 // Re-export from sub-modules so existing callers don't break
 export {
@@ -391,6 +392,140 @@ export async function mfaDisableHandler(req: AuthRequest, res: Response): Promis
     .catch(err => logger.warn('Audit log failed', { error: String(err) }));
   logger.info('MFA disabled', { userId: user.id });
   res.json({ message: 'MFA has been disabled.' });
+}
+
+// ─── Forgot Password ────────────────────────────────────────────────────────
+
+// In-memory store for password reset codes (code → { userId, expiresAt })
+// For multi-instance, move to Redis via the cache abstraction.
+const resetCodes = new Map<string, { userId: string; expiresAt: number }>();
+
+/**
+ * Request a password reset code sent via email.
+ * Requires the user's username and email to be configured on the account.
+ * Rate-limited by the login limiter to prevent abuse.
+ */
+export async function forgotPasswordHandler(req: Request, res: Response): Promise<void> {
+  const { username } = req.body;
+
+  if (!username) {
+    res.status(400).json({ error: 'Username is required' });
+    return;
+  }
+
+  // Always return success (don't reveal whether username exists)
+  const successMsg = 'If this account exists and has email configured, a reset code has been sent.';
+
+  if (!isEmailConfigured()) {
+    logger.warn('Forgot password requested but SMTP not configured');
+    res.json({ message: successMsg });
+    return;
+  }
+
+  const users = await getUsers();
+  const user = users.find(u => u.username === username);
+
+  if (!user) {
+    // Don't reveal that user doesn't exist — same response
+    res.json({ message: successMsg });
+    return;
+  }
+
+  // Generate a 6-digit numeric code (easy to type from email)
+  const code = crypto.randomInt(100000, 999999).toString();
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+
+  resetCodes.set(code, { userId: user.id, expiresAt });
+
+  // Clean up expired codes
+  for (const [key, val] of resetCodes) {
+    if (val.expiresAt < Date.now()) resetCodes.delete(key);
+  }
+
+  // Send email with reset code
+  // Use SMTP_FROM or SMTP_USER as the admin contact email
+  const adminEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  if (adminEmail) {
+    try {
+      await sendEmail({
+        to: adminEmail, // Send to admin since we don't store user emails
+        subject: `Password Reset Code for ${user.username}`,
+        html: `
+          <h2>Password Reset Request</h2>
+          <p>A password reset was requested for user: <strong>${user.username}</strong></p>
+          <p>Reset code: <strong style="font-size: 24px; letter-spacing: 4px;">${code}</strong></p>
+          <p>This code expires in 15 minutes.</p>
+          <p>If you did not request this, no action is needed.</p>
+        `,
+      });
+    } catch (err) {
+      logger.error('Failed to send password reset email', { error: String(err) });
+    }
+  }
+
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'password_reset_requested' })
+    .catch(err => logger.warn('Audit log failed', { error: String(err) }));
+
+  res.json({ message: successMsg });
+}
+
+/**
+ * Reset password using a reset code.
+ */
+export async function resetPasswordWithCodeHandler(req: Request, res: Response): Promise<void> {
+  const { username, code, newPassword } = req.body;
+
+  if (!username || !code || !newPassword) {
+    res.status(400).json({ error: 'Username, code, and new password are required' });
+    return;
+  }
+
+  const passwordError = validatePassword(newPassword);
+  if (passwordError) {
+    res.status(400).json({ error: passwordError });
+    return;
+  }
+
+  const entry = resetCodes.get(code);
+  if (!entry || entry.expiresAt < Date.now()) {
+    res.status(400).json({ error: 'Invalid or expired reset code' });
+    return;
+  }
+
+  const users = await getUsers();
+  const user = users.find(u => u.username === username && u.id === entry.userId);
+
+  if (!user) {
+    res.status(400).json({ error: 'Invalid or expired reset code' });
+    return;
+  }
+
+  // Consume the code (single use)
+  resetCodes.delete(code);
+
+  // Check password history
+  if (await isPasswordReused(newPassword, user)) {
+    res.status(400).json({
+      error: `Cannot reuse any of your last ${PASSWORD_HISTORY_SIZE} passwords.`,
+    });
+    return;
+  }
+
+  const history = user.passwordHistory || [];
+  history.unshift(user.passwordHash);
+  user.passwordHistory = history.slice(0, PASSWORD_HISTORY_SIZE);
+
+  user.passwordHash = await bcrypt.hash(newPassword, 12);
+  user.mustChangePassword = false;
+  user.failedLoginAttempts = 0;
+  user.lockedUntil = undefined;
+  await saveUsers(users);
+
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'password_reset_completed' })
+    .catch(err => logger.warn('Audit log failed', { error: String(err) }));
+
+  logger.info('Password reset via code', { userId: user.id, username: user.username });
+  res.json({ message: 'Password has been reset. You can now log in with your new password.' });
 }
 
 // ─── Middleware ──────────────────────────────────────────────────────────────

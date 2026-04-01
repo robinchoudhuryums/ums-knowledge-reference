@@ -711,7 +711,7 @@ export function PpdQuestionnaire() {
                 style={sty.copyBtn}
                 onClick={() => {
                   const w = window.open('', '_blank');
-                  if (w) { w.document.write(seatingEvalHtml); w.document.close(); w.print(); }
+                  if (w) { w.document.write(DOMPurify.sanitize(seatingEvalHtml)); w.document.close(); w.print(); }
                 }}
               >
                 {lang === 'en' ? 'Print' : 'Imprimir'}

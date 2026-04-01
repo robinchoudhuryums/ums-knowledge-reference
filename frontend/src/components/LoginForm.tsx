@@ -1,5 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { Brain } from 'lucide-react';
+import { forgotPassword, resetPasswordWithCode } from '../services/api';
 
 interface Props {
   onLogin: (username: string, password: string, mfaCode?: string) => Promise<void>;
@@ -15,11 +16,41 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
   const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  // Forgot password flow
+  const [forgotMode, setForgotMode] = useState<'off' | 'request' | 'code' | 'done'>('off');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+
+  const handleForgotRequest = async () => {
+    if (!username.trim()) { setError('Enter your username first'); return; }
+    setLoading(true); setError('');
+    try {
+      const result = await forgotPassword(username);
+      setForgotMessage(result.message);
+      setForgotMode('code');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Request failed'); }
+    finally { setLoading(false); }
+  };
+
+  const handleResetSubmit = async () => {
+    if (!resetCode || !newPassword) { setError('Code and new password are required'); return; }
+    setLoading(true); setError('');
+    try {
+      const result = await resetPasswordWithCode(username, resetCode, newPassword);
+      setForgotMessage(result.message);
+      setForgotMode('done');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Reset failed'); }
+    finally { setLoading(false); }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
+      if (forgotMode === 'request') { await handleForgotRequest(); return; }
+      if (forgotMode === 'code') { await handleResetSubmit(); return; }
       if (mfaRequired && onMfaSubmit) {
         await onMfaSubmit(mfaCode);
       } else {
@@ -38,10 +69,41 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
         <div style={styles.logoMark}><Brain size={28} /></div>
         <h1 style={styles.title}>UMS Knowledge Base</h1>
         <p style={styles.subtitle}>
-          {mfaRequired ? 'Enter the code from your authenticator app' : 'Sign in to access the knowledge base'}
+          {forgotMode === 'request' ? 'Enter your username to receive a reset code via email' :
+           forgotMode === 'code' ? 'Enter the reset code and your new password' :
+           forgotMode === 'done' ? 'Password reset complete' :
+           mfaRequired ? 'Enter the code from your authenticator app' :
+           'Sign in to access the knowledge base'}
         </p>
+        {forgotMessage && (
+          <div style={{ padding: '10px 14px', background: 'var(--ums-success-light)', color: 'var(--ums-success-text)', borderRadius: '10px', border: '1px solid var(--ums-success-border)', fontSize: '13px', marginBottom: '8px' }}>
+            {forgotMessage}
+          </div>
+        )}
         <form onSubmit={handleSubmit} style={styles.form}>
-          {!mfaRequired ? (
+          {forgotMode === 'done' ? (
+            <button type="button" onClick={() => { setForgotMode('off'); setForgotMessage(''); setError(''); }} style={styles.button}>
+              Back to Sign In
+            </button>
+          ) : forgotMode === 'request' ? (
+            <>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Username</label>
+                <input type="text" placeholder="Enter your username" value={username} onChange={e => setUsername(e.target.value)} style={styles.input} required />
+              </div>
+            </>
+          ) : forgotMode === 'code' ? (
+            <>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Reset Code</label>
+                <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder="6-digit code from email" value={resetCode} onChange={e => setResetCode(e.target.value.replace(/\D/g, ''))} style={{ ...styles.input, textAlign: 'center', fontSize: '20px', letterSpacing: '6px', fontWeight: 600 }} autoFocus required />
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>New Password</label>
+                <input type="password" placeholder="Min 8 chars, upper+lower+number" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={styles.input} required />
+              </div>
+            </>
+          ) : !mfaRequired ? (
             <>
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Username</label>
@@ -100,8 +162,21 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
             </div>
           )}
           <button type="submit" disabled={loading} style={styles.button}>
-            {loading ? 'Verifying...' : mfaRequired ? 'Verify Code' : 'Sign In'}
+            {loading ? 'Verifying...' :
+             forgotMode === 'request' ? 'Send Reset Code' :
+             forgotMode === 'code' ? 'Reset Password' :
+             mfaRequired ? 'Verify Code' : 'Sign In'}
           </button>
+          {forgotMode === 'off' && !mfaRequired && (
+            <button type="button" onClick={() => { setForgotMode('request'); setError(''); setForgotMessage(''); }} style={styles.forgotLink}>
+              Forgot Password?
+            </button>
+          )}
+          {(forgotMode === 'request' || forgotMode === 'code') && (
+            <button type="button" onClick={() => { setForgotMode('off'); setError(''); setForgotMessage(''); setResetCode(''); setNewPassword(''); }} style={styles.forgotLink}>
+              Back to Sign In
+            </button>
+          )}
         </form>
       </div>
     </div>
@@ -200,5 +275,15 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '10px',
     border: '1px solid var(--ums-error-border)',
     lineHeight: '1.4',
+  },
+  forgotLink: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--ums-brand-text)',
+    fontSize: '13px',
+    cursor: 'pointer',
+    textAlign: 'center' as const,
+    padding: '4px',
+    width: '100%',
   },
 };

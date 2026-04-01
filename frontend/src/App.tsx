@@ -12,6 +12,7 @@ import { ChangePasswordForm } from './components/ChangePasswordForm';
 import { FormsTab } from './components/FormsTab';
 import { ToolsTab } from './components/ToolsTab';
 import { DocumentsTab } from './components/DocumentsTab';
+import { UserManagement } from './components/UserManagement';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/ConfirmDialog';
@@ -227,6 +228,9 @@ export default function App() {
                 </div>
                 <div style={styles.adminSection}>
                   <QueryLogViewer />
+                </div>
+                <div style={styles.adminSection}>
+                  <UserManagement />
                 </div>
               </div>
             </div>

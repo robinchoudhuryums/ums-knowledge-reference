@@ -107,6 +107,7 @@ const styles = {
     gap: 0,
     borderBottom: '2px solid var(--ums-border)',
     flexShrink: 0,
+    background: 'var(--ums-bg-surface)',
   } as React.CSSProperties,
   subTab: {
     padding: '10px 20px',

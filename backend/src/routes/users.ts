@@ -271,4 +271,48 @@ router.delete('/:id/mfa', async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * PUT /api/users/:id/email — Set a user's email address (admin only).
+ * Used for enabling direct password reset email delivery.
+ */
+router.put('/:id/email', async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { email } = req.body;
+
+    if (email !== undefined && email !== null && typeof email !== 'string') {
+      res.status(400).json({ error: 'email must be a string or null' });
+      return;
+    }
+
+    // Basic email format validation
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      res.status(400).json({ error: 'Invalid email format' });
+      return;
+    }
+
+    const users = await getUsers();
+    const user = users.find(u => u.id === id);
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    user.email = email || undefined;
+    await saveUsers(users);
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'user_update', {
+      targetUserId: id,
+      targetUsername: user.username,
+      action: 'email_updated',
+    });
+
+    res.json({ user: { id: user.id, username: user.username, email: user.email || null } });
+  } catch (error) {
+    logger.error('Failed to update user email', { error: String(error) });
+    res.status(500).json({ error: 'Failed to update email' });
+  }
+});
+
 export default router;

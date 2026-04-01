@@ -82,7 +82,7 @@ const sty = {
   recHeading: { fontSize: 17, fontWeight: 700, color: '#fff', padding: '10px 16px', borderRadius: 8, marginBottom: 14 } as React.CSSProperties,
   recHeadingComplex: { background: 'linear-gradient(135deg, #b71c1c, #d32f2f)' } as React.CSSProperties,
   recHeadingStandard: { background: 'linear-gradient(135deg, #1565c0, #1976d2)' } as React.CSSProperties,
-  recCard: { border: '1px solid var(--ums-border)', borderRadius: 10, padding: 16, marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' as const, transition: 'box-shadow 0.2s, transform 0.2s', cursor: 'default' } as React.CSSProperties,
+  recCard: { border: '1px solid var(--ums-border)', borderRadius: 10, padding: 16, marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' as const, transition: 'box-shadow 0.2s, transform 0.2s', cursor: 'default', background: 'var(--ums-bg-surface)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' } as React.CSSProperties,
   recImage: { width: 150, height: 150, objectFit: 'contain' as const, borderRadius: 8, border: '1px solid var(--ums-border)', flexShrink: 0, background: 'var(--ums-bg-surface-alt)' } as React.CSSProperties,
   recBody: { flex: 1, minWidth: 200 } as React.CSSProperties,
   recHcpcs: { fontSize: 16, fontWeight: 700, color: 'var(--ums-brand-primary)', textDecoration: 'none' } as React.CSSProperties,
@@ -406,7 +406,12 @@ export function PpdQuestionnaire() {
     return (
       <div key={key} className="ppd-rec-card" style={sty.recCard}>
         {product.imageUrl && (
-          <img src={product.imageUrl} alt={product.hcpcsCode} style={sty.recImage} />
+          <img
+            src={product.imageUrl}
+            alt={product.hcpcsCode}
+            style={sty.recImage}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
         )}
         <div style={sty.recBody}>
           {product.brochureUrl ? (

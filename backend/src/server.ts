@@ -68,7 +68,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],  // React inline styles require unsafe-inline
-      imgSrc: ["'self'", 'data:', 'blob:'],     // data: for base64 images, blob: for PDF preview
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://cdn.jsdelivr.net'],     // data: for base64, blob: for PDF, jsdelivr for product images
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       connectSrc: ["'self'"],                    // API calls to same origin
       frameSrc: ["'none'"],
@@ -291,8 +291,12 @@ app.post('/api/auth/users', authenticate, requireAdmin, (req, res) => createUser
 app.post('/api/auth/change-password', authenticate, (req, res) => changePasswordHandler(req as AuthRequest, res));
 app.post('/api/auth/logout', authenticate, (req, res) => logoutHandler(req as AuthRequest, res));
 
+// Forgot password routes (unauthenticated, rate-limited)
+import { forgotPasswordHandler, resetPasswordWithCodeHandler, mfaSetupHandler, mfaVerifyHandler, mfaDisableHandler } from './middleware/auth';
+app.post('/api/auth/forgot-password', loginLimiter, forgotPasswordHandler);
+app.post('/api/auth/reset-password', loginLimiter, resetPasswordWithCodeHandler);
+
 // MFA routes
-import { mfaSetupHandler, mfaVerifyHandler, mfaDisableHandler } from './middleware/auth';
 app.post('/api/auth/mfa/setup', authenticate, (req, res) => mfaSetupHandler(req as AuthRequest, res));
 app.post('/api/auth/mfa/verify', authenticate, (req, res) => mfaVerifyHandler(req as AuthRequest, res));
 app.post('/api/auth/mfa/disable', authenticate, (req, res) => mfaDisableHandler(req as AuthRequest, res));

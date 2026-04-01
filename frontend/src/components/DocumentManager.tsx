@@ -592,7 +592,7 @@ const styles: Record<string, React.CSSProperties> = {
   sidebarTitle: { margin: '0 0 14px', fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   colRow: { display: 'flex', alignItems: 'center', gap: '4px' },
   colButton: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', color: 'var(--ums-text-muted)', transition: 'all 0.15s' },
-  colButtonActive: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'var(--ums-brand-light)', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#0D47A1' },
+  colButtonActive: { flex: 1, textAlign: 'left' as const, padding: '9px 14px', border: 'none', background: 'var(--ums-brand-light)', cursor: 'pointer', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: 'var(--ums-brand-text)' },
   deleteColButton: { background: 'none', border: 'none', color: 'var(--ums-text-placeholder)', cursor: 'pointer', fontSize: '14px', borderRadius: '4px', padding: '4px 8px' },
   addColButton: { padding: '9px 14px', border: '1px dashed #d1d5db', background: 'none', cursor: 'pointer', borderRadius: '8px', fontSize: '13px', color: 'var(--ums-brand-primary)', marginTop: '8px', width: '100%', fontWeight: 500 },
   newColForm: { marginTop: '8px', display: 'flex', flexDirection: 'column' as const, gap: '6px' },

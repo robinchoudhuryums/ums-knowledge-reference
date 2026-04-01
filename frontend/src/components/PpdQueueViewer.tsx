@@ -234,7 +234,11 @@ export function PpdQueueViewer() {
       {error && <div style={styles.error}>{error}</div>}
 
       {!loading && filtered.length === 0 && (
-        <p style={styles.meta}>No submissions found.</p>
+        <div style={{ textAlign: 'center', padding: '40px 20px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid var(--ums-border)' }}>
+          <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.4 }}>📋</div>
+          <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--ums-text-primary)', margin: '0 0 4px' }}>No submissions found</p>
+          <p style={{ fontSize: '13px', color: 'var(--ums-text-muted)', margin: 0 }}>PPD submissions will appear here once submitted from the PPD Questionnaire.</p>
+        </div>
       )}
 
       {!loading && filtered.length > 0 && (
@@ -284,7 +288,12 @@ export function PpdQueueViewer() {
 // ── Styles ─────────────────────────────────────────────────────────────────
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', maxWidth: '1100px' },
+  container: {
+    padding: '28px', maxWidth: '1100px',
+    background: 'var(--ums-bg-surface)', borderRadius: '12px',
+    border: '1px solid var(--ums-border)', margin: '20px auto',
+    boxShadow: 'var(--ums-shadow-sm)',
+  },
   title: { margin: '0 0 16px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
   meta: { fontSize: '13px', color: 'var(--ums-text-muted)', margin: '0 4px 8px 0', display: 'inline-block' },
   error: { marginTop: '12px', padding: '12px 16px', background: 'var(--ums-error-light)', color: 'var(--ums-error)', borderRadius: '10px', fontSize: '13px', border: '1px solid var(--ums-error-border)' },

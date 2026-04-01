@@ -3,18 +3,15 @@ import { useAuth } from './hooks/useAuth';
 import { useIdleTimeout } from './hooks/useIdleTimeout';
 import { LoginForm } from './components/LoginForm';
 import { ChatInterface } from './components/ChatInterface';
-import { DocumentManager } from './components/DocumentManager';
-import { DocumentSearch } from './components/DocumentSearch';
 import { PopoutButton } from './components/PopoutButton';
-import { OcrTool } from './components/OcrTool';
 import { QueryLogViewer } from './components/QueryLogViewer';
 import { FaqDashboard } from './components/FaqDashboard';
 import { QualityDashboard } from './components/QualityDashboard';
-import { DocumentExtractor } from './components/DocumentExtractor';
 import { ObservabilityDashboard } from './components/ObservabilityDashboard';
 import { ChangePasswordForm } from './components/ChangePasswordForm';
-import { IntakeAutoFill } from './components/IntakeAutoFill';
 import { FormsTab } from './components/FormsTab';
+import { ToolsTab } from './components/ToolsTab';
+import { DocumentsTab } from './components/DocumentsTab';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/ConfirmDialog';
@@ -22,31 +19,25 @@ import { Collection } from './types';
 import { listCollections } from './services/api';
 import {
   ChatBubbleLeftRightIcon,
-  MagnifyingGlassIcon,
-  DocumentTextIcon,
   DocumentDuplicateIcon,
-  CameraIcon,
+  WrenchScrewdriverIcon,
   FolderOpenIcon,
   Cog6ToothIcon,
   SunIcon,
   MoonIcon,
   ArrowRightStartOnRectangleIcon,
 } from '@heroicons/react/24/outline';
-import { Brain, Stethoscope } from 'lucide-react';
+import { Brain } from 'lucide-react';
 import clsx from 'clsx';
 
-type Tab = 'chat' | 'search' | 'extract' | 'intake' | 'forms' | 'documents' | 'ocr' | 'admin';
+type Tab = 'chat' | 'tools' | 'forms' | 'documents' | 'admin';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 
-// Tab icons: Heroicons for standard UI, Lucide for medical-specific icons
 const tabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
   chat: ChatBubbleLeftRightIcon,
-  search: MagnifyingGlassIcon,
-  extract: DocumentTextIcon,
-  intake: Stethoscope,
+  tools: WrenchScrewdriverIcon,
   forms: DocumentDuplicateIcon,
-  ocr: CameraIcon,
   documents: FolderOpenIcon,
   admin: Cog6ToothIcon,
 };
@@ -129,11 +120,8 @@ export default function App() {
 
   const tabs: { key: Tab; label: string; adminOnly?: boolean }[] = [
     { key: 'chat', label: 'Ask Questions' },
-    { key: 'search', label: 'Search' },
-    { key: 'extract', label: 'Extract' },
-    { key: 'intake', label: 'Intake / Clinical' },
+    { key: 'tools', label: 'Tools' },
     { key: 'forms', label: 'Forms' },
-    { key: 'ocr', label: 'OCR Scan' },
     { key: 'documents', label: 'Documents' },
     { key: 'admin', label: 'Admin', adminOnly: true },
   ];
@@ -212,13 +200,10 @@ export default function App() {
       <main id="main-content" style={styles.main}>
         <ErrorBoundary fallbackMessage="This section encountered an error. Try switching tabs or refreshing.">
           {activeTab === 'chat' && <ChatInterface collections={collections} />}
-          {activeTab === 'search' && <DocumentSearch collections={collections} />}
-          {activeTab === 'extract' && <DocumentExtractor />}
-          {activeTab === 'intake' && <IntakeAutoFill />}
+          {activeTab === 'tools' && <ToolsTab />}
           {activeTab === 'forms' && <FormsTab />}
-          {activeTab === 'ocr' && <OcrTool />}
           {activeTab === 'documents' && (
-            <DocumentManager
+            <DocumentsTab
               isAdmin={isAdmin}
               collections={collections}
               onCollectionsChange={loadCollections}

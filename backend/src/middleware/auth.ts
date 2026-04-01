@@ -442,20 +442,23 @@ export async function forgotPasswordHandler(req: Request, res: Response): Promis
     if (val.expiresAt < Date.now()) resetCodes.delete(key);
   }
 
-  // Send email with reset code
-  // Use SMTP_FROM or SMTP_USER as the admin contact email
-  const adminEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-  if (adminEmail) {
+  // Send email with reset code — directly to user if they have an email,
+  // otherwise fall back to admin email
+  const recipientEmail = user.email || process.env.SMTP_FROM || process.env.SMTP_USER;
+  if (recipientEmail) {
     try {
       await sendEmail({
-        to: adminEmail, // Send to admin since we don't store user emails
-        subject: `Password Reset Code for ${user.username}`,
+        to: recipientEmail,
+        subject: 'UMS Knowledge Base — Password Reset Code',
         html: `
           <h2>Password Reset Request</h2>
-          <p>A password reset was requested for user: <strong>${user.username}</strong></p>
-          <p>Reset code: <strong style="font-size: 24px; letter-spacing: 4px;">${code}</strong></p>
-          <p>This code expires in 15 minutes.</p>
-          <p>If you did not request this, no action is needed.</p>
+          <p>A password reset was requested for your account: <strong>${user.username}</strong></p>
+          <p style="margin: 20px 0;">Your reset code:</p>
+          <div style="text-align: center; padding: 16px; background: #f5f5f5; border-radius: 8px; margin: 12px 0;">
+            <span style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #1565C0;">${code}</span>
+          </div>
+          <p>This code expires in <strong>15 minutes</strong>.</p>
+          <p style="color: #666; font-size: 13px;">If you did not request this, no action is needed. Your password has not been changed.</p>
         `,
       });
     } catch (err) {

@@ -69,7 +69,7 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
         <div style={styles.logoMark}><Brain size={28} /></div>
         <h1 style={styles.title}>UMS Knowledge Base</h1>
         <p style={styles.subtitle}>
-          {forgotMode === 'request' ? 'Enter your username to receive a reset code' :
+          {forgotMode === 'request' ? 'Enter your username to receive a reset code via email' :
            forgotMode === 'code' ? 'Enter the reset code and your new password' :
            forgotMode === 'done' ? 'Password reset complete' :
            mfaRequired ? 'Enter the code from your authenticator app' :

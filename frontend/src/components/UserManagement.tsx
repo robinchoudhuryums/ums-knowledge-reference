@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { AdminUser, listUsers, createUser, updateUserRole, deleteUser, resetUserPassword, disableUserMfa } from '../services/api';
+import { AdminUser, listUsers, createUser, updateUserRole, deleteUser, resetUserPassword, disableUserMfa, updateUserEmail } from '../services/api';
 import { useConfirm } from './ConfirmDialog';
 import {
   UserPlusIcon,
@@ -24,6 +24,20 @@ export function UserManagement() {
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
   const [creating, setCreating] = useState(false);
   const [actionResult, setActionResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const [editingEmail, setEditingEmail] = useState<{ userId: string; value: string } | null>(null);
+
+  const handleEmailSave = async (userId: string) => {
+    if (!editingEmail) return;
+    try {
+      await updateUserEmail(userId, editingEmail.value || null);
+      setEditingEmail(null);
+      setActionResult({ type: 'success', message: 'Email updated' });
+      await loadUsers();
+    } catch (err) {
+      setActionResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to update email' });
+    }
+  };
 
   const loadUsers = useCallback(async () => {
     try {
@@ -179,6 +193,7 @@ export function UserManagement() {
               <tr>
                 <th style={styles.th}>Username</th>
                 <th style={styles.th}>Role</th>
+                <th style={styles.th}>Email</th>
                 <th style={styles.th}>MFA</th>
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}>Last Login</th>
@@ -204,6 +219,31 @@ export function UserManagement() {
                         <option value="user">user</option>
                         <option value="admin">admin</option>
                       </select>
+                    </td>
+                    <td style={styles.td}>
+                      {editingEmail?.userId === user.id ? (
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <input
+                            type="email"
+                            value={editingEmail.value}
+                            onChange={e => setEditingEmail({ userId: user.id, value: e.target.value })}
+                            onKeyDown={e => e.key === 'Enter' && handleEmailSave(user.id)}
+                            style={{ ...styles.roleSelect, width: '160px' }}
+                            placeholder="user@example.com"
+                            autoFocus
+                          />
+                          <button onClick={() => handleEmailSave(user.id)} style={styles.actionBtn} title="Save">&#10003;</button>
+                          <button onClick={() => setEditingEmail(null)} style={styles.actionBtn} title="Cancel">&#10005;</button>
+                        </div>
+                      ) : (
+                        <span
+                          onClick={() => setEditingEmail({ userId: user.id, value: user.email || '' })}
+                          style={{ fontSize: '13px', color: user.email ? 'var(--ums-text-secondary)' : 'var(--ums-text-placeholder)', cursor: 'pointer' }}
+                          title="Click to edit email"
+                        >
+                          {user.email || 'Set email...'}
+                        </span>
+                      )}
                     </td>
                     <td style={styles.td}>
                       {user.mfaEnabled ? (

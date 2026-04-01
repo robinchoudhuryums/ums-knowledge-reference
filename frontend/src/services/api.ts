@@ -105,6 +105,7 @@ export interface AdminUser {
   id: string;
   username: string;
   role: 'admin' | 'user';
+  email?: string;
   createdAt: string;
   lastLogin?: string;
   mustChangePassword?: boolean;
@@ -142,6 +143,13 @@ export async function resetUserPassword(userId: string): Promise<{ temporaryPass
 
 export async function disableUserMfa(userId: string): Promise<{ message: string }> {
   return request(`/users/${userId}/mfa`, { method: 'DELETE' });
+}
+
+export async function updateUserEmail(userId: string, email: string | null): Promise<{ user: AdminUser }> {
+  return request(`/users/${userId}/email`, {
+    method: 'PUT',
+    body: JSON.stringify({ email }),
+  });
 }
 
 // Forgot password

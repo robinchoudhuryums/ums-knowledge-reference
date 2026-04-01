@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
 import { JWT_SECRET, JWT_EXPIRY } from './authConfig';
 import { getSets } from '../cache';
+import { logger } from '../utils/logger';
 
 // Cookie name for httpOnly JWT token
 export const AUTH_COOKIE = 'ums_auth_token';
@@ -54,12 +55,12 @@ export function verifyToken(token: string): { id: string; username: string; role
 
 export function revokeToken(jti: string): void {
   getSets().add('revoked-tokens', jti, TOKEN_REVOCATION_TTL_MS)
-    .catch(err => { try { require('../utils/logger').logger.warn('Token revocation cache write failed', { error: String(err) }); } catch {} });
+    .catch(err => logger.warn('Token revocation cache write failed', { error: String(err) }));
 }
 
 export function revokeAllUserTokens(userId: string): void {
   getSets().add('revoked-users', userId, TOKEN_REVOCATION_TTL_MS)
-    .catch(err => { try { require('../utils/logger').logger.warn('User revocation cache write failed', { error: String(err) }); } catch {} });
+    .catch(err => logger.warn('User revocation cache write failed', { error: String(err) }));
 }
 
 export async function isTokenRevoked(jti: string): Promise<boolean> {

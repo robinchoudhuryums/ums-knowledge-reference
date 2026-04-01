@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { expandQueryWithSynonyms, tokenize, cosineSimilarity, bm25Score, buildIdfMap, reRankResults, deduplicateResults } from '../services/vectorStore';
+import { expandQueryWithSynonyms, tokenize, bm25Score, deduplicateResults } from '../services/vectorStore';
 import { enrichQueryWithStructuredData, classifyQuery } from '../services/referenceEnrichment';
 import { searchHcpcs, getHcpcsCode } from '../services/hcpcsLookup';
 import { getHcpcsForDiagnosis, getDiagnosesForHcpcs } from '../services/icd10Mapping';

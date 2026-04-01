@@ -11,15 +11,28 @@
 
 import { EmbeddingProvider } from './embeddingProvider';
 import { TitanEmbeddingProvider } from './titanEmbeddingProvider';
+import { CohereEmbeddingProvider } from './cohereEmbeddingProvider';
+import { BEDROCK_EMBEDDING_MODEL } from '../config/aws';
 import { getCache } from '../cache';
 import { logger } from '../utils/logger';
 
 // Singleton provider instance
 let provider: EmbeddingProvider | null = null;
 
+/**
+ * Auto-select embedding provider based on the configured model ID.
+ * Supports Titan Embed V2 (default) and Cohere Embed English v3.
+ */
 function ensureProvider(): EmbeddingProvider {
   if (!provider) {
-    provider = new TitanEmbeddingProvider();
+    const model = BEDROCK_EMBEDDING_MODEL;
+    if (model.includes('cohere')) {
+      provider = new CohereEmbeddingProvider(model);
+      logger.info('Embedding provider: Cohere Embed', { model });
+    } else {
+      provider = new TitanEmbeddingProvider(model);
+      logger.info('Embedding provider: Amazon Titan Embed', { model });
+    }
   }
   return provider;
 }

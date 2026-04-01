@@ -181,9 +181,9 @@ export function PapAccountCreationForm() {
         <svg width="60" height="60" viewBox="0 0 60 60">
           <circle cx="30" cy="30" r="25" fill="none" stroke="var(--ums-border)" strokeWidth="5" />
           <circle cx="30" cy="30" r="25" fill="none"
-            stroke={progressPct < 25 ? '#dee2e6' : progressPct < 75 ? '#ffc107' : '#28a745'}
+            stroke={progressPct < 25 ? 'var(--ums-text-placeholder)' : progressPct < 75 ? 'var(--ums-warning)' : 'var(--ums-success)'}
             strokeWidth="5" strokeLinecap="round"
-            strokeDasharray={`${progressPct * 1.57} 157`}
+            strokeDasharray={`${progressPct * 1.5708} 157.08`}
             transform="rotate(-90 30 30)"
             style={{ transition: 'stroke-dasharray 0.4s ease, stroke 0.3s ease' }} />
           <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--ums-text-primary)">{progressPct}%</text>

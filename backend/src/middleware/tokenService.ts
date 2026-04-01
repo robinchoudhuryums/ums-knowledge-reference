@@ -53,11 +53,13 @@ export function verifyToken(token: string): { id: string; username: string; role
 // falls back to in-memory for single-instance deployments.
 
 export function revokeToken(jti: string): void {
-  getSets().add('revoked-tokens', jti, TOKEN_REVOCATION_TTL_MS).catch(() => {});
+  getSets().add('revoked-tokens', jti, TOKEN_REVOCATION_TTL_MS)
+    .catch(err => { try { require('../utils/logger').logger.warn('Token revocation cache write failed', { error: String(err) }); } catch {} });
 }
 
 export function revokeAllUserTokens(userId: string): void {
-  getSets().add('revoked-users', userId, TOKEN_REVOCATION_TTL_MS).catch(() => {});
+  getSets().add('revoked-users', userId, TOKEN_REVOCATION_TTL_MS)
+    .catch(err => { try { require('../utils/logger').logger.warn('User revocation cache write failed', { error: String(err) }); } catch {} });
 }
 
 export async function isTokenRevoked(jti: string): Promise<boolean> {

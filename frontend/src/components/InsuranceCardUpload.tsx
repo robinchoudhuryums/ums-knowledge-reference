@@ -35,9 +35,8 @@ interface InsuranceCardUploadProps {
   lang: 'en' | 'es';
 }
 
-function getCsrf(): string {
-  return document.cookie.match(/(^|;\s*)csrf_token=([^;]*)/)?.[2] || '';
-}
+import { getCsrfToken } from '../services/api';
+function getCsrf(): string { return getCsrfToken() || ''; }
 
 export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enteredMemberId, enteredName, enteredDob, lang }: InsuranceCardUploadProps) {
   const [images, setImages] = useState<string[]>([]);

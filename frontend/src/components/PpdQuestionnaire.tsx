@@ -48,9 +48,8 @@ interface RecommendApiResponse {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function getCsrf(): string {
-  return document.cookie.match(/(^|;\s*)csrf_token=([^;]*)/)?.[2] || '';
-}
+import { getCsrfToken } from '../services/api';
+function getCsrf(): string { return getCsrfToken() || ''; }
 
 function storageKey(patient: string): string {
   return `ppd_responses_${patient.replace(/\s+/g, '_').toLowerCase()}`;
@@ -711,7 +710,7 @@ export function PpdQuestionnaire() {
                 style={sty.copyBtn}
                 onClick={() => {
                   const w = window.open('', '_blank');
-                  if (w) { w.document.write(seatingEvalHtml); w.document.close(); w.print(); }
+                  if (w) { w.document.write(DOMPurify.sanitize(seatingEvalHtml)); w.document.close(); w.print(); }
                 }}
               >
                 {lang === 'en' ? 'Print' : 'Imprimir'}

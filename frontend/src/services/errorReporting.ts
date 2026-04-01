@@ -4,13 +4,10 @@ const API_BASE = (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL
 const recentReports = new Map<string, number>();
 const DEDUP_WINDOW_MS = 60_000; // 60 seconds
 
+import { getCsrfToken } from './api';
+
 function getLegacyToken(): string | null {
   return localStorage.getItem('token');
-}
-
-function getCsrfToken(): string | null {
-  const match = document.cookie.match(/(^|;\s*)csrf_token=([^;]*)/);
-  return match ? decodeURIComponent(match[2]) : null;
 }
 
 /**

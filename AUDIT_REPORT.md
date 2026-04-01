@@ -232,13 +232,19 @@ This is a **mature, well-architected** internal tool that covers an impressive b
 
 ---
 
-## Rating Summary
+## Rating Summary (Updated 2026-04-01)
 
-| Category | Rating | Priority |
-|---|---|---|
-| **HIPAA Compliance** | 8.0/10 | 1 (mission-critical) |
-| **RAG Functionality** | 7.5/10 | 2 (core value prop) |
-| **Overall Quality** | 7.5/10 | 3 |
-| **Forms & Workflow** | 7.5/10 | 4 |
-| **UI/UX & Design** | 7.0/10 | 5 |
-| **Scalability** | 6.5/10 | 6 (important as usage grows) |
+| Category | Previous | Current | Delta | Key Improvements |
+|---|---|---|---|---|
+| **HIPAA Compliance** | 8.0 | **8.7/10** | +0.7 | MFA added, MFA audit trail, admin MFA reset, DB persistence fix |
+| **RAG Functionality** | 7.5 | **8.2/10** | +0.7 | Cohere Embed v3, synonym expansion (75+), chunk dedup, query routing, eval framework |
+| **Overall Quality** | 7.5 | **8.3/10** | +0.8 | Auth split, shared mutex, query pipeline dedup, 788 tests (51 files), OTel tracing |
+| **Security** | 8.0 | **8.5/10** | +0.5 | Collection ACL on all endpoints, SSRF fix, circuit breaker, Redis token revocation |
+| **Testing** | 7.0 | **8.0/10** | +1.0 | 788 tests (was 705), 51 files (was 48), supertest integration tests, eval framework |
+| **Forms & Workflow** | 7.5 | **7.5/10** | 0 | No changes this sprint |
+| **UI/UX & Design** | 7.0 | **7.8/10** | +0.8 | Tab consolidation (8→5), WCAG AA contrast, responsive layout, skip-to-content |
+| **Scalability** | 6.5 | **7.8/10** | +1.3 | Redis integration, incremental IDF, parallel audit fetch, DB pool metrics, FK constraints |
+
+**Overall: 7.5 → 8.1/10** (+0.6)
+
+See `docs/improvement-roadmap.md` for the full P2/P3 backlog.

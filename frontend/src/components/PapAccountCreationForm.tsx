@@ -22,9 +22,8 @@ interface PapQuestion {
 
 type Lang = 'en' | 'es';
 
-function getCsrf(): string {
-  return document.cookie.match(/(^|;\s*)csrf_token=([^;]*)/)?.[2] || '';
-}
+import { getCsrfToken } from '../services/api';
+function getCsrf(): string { return getCsrfToken() || ''; }
 
 function storageKey(patient: string): string {
   return `pap_responses_${patient.replace(/\s+/g, '_').toLowerCase()}`;

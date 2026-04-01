@@ -149,8 +149,8 @@ router.post('/:id/reset-password', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // Generate a random temporary password (16 chars, URL-safe)
-    const tempPassword = crypto.randomBytes(12).toString('base64url').slice(0, 16);
+    // Generate a random temporary password (20 chars, 128-bit entropy, URL-safe)
+    const tempPassword = crypto.randomBytes(16).toString('base64url').slice(0, 20);
 
     // Push current hash into password history before overwriting
     const history = user.passwordHistory || [];
@@ -222,6 +222,52 @@ router.put('/:id/collections', async (req: AuthRequest, res: Response) => {
   } catch (error) {
     logger.error('Failed to update user collections', { error: String(error) });
     res.status(500).json({ error: 'Failed to update user collections' });
+  }
+});
+
+/**
+ * DELETE /api/users/:id/mfa — Admin-disable MFA for a user.
+ * Used when a user loses their authenticator device.
+ */
+router.delete('/:id/mfa', async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Prevent admins from disabling their own MFA through this endpoint
+    // (they should use the self-service /api/auth/mfa/disable instead)
+    if (id === req.user!.id) {
+      res.status(400).json({ error: 'Use /api/auth/mfa/disable to disable your own MFA' });
+      return;
+    }
+
+    const users = await getUsers();
+    const user = users.find(u => u.id === id);
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    if (!user.mfaEnabled) {
+      res.status(400).json({ error: 'MFA is not enabled for this user' });
+      return;
+    }
+
+    user.mfaSecret = undefined;
+    user.mfaEnabled = false;
+    await saveUsers(users);
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'user_update', {
+      targetUserId: id,
+      targetUsername: user.username,
+      action: 'mfa_disabled_by_admin',
+    });
+
+    logger.info('MFA disabled by admin', { targetUserId: id, targetUsername: user.username, disabledBy: req.user!.username });
+    res.json({ message: `MFA disabled for ${user.username}` });
+  } catch (error) {
+    logger.error('Failed to disable user MFA', { error: String(error) });
+    res.status(500).json({ error: 'Failed to disable MFA' });
   }
 });
 

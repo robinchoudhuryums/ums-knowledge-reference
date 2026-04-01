@@ -17,7 +17,7 @@ export async function dbGetUsers(): Promise<User[]> {
   const result = await pool.query(`
     SELECT id, username, password_hash, role, created_at, last_login,
            must_change_password, failed_login_attempts, locked_until,
-           password_history, allowed_collections
+           password_history, allowed_collections, mfa_secret, mfa_enabled
     FROM users ORDER BY created_at
   `);
 
@@ -39,8 +39,8 @@ export async function dbSaveUsers(users: User[]): Promise<void> {
       await client.query(`
         INSERT INTO users (id, username, password_hash, role, created_at, last_login,
                           must_change_password, failed_login_attempts, locked_until,
-                          password_history, allowed_collections)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                          password_history, allowed_collections, mfa_secret, mfa_enabled)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (id) DO UPDATE SET
           username = EXCLUDED.username,
           password_hash = EXCLUDED.password_hash,
@@ -50,7 +50,9 @@ export async function dbSaveUsers(users: User[]): Promise<void> {
           failed_login_attempts = EXCLUDED.failed_login_attempts,
           locked_until = EXCLUDED.locked_until,
           password_history = EXCLUDED.password_history,
-          allowed_collections = EXCLUDED.allowed_collections
+          allowed_collections = EXCLUDED.allowed_collections,
+          mfa_secret = EXCLUDED.mfa_secret,
+          mfa_enabled = EXCLUDED.mfa_enabled
       `, [
         user.id,
         user.username,
@@ -63,6 +65,8 @@ export async function dbSaveUsers(users: User[]): Promise<void> {
         user.lockedUntil || null,
         user.passwordHistory || [],
         user.allowedCollections || [],
+        user.mfaSecret || null,
+        user.mfaEnabled || false,
       ]);
     }
 
@@ -104,5 +108,7 @@ function mapRowToUser(row: Record<string, unknown>): User {
     allowedCollections: (row.allowed_collections as string[])?.length > 0
       ? row.allowed_collections as string[]
       : undefined,
+    mfaSecret: row.mfa_secret as string | undefined,
+    mfaEnabled: row.mfa_enabled as boolean | undefined,
   };
 }

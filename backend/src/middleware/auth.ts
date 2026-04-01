@@ -16,6 +16,7 @@ import { User } from '../types';
 import { getUsers as dbGetUsers, saveUsers as dbSaveUsers } from '../db';
 import { logger } from '../utils/logger';
 import { generateMfaSecret, verifyMfaCode } from '../services/mfa';
+import { logAuditEvent } from '../services/audit';
 
 // Re-export from sub-modules so existing callers don't break
 export {
@@ -305,13 +306,17 @@ export async function mfaSetupHandler(req: AuthRequest, res: Response): Promise<
     return;
   }
 
-  const { secret, uri } = generateMfaSecret(user.username);
-  user.mfaSecret = secret;
-  user.mfaEnabled = false; // Not enabled until verified
+  const { secret, uri, rawSecret } = generateMfaSecret(user.username);
+  user.mfaSecret = secret;  // Encrypted at rest (if FIELD_ENCRYPTION_KEY is set)
+  user.mfaEnabled = false;
   await saveUsers(users);
 
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_setup_initiated' })
+    .catch(err => logger.warn('Audit log failed', { error: String(err) }));
   logger.info('MFA setup initiated', { userId: user.id });
-  res.json({ uri, secret });
+  // Return the raw (unencrypted) secret for the user to enter in their authenticator app.
+  // This is the only time the raw secret is exposed — it's stored encrypted.
+  res.json({ uri, secret: rawSecret });
 }
 
 /**
@@ -345,6 +350,8 @@ export async function mfaVerifyHandler(req: AuthRequest, res: Response): Promise
   user.mfaEnabled = true;
   await saveUsers(users);
 
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_enabled' })
+    .catch(err => logger.warn('Audit log failed', { error: String(err) }));
   logger.info('MFA enabled', { userId: user.id });
   res.json({ message: 'MFA is now enabled. You will need your authenticator app for future logins.' });
 }
@@ -380,6 +387,8 @@ export async function mfaDisableHandler(req: AuthRequest, res: Response): Promis
   user.mfaEnabled = false;
   await saveUsers(users);
 
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_disabled_by_user' })
+    .catch(err => logger.warn('Audit log failed', { error: String(err) }));
   logger.info('MFA disabled', { userId: user.id });
   res.json({ message: 'MFA has been disabled.' });
 }

@@ -23,6 +23,39 @@ vi.mock('../services/s3Storage', () => {
   };
 });
 
+// Mock database to prevent real connection attempts
+vi.mock('../config/database', () => ({
+  checkDatabaseConnection: vi.fn(async () => false),
+  getPool: vi.fn(() => null),
+  closeDatabasePool: vi.fn(async () => {}),
+}));
+
+// Mock db layer
+vi.mock('../db', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    useRds: vi.fn(async () => false),
+  };
+});
+
+// Mock config/aws to prevent real AWS SDK initialization
+vi.mock('../config/aws', () => ({
+  s3Client: { send: vi.fn(async () => ({})) },
+  bedrockClient: { send: vi.fn(async () => ({})) },
+  bedrockCircuitBreaker: { execute: (fn: () => Promise<unknown>) => fn() },
+  S3_BUCKET: 'test-bucket',
+  S3_PREFIXES: { documents: 'documents/', vectors: 'vectors/', metadata: 'metadata/', audit: 'audit/', cache: 'cache/' },
+  BEDROCK_EMBEDDING_MODEL: 'test-model',
+  BEDROCK_GENERATION_MODEL: 'test-model',
+  BEDROCK_EXTRACTION_MODEL: 'test-model',
+}));
+
+// Mock audit service (imported by auth.ts for MFA audit logging)
+vi.mock('../services/audit', () => ({
+  logAuditEvent: vi.fn(async () => {}),
+}));
+
 // Must import after mocks are set up
 import bcrypt from 'bcryptjs';
 import { initializeAuth, loginHandler, changePasswordHandler, authenticate, createUserHandler, AuthRequest } from '../middleware/auth';

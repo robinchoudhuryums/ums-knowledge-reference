@@ -27,6 +27,23 @@ vi.mock('../services/s3Storage', () => {
 });
 
 // Mock audit logging so it doesn't try to write to S3
+vi.mock('../config/database', () => ({
+  checkDatabaseConnection: vi.fn(async () => false),
+  getPool: vi.fn(() => null),
+  closeDatabasePool: vi.fn(async () => {}),
+}));
+
+vi.mock('../config/aws', () => ({
+  s3Client: { send: vi.fn(async () => ({})) },
+  bedrockClient: { send: vi.fn(async () => ({})) },
+  bedrockCircuitBreaker: { execute: (fn: () => Promise<unknown>) => fn() },
+  S3_BUCKET: 'test-bucket',
+  S3_PREFIXES: { documents: 'documents/', vectors: 'vectors/', metadata: 'metadata/', audit: 'audit/', cache: 'cache/' },
+  BEDROCK_EMBEDDING_MODEL: 'test-model',
+  BEDROCK_GENERATION_MODEL: 'test-model',
+  BEDROCK_EXTRACTION_MODEL: 'test-model',
+}));
+
 vi.mock('../services/audit', () => ({
   logAuditEvent: vi.fn(async () => {}),
 }));

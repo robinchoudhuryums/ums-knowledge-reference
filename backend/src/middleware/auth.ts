@@ -16,6 +16,7 @@ import { User } from '../types';
 import { getUsers as dbGetUsers, saveUsers as dbSaveUsers } from '../db';
 import { logger } from '../utils/logger';
 import { generateMfaSecret, verifyMfaCode } from '../services/mfa';
+import { logAuditEvent } from '../services/audit';
 
 // Re-export from sub-modules so existing callers don't break
 export {
@@ -310,6 +311,8 @@ export async function mfaSetupHandler(req: AuthRequest, res: Response): Promise<
   user.mfaEnabled = false; // Not enabled until verified
   await saveUsers(users);
 
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_setup_initiated' })
+    .catch(err => logger.warn('Audit log failed', { error: String(err) }));
   logger.info('MFA setup initiated', { userId: user.id });
   res.json({ uri, secret });
 }
@@ -345,6 +348,8 @@ export async function mfaVerifyHandler(req: AuthRequest, res: Response): Promise
   user.mfaEnabled = true;
   await saveUsers(users);
 
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_enabled' })
+    .catch(err => logger.warn('Audit log failed', { error: String(err) }));
   logger.info('MFA enabled', { userId: user.id });
   res.json({ message: 'MFA is now enabled. You will need your authenticator app for future logins.' });
 }
@@ -380,6 +385,8 @@ export async function mfaDisableHandler(req: AuthRequest, res: Response): Promis
   user.mfaEnabled = false;
   await saveUsers(users);
 
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_disabled_by_user' })
+    .catch(err => logger.warn('Audit log failed', { error: String(err) }));
   logger.info('MFA disabled', { userId: user.id });
   res.json({ message: 'MFA has been disabled.' });
 }

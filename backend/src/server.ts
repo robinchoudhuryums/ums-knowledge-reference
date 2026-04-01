@@ -68,7 +68,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],  // React inline styles require unsafe-inline
-      imgSrc: ["'self'", 'data:', 'blob:'],     // data: for base64 images, blob: for PDF preview
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://cdn.jsdelivr.net'],     // data: for base64, blob: for PDF, jsdelivr for product images
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       connectSrc: ["'self'"],                    // API calls to same origin
       frameSrc: ["'none'"],

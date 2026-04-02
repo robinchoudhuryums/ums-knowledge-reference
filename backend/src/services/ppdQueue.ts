@@ -81,7 +81,8 @@ async function loadIndex(): Promise<PpdIndexEntry[]> {
     }));
     const body = await result.Body?.transformToString();
     return body ? JSON.parse(body) : [];
-  } catch {
+  } catch (err) {
+    logger.warn('Failed to load PPD queue index from S3', { error: String(err) });
     return [];
   }
 }
@@ -152,7 +153,8 @@ export async function getPpdSubmission(id: string): Promise<PpdSubmissionRecord 
     }));
     const body = await result.Body?.transformToString();
     return body ? JSON.parse(body) : null;
-  } catch {
+  } catch (err) {
+    logger.warn('Failed to load PPD submission from S3', { id, error: String(err) });
     return null;
   }
 }
@@ -235,7 +237,8 @@ export async function deletePpdSubmission(id: string): Promise<boolean> {
 
     logger.info('PPD submission deleted', { id });
     return true;
-  } catch {
+  } catch (err) {
+    logger.error('Failed to delete PPD submission', { id, error: String(err) });
     return false;
   }
 }

@@ -44,7 +44,8 @@ export async function getMonitoredSources(): Promise<MonitoredSource[]> {
     }));
     const body = await response.Body?.transformToString();
     return body ? JSON.parse(body) : [];
-  } catch {
+  } catch (err) {
+    logger.warn('Failed to load monitored sources index from S3', { error: String(err) });
     return [];
   }
 }

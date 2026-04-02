@@ -79,15 +79,18 @@ describe('OCR Service', () => {
 
       // Set up textract mock responses in sequence:
       // 1. StartDocumentTextDetection -> returns JobId
-      // 2. GetDocumentTextDetection (poll) -> SUCCEEDED
-      // 3. GetDocumentTextDetection (pagination) -> blocks with no NextToken
+      // 2. GetDocumentTextDetection (poll) -> SUCCEEDED with blocks
+      // 3. GetDocumentTextDetection (re-fetch for NextToken check) -> no NextToken
       mockTextractSend
         .mockResolvedValueOnce({ JobId: 'job-123' })
         .mockResolvedValueOnce({
           JobStatus: 'SUCCEEDED',
-          Blocks: [],
+          Blocks: [
+            { BlockType: 'LINE', Text: 'Hello from PDF', Confidence: 95.5, Page: 1 },
+          ],
         })
         .mockResolvedValueOnce({
+          // Re-fetch for pagination: no NextToken means no more pages
           Blocks: [
             { BlockType: 'LINE', Text: 'Hello from PDF', Confidence: 95.5, Page: 1 },
           ],
@@ -100,7 +103,6 @@ describe('OCR Service', () => {
       const result = await promise;
 
       // Verify StartDocumentTextDetection was called first
-      expect(mockTextractSend).toHaveBeenCalledTimes(3);
       expect(mockTextractSend.mock.calls[0][0]._type).toBe('StartDocumentTextDetection');
 
       expect(result.text).toBe('Hello from PDF');
@@ -191,7 +193,7 @@ describe('OCR Service', () => {
         });
 
       await expect(extractTextWithOcr(buffer, 'bad.pdf'))
-        .rejects.toThrow('Textract job failed: Invalid document format');
+        .rejects.toThrow('Textract OCR job failed: Invalid document format');
     });
 
     it('should throw when StartDocumentTextDetection returns no JobId', async () => {

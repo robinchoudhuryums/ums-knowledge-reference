@@ -242,6 +242,27 @@ describe('Auth Flow', () => {
     );
   });
 
+  it('change password issues token with cryptographically random jti (not predictable)', async () => {
+    await initAuthWithKnownPassword('Admin1234!');
+    const req = {
+      body: { currentPassword: 'Admin1234!', newPassword: 'NewStr0ng!' },
+      user: { id: 'admin-001', username: 'admin', role: 'admin' },
+      headers: {},
+      cookies: {},
+    } as unknown as AuthRequest;
+    const res = mockRes();
+    await changePasswordHandler(req, res);
+
+    // Extract token from response and decode its payload
+    const { token } = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+
+    // jti must be a valid UUID v4 format (not the old user-id-timestamp pattern)
+    expect(payload.jti).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    // Must NOT contain the user ID (old predictable pattern was `${userId}-${timestamp}`)
+    expect(payload.jti).not.toContain('admin-001');
+  });
+
   it('create user rejects duplicate username', async () => {
     await initializeAuth();
     const req = {

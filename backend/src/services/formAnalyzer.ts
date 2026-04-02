@@ -24,6 +24,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import { logger } from '../utils/logger';
 import { detectFormType, matchRequiredField } from '../config/formRules';
+import { pollTextractJob } from '../utils/textractPoller';
 
 const region = process.env.AWS_REGION || 'us-east-1';
 
@@ -81,13 +82,7 @@ export interface FormAnalysisResult {
   cached: boolean;  // True if result came from cache (no Textract cost)
 }
 
-const POLL_INTERVAL_MS = 2000;
-const MAX_POLL_ATTEMPTS = 120;
 const CACHE_PREFIX = 'form-analysis-cache';
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 /**
  * Compute a content hash for cache key.
@@ -113,6 +108,7 @@ async function loadCachedResult(hash: string): Promise<FormAnalysisResult | null
     logger.info('Form analysis cache hit', { hash });
     return cached;
   } catch {
+    // Cache miss (NoSuchKey) — expected for first-time analyses
     return null;
   }
 }
@@ -236,57 +232,17 @@ async function analyzeFormAsync(buffer: Buffer, filename: string): Promise<Block
 
     logger.info('Async form analysis job started', { jobId, filename });
 
-    let allBlocks: Block[] = [];
-    let jobStatus = 'IN_PROGRESS';
-
-    // Phase 1: Poll until job completes (separate from pagination to avoid infinite loop).
-    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-      await sleep(POLL_INTERVAL_MS);
-
-      const getCommand = new GetDocumentAnalysisCommand({ JobId: jobId });
-      const getResponse = await textractClient.send(getCommand);
-      jobStatus = getResponse.JobStatus || 'FAILED';
-
-      if (jobStatus === 'SUCCEEDED') {
-        if (getResponse.Blocks) {
-          allBlocks = allBlocks.concat(getResponse.Blocks);
-        }
-        break;
-      }
-
-      if (jobStatus === 'FAILED') {
-        throw new Error(`Textract job failed: ${getResponse.StatusMessage || 'Unknown error'}`);
-      }
-    }
-
-    if (jobStatus !== 'SUCCEEDED') {
-      throw new Error('Textract form analysis job timed out');
-    }
-
-    // Phase 2: Paginate through remaining result pages (capped to prevent runaway loops).
-    const MAX_RESULT_PAGES = 100;
-    let nextToken: string | undefined;
-    // Check if initial response had a NextToken — re-fetch to get it
-    {
-      const initialGet = await textractClient.send(new GetDocumentAnalysisCommand({ JobId: jobId }));
-      nextToken = initialGet.NextToken;
-      // First page blocks were already captured above; only capture if initial response didn't include them
-    }
-
-    for (let page = 0; page < MAX_RESULT_PAGES && nextToken; page++) {
-      const getResponse = await textractClient.send(new GetDocumentAnalysisCommand({
-        JobId: jobId,
-        NextToken: nextToken,
-      }));
-
-      if (getResponse.Blocks) {
-        allBlocks = allBlocks.concat(getResponse.Blocks);
-      }
-
-      nextToken = getResponse.NextToken;
-      if (!nextToken) break;
-      await sleep(100); // Throttle to avoid AWS rate limiting
-    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allBlocks = await pollTextractJob<any>({
+      jobId,
+      label: 'form analysis',
+      getResult: (id, nextToken) => textractClient.send(new GetDocumentAnalysisCommand({ JobId: id, NextToken: nextToken })),
+      getStatus: (r) => r.JobStatus,
+      getStatusMessage: (r) => r.StatusMessage,
+      getBlocks: (r) => r.Blocks,
+      getNextToken: (r) => r.NextToken,
+      maxResultPages: 100,
+    }) as Block[];
 
     return allBlocks;
   } finally {

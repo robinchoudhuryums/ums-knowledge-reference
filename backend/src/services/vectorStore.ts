@@ -28,6 +28,10 @@ let docFreqCounts: Map<string, number> | null = null;
 let totalCorpusTokens = 0;
 let corpusChunkCount = 0;
 
+// Tracks whether the stored embeddings use a different model/dimension than the
+// current provider. Set during initializeVectorStore(), exposed via getVectorStoreStats().
+let embeddingModelMismatch: { stored: string; current: string; storedDims: number; currentDims: number } | null = null;
+
 // ---------------------------------------------------------------------------
 // Medical synonym map for query expansion.
 // When a user searches for one form, we also match the other forms.
@@ -134,6 +138,45 @@ for (const [key, synonyms] of MEDICAL_SYNONYMS) {
         synonymIndex.get(lower)!.push(otherLower);
       }
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Query type classification — determines adaptive semantic/keyword weighting.
+// Medical code lookups (HCPCS, ICD-10) need strong keyword matching, while
+// symptom/condition queries need strong semantic understanding.
+// ---------------------------------------------------------------------------
+export type QueryType = 'code_lookup' | 'coverage_question' | 'general';
+
+export function classifyQuery(query: string): QueryType {
+  const upper = query.toUpperCase();
+  // HCPCS codes (E1234, K0813, L0631, A4253) or ICD-10 codes (J44.1, G12.21, M54.5)
+  if (/\b[AEHJKLM]\d{4}\b/.test(upper) || /\b[A-Z]\d{2}\.\d{1,4}\b/.test(upper)) {
+    return 'code_lookup';
+  }
+  // Coverage/policy questions
+  const coverageTerms = /\b(coverage|cover|covered|criteria|lcd|policy|medical necessity|prior auth|documentation required|qualify|eligible)\b/i;
+  if (coverageTerms.test(query)) {
+    return 'coverage_question';
+  }
+  return 'general';
+}
+
+/**
+ * Get adaptive semantic/keyword weights based on query type.
+ * - Code lookups: favor keyword matching (exact code matches matter most)
+ * - Coverage questions: balanced (need both exact terms and semantic context)
+ * - General: favor semantic (natural language understanding)
+ */
+export function getAdaptiveWeights(queryType: QueryType): { semantic: number; keyword: number } {
+  switch (queryType) {
+    case 'code_lookup':
+      return { semantic: 0.4, keyword: 0.6 };
+    case 'coverage_question':
+      return { semantic: 0.55, keyword: 0.45 };
+    case 'general':
+    default:
+      return { semantic: 0.7, keyword: 0.3 };
   }
 }
 
@@ -426,9 +469,10 @@ export function reRankResults(
     docChunkCounts.set(r.chunk.documentId, (docChunkCounts.get(r.chunk.documentId) || 0) + 1);
   }
 
-  return results.map(r => {
+  const boosted = results.map(r => {
     let boost = 0;
 
+    // Section header match: boost chunks whose header contains query terms
     if (r.chunk.sectionHeader) {
       const headerTerms = tokenize(r.chunk.sectionHeader);
       const matchCount = headerTerms.filter(t => queryTerms.has(t)).length;
@@ -437,17 +481,40 @@ export function reRankResults(
       }
     }
 
+    // Document frequency: boost chunks from documents with multiple matching chunks
     const docCount = docChunkCounts.get(r.chunk.documentId) || 1;
     if (docCount > 1) {
       boost += 0.02 * Math.min(docCount - 1, 3);
     }
 
+    // Short chunk penalty: very short chunks are often noise (headers, footers)
     if (r.chunk.text.length < 50) {
       boost -= 0.1;
     }
 
     return { ...r, score: r.score + boost };
   });
+
+  // Diversity pass: penalize near-duplicate chunks using token overlap.
+  // When two chunks share >70% of their tokens, the lower-scored one gets
+  // a penalty to promote diverse results. This avoids returning 3 variations
+  // of the same paragraph from overlapping chunks.
+  boosted.sort((a, b) => b.score - a.score);
+  for (let i = 1; i < boosted.length; i++) {
+    const iTokens = new Set(tokenize(boosted[i].chunk.text));
+    for (let j = 0; j < i; j++) {
+      const jTokens = tokenize(boosted[j].chunk.text);
+      const overlap = jTokens.filter(t => iTokens.has(t)).length;
+      const overlapRatio = overlap / Math.max(iTokens.size, 1);
+      if (overlapRatio > 0.7) {
+        // Scale penalty from 0 at 70% overlap to -0.06 at 100% overlap
+        boosted[i].score -= 0.06 * (overlapRatio - 0.7) / 0.3;
+        break; // Only penalize once (against highest-scored similar chunk)
+      }
+    }
+  }
+
+  return boosted;
 }
 
 /**
@@ -526,9 +593,39 @@ export async function initializeVectorStore(): Promise<void> {
 
   initPromise = (async () => {
     cachedIndex = await loadVectorIndex();
+    embeddingModelMismatch = null;
+
     if (cachedIndex) {
       const chunkCount = cachedIndex.chunks.length;
       logger.info('Vector store loaded from S3', { chunkCount });
+
+      // Detect embedding model/dimension mismatch with the current provider.
+      // This happens when the embedding model is changed (e.g. Titan V2 → V3)
+      // and existing chunks were embedded with the old model.
+      const ep = getEmbeddingProvider();
+      if (chunkCount > 0 && cachedIndex.embeddingDimensions && cachedIndex.embeddingDimensions !== ep.dimensions) {
+        embeddingModelMismatch = {
+          stored: cachedIndex.embeddingModel || 'unknown',
+          current: ep.modelId,
+          storedDims: cachedIndex.embeddingDimensions,
+          currentDims: ep.dimensions,
+        };
+        logger.error('EMBEDDING MODEL MISMATCH — stored embeddings are incompatible with current provider', {
+          storedModel: embeddingModelMismatch.stored,
+          currentModel: embeddingModelMismatch.current,
+          storedDimensions: embeddingModelMismatch.storedDims,
+          currentDimensions: embeddingModelMismatch.currentDims,
+          chunkCount,
+          action: 'Queries will fail. Re-index all documents via POST /api/documents/reindex-embeddings to fix.',
+        });
+      } else if (chunkCount > 0 && cachedIndex.embeddingModel && cachedIndex.embeddingModel !== ep.modelId) {
+        // Same dimensions but different model — warn (may affect quality but won't crash)
+        logger.warn('Embedding model changed but dimensions match — quality may vary', {
+          storedModel: cachedIndex.embeddingModel,
+          currentModel: ep.modelId,
+          dimensions: ep.dimensions,
+        });
+      }
 
       // Warn if approaching memory limits. At 1024 dimensions (4 bytes each),
       // each chunk embedding is ~4KB. 50K chunks ≈ 200MB of embeddings in RAM.
@@ -579,6 +676,18 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
 
   if (!cachedIndex) await initializeVectorStore();
 
+  // Validate embedding dimensions match the current provider to prevent
+  // mixing incompatible vectors (e.g. if model changed mid-ingestion)
+  const ep = getEmbeddingProvider();
+  for (let i = 0; i < embeddings.length; i++) {
+    if (embeddings[i].length !== ep.dimensions) {
+      throw new Error(
+        `Embedding dimension mismatch on chunk ${i}: got ${embeddings[i].length} but provider expects ${ep.dimensions}. ` +
+        `This may indicate an embedding model change during ingestion.`
+      );
+    }
+  }
+
   const storedChunks: StoredChunk[] = chunks.map((chunk, i) => ({
     id: chunk.id,
     documentId: chunk.documentId,
@@ -596,9 +705,11 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
   cachedIndex!.lastUpdated = new Date().toISOString();
 
   // Stamp current embedding model metadata
-  const ep = getEmbeddingProvider();
   cachedIndex!.embeddingModel = ep.modelId;
   cachedIndex!.embeddingDimensions = ep.dimensions;
+
+  // Clear model mismatch flag since we just added chunks with the current model
+  embeddingModelMismatch = null;
 
   // Incrementally update IDF stats instead of full rebuild (O(new chunks) not O(corpus))
   incrementalIdfAdd(storedChunks);
@@ -654,9 +765,15 @@ export async function searchVectorStore(
 
   if (!cachedIndex) await initializeVectorStore();
 
-  const topK = options.topK || 5;
-  const semanticWeight = options.semanticWeight ?? 0.7;
-  const keywordWeight = options.keywordWeight ?? 0.3;
+  const topK = options.topK || 8;
+
+  // Use caller-supplied weights if provided, otherwise auto-detect from query type.
+  // This allows the API to override for specific use cases while defaulting to
+  // adaptive weights that match the query's intent (code lookup vs. natural language).
+  const queryType = classifyQuery(queryText);
+  const adaptiveWeights = getAdaptiveWeights(queryType);
+  const semanticWeight = options.semanticWeight ?? adaptiveWeights.semantic;
+  const keywordWeight = options.keywordWeight ?? adaptiveWeights.keyword;
 
   // Get document index to filter by collection/tags and resolve document info
   const documents = await getDocumentsIndex();
@@ -746,8 +863,9 @@ export async function searchVectorStore(
   reRanked.sort((a, b) => b.score - a.score);
 
   // Apply minimum score threshold — discard results with negligible relevance.
-  // A combined score < 0.1 means neither semantic nor keyword search found meaningful overlap.
-  const MIN_SCORE_THRESHOLD = 0.1;
+  // 0.15 filters the ~30% of results that are marginal noise (0.10-0.15 range)
+  // while retaining anything with meaningful semantic or keyword signal.
+  const MIN_SCORE_THRESHOLD = 0.15;
   const thresholded = reRanked.filter(r => r.score >= MIN_SCORE_THRESHOLD);
 
   // Deduplicate near-identical chunks (from overlapping documents) before final selection
@@ -828,12 +946,111 @@ export async function searchChunksByKeyword(
 /**
  * Get vector store stats.
  */
-export async function getVectorStoreStats(): Promise<{ totalChunks: number; lastUpdated: string | null }> {
+export interface VectorStoreStatus {
+  totalChunks: number;
+  lastUpdated: string | null;
+  embeddingModel?: string;
+  embeddingDimensions?: number;
+  modelMismatch?: {
+    stored: string;
+    current: string;
+    storedDims: number;
+    currentDims: number;
+    requiresReindex: boolean;
+  };
+}
+
+export async function getVectorStoreStats(): Promise<VectorStoreStatus> {
   if (await useRds()) {
-    return dbGetVectorStoreStats();
+    const base = await dbGetVectorStoreStats();
+    return { ...base, modelMismatch: embeddingModelMismatch ? { ...embeddingModelMismatch, requiresReindex: true } : undefined };
   }
   return {
     totalChunks: cachedIndex?.chunks.length || 0,
     lastUpdated: cachedIndex?.lastUpdated || null,
+    embeddingModel: cachedIndex?.embeddingModel,
+    embeddingDimensions: cachedIndex?.embeddingDimensions,
+    modelMismatch: embeddingModelMismatch ? { ...embeddingModelMismatch, requiresReindex: true } : undefined,
   };
+}
+
+/**
+ * Re-embed all documents in the vector store using the current embedding provider.
+ * This is the migration path when the embedding model changes.
+ *
+ * For each document's chunks, regenerates embeddings with the current model,
+ * then replaces the old chunks. Returns the number of chunks re-embedded.
+ *
+ * For pgvector (RDS) mode, this requires an ALTER TABLE if dimensions changed.
+ */
+export async function reindexAllEmbeddings(): Promise<{ reindexedChunks: number; errors: string[] }> {
+  if (await useRds()) {
+    // pgvector requires schema change for dimension change — cannot auto-migrate
+    throw new Error(
+      'Embedding reindex not supported in pgvector mode. ' +
+      'Run migration to ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(NEW_DIM), then re-ingest all documents.'
+    );
+  }
+
+  if (!cachedIndex) await initializeVectorStore();
+  if (!cachedIndex || cachedIndex.chunks.length === 0) {
+    return { reindexedChunks: 0, errors: [] };
+  }
+
+  const ep = getEmbeddingProvider();
+  const errors: string[] = [];
+  let reindexedCount = 0;
+
+  // Group chunks by document for batch embedding
+  const docChunks = new Map<string, StoredChunk[]>();
+  for (const chunk of cachedIndex.chunks) {
+    const existing = docChunks.get(chunk.documentId) || [];
+    existing.push(chunk);
+    docChunks.set(chunk.documentId, existing);
+  }
+
+  logger.info('Starting embedding reindex', {
+    totalChunks: cachedIndex.chunks.length,
+    documentCount: docChunks.size,
+    currentModel: ep.modelId,
+    currentDimensions: ep.dimensions,
+  });
+
+  for (const [documentId, chunks] of docChunks) {
+    try {
+      const texts = chunks.map(c => c.text);
+      const newEmbeddings = await ep.generateEmbeddingsBatch(texts);
+
+      // Replace embeddings in place
+      for (let i = 0; i < chunks.length; i++) {
+        chunks[i].embedding = newEmbeddings[i];
+      }
+      reindexedCount += chunks.length;
+    } catch (err) {
+      const msg = `Failed to re-embed document ${documentId}: ${err instanceof Error ? err.message : String(err)}`;
+      logger.error(msg);
+      errors.push(msg);
+    }
+  }
+
+  // Update metadata
+  cachedIndex.embeddingModel = ep.modelId;
+  cachedIndex.embeddingDimensions = ep.dimensions;
+  cachedIndex.lastUpdated = new Date().toISOString();
+  embeddingModelMismatch = null;
+
+  // Invalidate IDF cache
+  idfVersion++;
+  idfCache = null;
+
+  await saveVectorIndex(cachedIndex);
+
+  logger.info('Embedding reindex completed', {
+    reindexedChunks: reindexedCount,
+    errors: errors.length,
+    newModel: ep.modelId,
+    newDimensions: ep.dimensions,
+  });
+
+  return { reindexedChunks: reindexedCount, errors };
 }

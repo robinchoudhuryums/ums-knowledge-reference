@@ -121,17 +121,46 @@ jobs:
             git fetch origin main
             git checkout main
             git pull origin main
-            docker build -t ums-knowledge .
-            docker stop ums-knowledge || true
-            docker rm ums-knowledge || true
+
+            # Build new image with a unique tag for rollback support
+            NEW_TAG="ums-knowledge:$(git rev-parse --short HEAD)"
+            docker build -t "$NEW_TAG" -t ums-knowledge:latest .
+
+            # Rename the running container so we can roll back if the new one fails
+            docker rename ums-knowledge ums-knowledge-old 2>/dev/null || true
+            docker stop ums-knowledge-old 2>/dev/null || true
+
+            # Start the new container
             docker run -d \
               --name ums-knowledge \
               --restart unless-stopped \
               --env-file ~/ums-knowledge.env \
               -p 3001:3001 \
-              ums-knowledge
-            # Wait for health check
-            sleep 10
-            curl -sf http://localhost:3001/api/health || echo "WARNING: Health check failed"
+              "$NEW_TAG"
+
+            # Health check with retries (3 attempts, 10s apart)
+            HEALTHY=false
+            for i in 1 2 3; do
+              sleep 10
+              if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
+                HEALTHY=true
+                break
+              fi
+              echo "Health check attempt $i failed, retrying..."
+            done
+
+            if [ "$HEALTHY" = true ]; then
+              echo "Health check passed — removing old container"
+              docker rm ums-knowledge-old 2>/dev/null || true
+            else
+              echo "ERROR: Health check failed after 3 attempts — rolling back"
+              docker stop ums-knowledge || true
+              docker rm ums-knowledge || true
+              docker rename ums-knowledge-old ums-knowledge 2>/dev/null || true
+              docker start ums-knowledge
+              echo "Rollback complete — old container restored"
+              exit 1
+            fi
+
             # Clean up old Docker images to save disk space
             docker image prune -f

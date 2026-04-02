@@ -104,46 +104,6 @@ export async function checkAndRecordQuery(userId: string): Promise<{ allowed: bo
 }
 
 /**
- * Check if a user can make another query. Returns { allowed, reason }.
- * @deprecated Use checkAndRecordQuery() instead to prevent race conditions.
- */
-export async function checkUsageLimit(userId: string): Promise<{ allowed: boolean; reason?: string; usage?: { userToday: number; totalToday: number } }> {
-  const record = await ensureTodayRecord();
-  const limits = await getLimits();
-
-  const userUsage = record.users[userId]?.queryCount || 0;
-  const usage = { userToday: userUsage, totalToday: record.totalQueries };
-
-  if (userUsage >= limits.dailyPerUser) {
-    return { allowed: false, reason: `Daily limit reached (${limits.dailyPerUser} queries/day). Try again tomorrow.`, usage };
-  }
-
-  if (record.totalQueries >= limits.dailyTotal) {
-    return { allowed: false, reason: `Team daily limit reached (${limits.dailyTotal} queries/day). Contact your admin.`, usage };
-  }
-
-  return { allowed: true, usage };
-}
-
-/**
- * Record a query for a user.
- * @deprecated Use checkAndRecordQuery() instead to prevent race conditions.
- */
-export async function recordQuery(userId: string): Promise<void> {
-  const record = await ensureTodayRecord();
-
-  if (!record.users[userId]) {
-    record.users[userId] = { queryCount: 0, lastQuery: '' };
-  }
-  record.users[userId].queryCount++;
-  record.users[userId].lastQuery = new Date().toISOString();
-  record.totalQueries++;
-
-  // Persist periodically (not every single query — S3 writes are not free)
-  await persistRecord();
-}
-
-/**
  * Roll back a recorded query for a user (e.g. when query processing fails after recording).
  * This prevents users from losing quota on failed queries.
  */

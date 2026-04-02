@@ -144,7 +144,11 @@ router.post('/extract', authenticate, extractionLimiter, upload.single('file'), 
       filename: file.originalname,
       templateId,
     });
-    res.status(500).json({ error: errMsg || 'Extraction failed' });
+    // Sanitize error messages — don't expose internal AWS/Bedrock details to users
+    const safeMsg = /aws|bedrock|credential|throttl|endpoint|region|arn:|accessdenied/i.test(errMsg)
+      ? 'Extraction service temporarily unavailable. Please try again later.'
+      : (errMsg || 'Extraction failed');
+    res.status(500).json({ error: safeMsg });
   }
 });
 
@@ -264,10 +268,14 @@ router.post('/extract/async', authenticate, extractionLimiter, upload.single('fi
         templateId,
       });
 
+      // Sanitize error — don't expose internal AWS/Bedrock details in job results
+      const safeMsg = /aws|bedrock|credential|throttl|endpoint|region|arn:|accessdenied/i.test(errMsg)
+        ? 'Extraction service temporarily unavailable. Please try again later.'
+        : (errMsg || 'Extraction failed');
       updateJob(job.id, {
         status: 'failed',
         completedAt: new Date().toISOString(),
-        error: errMsg || 'Extraction failed',
+        error: safeMsg,
         progress: undefined,
       });
     }

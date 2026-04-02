@@ -48,6 +48,14 @@ export function ChatInterface({ collections }: Props) {
   const [streamingConfidence, setStreamingConfidence] = useState<'high' | 'partial' | 'low' | null>(null);
   const [, setStreamingTraceId] = useState<string | null>(null);
   const [streamingProductImages, setStreamingProductImages] = useState<ProductImageRef[]>([]);
+
+  // Refs track latest streaming values so onDone can read them synchronously
+  // instead of nesting 5 levels of setState closures (which caused stale reads)
+  const streamingTextRef = useRef('');
+  const streamingSourcesRef = useRef<SourceCitation[]>([]);
+  const streamingConfidenceRef = useRef<'high' | 'partial' | 'low' | null>(null);
+  const streamingTraceIdRef = useRef<string | null>(null);
+  const streamingProductImagesRef = useRef<ProductImageRef[]>([]);
   const [selectedCollections, setSelectedCollections] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('ums-selected-collections');
@@ -127,6 +135,11 @@ export function ChatInterface({ collections }: Props) {
     setStreamingConfidence(null);
     setStreamingTraceId(null);
     setStreamingProductImages([]);
+    streamingTextRef.current = '';
+    streamingSourcesRef.current = [];
+    streamingConfidenceRef.current = null;
+    streamingTraceIdRef.current = null;
+    streamingProductImagesRef.current = [];
 
     const history = conversation.map(t => ({ role: t.role, content: t.content }));
 
@@ -136,38 +149,35 @@ export function ChatInterface({ collections }: Props) {
       history.length > 0 ? history : undefined,
       // onText
       (text) => {
-        setStreamingText(prev => prev + text);
+        streamingTextRef.current += text;
+        setStreamingText(streamingTextRef.current);
       },
       // onSources
       (sources) => {
+        streamingSourcesRef.current = sources;
         setStreamingSources(sources);
       },
       // onConfidence
       (confidence) => {
+        streamingConfidenceRef.current = confidence;
         setStreamingConfidence(confidence);
       },
-      // onDone
+      // onDone — read latest values from refs (no nested setState)
       () => {
-        setStreamingText(prev => {
-          const cleanText = stripConfidenceTag(prev);
-          setStreamingSources(sources => {
-            setStreamingConfidence(conf => {
-              setStreamingTraceId(tid => {
-                setStreamingProductImages(pImages => {
-                  setConversation(conv => [
-                    ...conv,
-                    { id: crypto.randomUUID(), role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined, productImages: pImages.length > 0 ? pImages : undefined },
-                  ]);
-                  return [];
-                });
-                return null;
-              });
-              return null;
-            });
-            return [];
-          });
-          return '';
-        });
+        const cleanText = stripConfidenceTag(streamingTextRef.current);
+        const sources = streamingSourcesRef.current;
+        const conf = streamingConfidenceRef.current;
+        const tid = streamingTraceIdRef.current;
+        const pImages = streamingProductImagesRef.current;
+        setConversation(conv => [
+          ...conv,
+          { id: crypto.randomUUID(), role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined, productImages: pImages.length > 0 ? pImages : undefined },
+        ]);
+        setStreamingText('');
+        setStreamingSources([]);
+        setStreamingConfidence(null);
+        setStreamingTraceId(null);
+        setStreamingProductImages([]);
         setLoading(false);
         inputRef.current?.focus();
       },
@@ -187,10 +197,12 @@ export function ChatInterface({ collections }: Props) {
       },
       // onTraceId
       (traceId) => {
+        streamingTraceIdRef.current = traceId;
         setStreamingTraceId(traceId);
       },
       // onProductImages
       (images) => {
+        streamingProductImagesRef.current = images;
         setStreamingProductImages(images);
       },
       responseStyle,

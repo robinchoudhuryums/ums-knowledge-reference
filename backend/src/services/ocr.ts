@@ -9,6 +9,7 @@ import { s3Client, S3_BUCKET } from '../config/aws';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
+import { pollTextractJob } from '../utils/textractPoller';
 
 const region = process.env.AWS_REGION || 'us-east-1';
 
@@ -27,7 +28,6 @@ export interface OcrResult {
 }
 
 const POLL_INTERVAL_MS = 2000;
-const MAX_POLL_ATTEMPTS = 120; // 4 minutes max
 const OCR_TIMEOUT_MS = 5 * 60 * 1000; // 5-minute hard timeout for entire OCR operation
 const MAX_TRANSIENT_RETRIES = 3; // Retry transient errors (HTTP 500) up to 3 times
 
@@ -129,73 +129,18 @@ async function extractTextWithAsyncOcr(buffer: Buffer, filename: string): Promis
 
     logger.info('Async OCR job started', { jobId, filename });
 
-    // Phase 1: Poll until job completes (IN_PROGRESS → SUCCEEDED or FAILED).
-    // Transient errors (network/HTTP 500) are retried up to MAX_TRANSIENT_RETRIES
-    // times per poll attempt instead of being treated as permanent failures.
-    let jobStatus = 'IN_PROGRESS';
-    let transientRetries = 0;
-    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-      await sleep(POLL_INTERVAL_MS);
-
-      let getResponse;
-      try {
-        const getCommand = new GetDocumentTextDetectionCommand({ JobId: jobId });
-        getResponse = await textractClient.send(getCommand);
-        transientRetries = 0; // Reset on success
-      } catch (pollError: unknown) {
-        // Transient network/server errors — retry a few times before giving up
-        transientRetries++;
-        if (transientRetries <= MAX_TRANSIENT_RETRIES) {
-          logger.warn('Textract poll transient error, retrying', {
-            jobId, attempt, transientRetries, error: String(pollError),
-          });
-          continue;
-        }
-        throw new Error(`Textract polling failed after ${MAX_TRANSIENT_RETRIES} retries: ${String(pollError)}`);
-      }
-
-      jobStatus = getResponse.JobStatus || 'FAILED';
-
-      if (jobStatus === 'SUCCEEDED') break;
-
-      if (jobStatus === 'FAILED') {
-        const statusMessage = getResponse.StatusMessage || 'Unknown error';
-        throw new Error(`Textract job failed: ${statusMessage}`);
-      }
-
-      // Still IN_PROGRESS — continue polling
-    }
-
-    if (jobStatus !== 'SUCCEEDED') {
-      throw new Error('Textract job timed out after polling');
-    }
-
-    // Phase 2: Paginate through all result pages (separate from polling to prevent infinite loop).
-    // Cap pagination to a safe maximum to prevent runaway loops from malformed NextToken responses.
-    const MAX_RESULT_PAGES = 200;
-    let allBlocks: Array<{ BlockType?: string; Text?: string; Confidence?: number; Page?: number }> = [];
-    let nextToken: string | undefined;
-
-    for (let page = 0; page < MAX_RESULT_PAGES; page++) {
-      const getCommand = new GetDocumentTextDetectionCommand({
-        JobId: jobId,
-        NextToken: nextToken,
-      });
-
-      const getResponse = await textractClient.send(getCommand);
-
-      if (getResponse.Blocks) {
-        allBlocks = allBlocks.concat(getResponse.Blocks);
-      }
-
-      if (!getResponse.NextToken) break;
-      nextToken = getResponse.NextToken;
-
-      // Brief delay between pagination calls to avoid AWS API throttling.
-      // Textract's GetDocumentTextDetection has a default rate of 10 TPS;
-      // a 100ms pause keeps us well under that even at max concurrency.
-      await sleep(100);
-    }
+    type OcrBlock = { BlockType?: string; Text?: string; Confidence?: number; Page?: number };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allBlocks = await pollTextractJob<any>({
+      jobId,
+      label: 'OCR',
+      getResult: (id, nextToken) => textractClient.send(new GetDocumentTextDetectionCommand({ JobId: id, NextToken: nextToken })),
+      getStatus: (r) => r.JobStatus,
+      getStatusMessage: (r) => r.StatusMessage,
+      getBlocks: (r) => r.Blocks,
+      getNextToken: (r) => r.NextToken,
+      maxResultPages: 200,
+    }) as OcrBlock[];
 
     return parseTextractBlocks(allBlocks, filename);
   } finally {

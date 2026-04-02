@@ -353,7 +353,8 @@ router.get('/:id/versions', authenticate, async (req: AuthRequest, res: Response
       return;
     }
 
-    // Enforce collection-level ACL
+    // Enforce collection ACL — non-admin users with restricted collections
+    // must not access version history of documents outside their allowed set
     const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
     if (allowedCollections && !allowedCollections.includes(targetDoc.collectionId)) {
       res.status(404).json({ error: 'Document not found' });
@@ -392,10 +393,17 @@ router.get('/:id/versions', authenticate, async (req: AuthRequest, res: Response
 // --- Collections ---
 
 // List collections
-router.get('/collections/list', authenticate, async (_req: AuthRequest, res: Response) => {
+router.get('/collections/list', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const collections = await getCollectionsIndex();
-    res.json({ collections });
+
+    // Enforce collection ACL — restrict listing to allowed collections
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+    const filtered = allowedCollections
+      ? collections.filter(c => allowedCollections.includes(c.id))
+      : collections;
+
+    res.json({ collections: filtered });
   } catch {
     res.status(500).json({ error: 'Failed to list collections' });
   }
@@ -580,6 +588,37 @@ router.post('/reindex', authenticate, requireAdmin, async (req: AuthRequest, res
   } catch (error) {
     logger.error('Re-index failed', { error: String(error) });
     res.status(500).json({ error: 'Re-index check failed' });
+  }
+});
+
+/**
+ * POST /api/documents/reindex-embeddings — Re-embed all document chunks with the current model.
+ *
+ * This is the migration path when the embedding model changes. It regenerates all
+ * embeddings using the current provider, replacing old incompatible vectors.
+ * Admin only. Can take several minutes for large document sets.
+ */
+router.post('/reindex-embeddings', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    logger.info('Embedding reindex triggered', { userId: req.user!.id });
+
+    const { reindexAllEmbeddings } = await import('../services/vectorStore');
+    const result = await reindexAllEmbeddings();
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
+      action: 'reindex-embeddings',
+      reindexedChunks: result.reindexedChunks,
+      errors: result.errors.length,
+    });
+
+    res.json({
+      message: `Re-embedded ${result.reindexedChunks} chunks`,
+      ...result,
+    });
+  } catch (error) {
+    logger.error('Embedding reindex failed', { error: String(error) });
+    const msg = error instanceof Error ? error.message : 'Embedding reindex failed';
+    res.status(500).json({ error: msg });
   }
 });
 

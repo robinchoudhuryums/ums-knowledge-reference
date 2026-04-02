@@ -8,6 +8,8 @@ import {
   bm25Score,
   reRankResults,
   expandQueryWithSynonyms,
+  classifyQuery,
+  getAdaptiveWeights,
 } from '../services/vectorStore';
 import { StoredChunk, Document } from '../types';
 
@@ -375,3 +377,97 @@ function makeDocument(overrides: Partial<Document> = {}): Document {
     ...overrides,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Query Classification & Adaptive Weights
+// ---------------------------------------------------------------------------
+
+describe('Query Classification', () => {
+  it('classifies HCPCS code lookups', () => {
+    expect(classifyQuery('What is K0813?')).toBe('code_lookup');
+    expect(classifyQuery('E1234 coverage requirements')).toBe('code_lookup');
+    expect(classifyQuery('HCPCS A4253 details')).toBe('code_lookup');
+    expect(classifyQuery('L0631 billing')).toBe('code_lookup');
+  });
+
+  it('classifies ICD-10 code lookups', () => {
+    expect(classifyQuery('ICD-10 J44.1 documentation')).toBe('code_lookup');
+    expect(classifyQuery('G12.21 medical necessity')).toBe('code_lookup');
+    expect(classifyQuery('M54.5 diagnosis')).toBe('code_lookup');
+  });
+
+  it('classifies coverage/policy questions', () => {
+    expect(classifyQuery('Does Medicare cover CPAP supplies?')).toBe('coverage_question');
+    expect(classifyQuery('What are the LCD criteria for oxygen?')).toBe('coverage_question');
+    expect(classifyQuery('Prior auth requirements for wheelchair')).toBe('coverage_question');
+    expect(classifyQuery('Is the patient eligible for a hospital bed?')).toBe('coverage_question');
+    expect(classifyQuery('Documentation required for power wheelchair')).toBe('coverage_question');
+  });
+
+  it('classifies general queries', () => {
+    expect(classifyQuery('How do I use the nebulizer?')).toBe('general');
+    expect(classifyQuery('What supplies does the patient need?')).toBe('general');
+    expect(classifyQuery('Tell me about wheelchair maintenance')).toBe('general');
+  });
+
+  it('prefers code_lookup over coverage when both patterns present', () => {
+    // HCPCS code pattern is checked first
+    expect(classifyQuery('K0813 coverage criteria')).toBe('code_lookup');
+  });
+});
+
+describe('Adaptive Weights', () => {
+  it('returns keyword-heavy weights for code lookups', () => {
+    const w = getAdaptiveWeights('code_lookup');
+    expect(w.keyword).toBeGreaterThan(w.semantic);
+    expect(w.semantic + w.keyword).toBeCloseTo(1.0);
+  });
+
+  it('returns balanced weights for coverage questions', () => {
+    const w = getAdaptiveWeights('coverage_question');
+    expect(w.semantic).toBeGreaterThanOrEqual(0.5);
+    expect(w.keyword).toBeGreaterThanOrEqual(0.3);
+  });
+
+  it('returns semantic-heavy weights for general queries', () => {
+    const w = getAdaptiveWeights('general');
+    expect(w.semantic).toBeGreaterThan(w.keyword);
+    expect(w.semantic).toBeGreaterThanOrEqual(0.7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Re-ranking Diversity
+// ---------------------------------------------------------------------------
+
+describe('Re-ranking Diversity', () => {
+  it('penalizes near-duplicate chunks', () => {
+    const sameText = 'The oxygen concentrator requires a prescription and must meet LCD criteria for coverage approval by Medicare.';
+    const results = [
+      { chunk: makeStoredChunk({ id: 'c1', text: sameText }), document: makeDocument(), score: 0.7 },
+      { chunk: makeStoredChunk({ id: 'c2', text: sameText }), document: makeDocument(), score: 0.65 },
+      { chunk: makeStoredChunk({ id: 'c3', text: 'A completely different topic about wheelchair specifications and weight capacity.' }), document: makeDocument(), score: 0.6 },
+    ];
+
+    const reRanked = reRankResults(results, 'oxygen coverage');
+
+    // The duplicate (c2) should be penalized below the diverse result (c3)
+    const c2 = reRanked.find(r => r.chunk.id === 'c2')!;
+    const c3 = reRanked.find(r => r.chunk.id === 'c3')!;
+    expect(c2.score).toBeLessThan(c3.score);
+  });
+
+  it('does not penalize chunks with low overlap', () => {
+    // Use longer, distinct texts so token overlap is clearly below the 70% threshold
+    const results = [
+      { chunk: makeStoredChunk({ id: 'c1', text: 'Oxygen therapy requirements including LCD documentation, arterial blood gas testing protocols, and pulmonary function assessments for respiratory patients.' }), document: makeDocument(), score: 0.7 },
+      { chunk: makeStoredChunk({ id: 'c2', text: 'CPAP machine supplies include heated humidifier chambers, replacement tubing, nasal mask cushions, chin straps, and filter cartridge sets for obstructive sleep apnea.' }), document: makeDocument(), score: 0.65 },
+    ];
+
+    const reRanked = reRankResults(results, 'oxygen CPAP');
+
+    const c2 = reRanked.find(r => r.chunk.id === 'c2')!;
+    // Different topics — no significant diversity penalty (only small re-rank boosts/penalties)
+    expect(c2.score).toBeGreaterThanOrEqual(0.6);
+  });
+});

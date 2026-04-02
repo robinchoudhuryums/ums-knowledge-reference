@@ -271,6 +271,11 @@ app.get('/api/health', async (_req, res) => {
   checks.vectorStore = vsStats.lastUpdated ? 'ok' : 'error';
   if (checks.vectorStore === 'error') healthy = false;
 
+  // Embedding model mismatch degrades search but doesn't take down the service
+  if (vsStats.modelMismatch) {
+    checks.embeddingModel = 'mismatch';
+  }
+
   const status = healthy ? 'ok' : 'degraded';
   res.status(healthy ? 200 : 503).json({
     status,
@@ -278,6 +283,12 @@ app.get('/api/health', async (_req, res) => {
     uptime: Math.round(process.uptime()),
     checks,
     vectorStoreChunks: vsStats.totalChunks,
+    ...(vsStats.modelMismatch ? {
+      embeddingModelMismatch: {
+        ...vsStats.modelMismatch,
+        fix: 'POST /api/documents/reindex-embeddings to re-embed all chunks with the current model',
+      },
+    } : {}),
   });
 });
 

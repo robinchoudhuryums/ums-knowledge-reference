@@ -19,7 +19,7 @@ vi.mock('../services/s3Storage', () => {
   };
 });
 
-import { checkAndRecordQuery, checkUsageLimit, recordQuery, getUsageStats } from '../services/usage';
+import { checkAndRecordQuery, getUsageStats } from '../services/usage';
 import * as s3Mock from '../services/s3Storage';
 const { __resetStore } = s3Mock as any;
 
@@ -77,21 +77,4 @@ describe('Usage Tracking', () => {
     expect(stats.today.users['user-b']?.queryCount).toBe(1);
   });
 
-  it('legacy checkUsageLimit does not modify state', async () => {
-    const before = await checkUsageLimit('readonly-user');
-    expect(before.allowed).toBe(true);
-    expect(before.usage?.userToday).toBe(0);
-
-    // Calling check again should still show 0
-    const after = await checkUsageLimit('readonly-user');
-    expect(after.usage?.userToday).toBe(0);
-  });
-
-  it('legacy recordQuery increments count', async () => {
-    await recordQuery('legacy-user');
-    await recordQuery('legacy-user');
-
-    const stats = await getUsageStats();
-    expect(stats.today.users['legacy-user']?.queryCount).toBe(2);
-  });
 });

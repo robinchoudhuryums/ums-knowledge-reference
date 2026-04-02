@@ -1,250 +1,185 @@
-# UMS Knowledge Base — Comprehensive Codebase Audit Report
+# Codebase Audit Report — UMS Knowledge Base Reference Tool
 
-**Date:** 2026-03-31
-**Scope:** Full codebase audit (~44K lines TypeScript, 705 tests, 48 test files)
-**Auditor:** Automated deep analysis of all backend services, routes, middleware, config, utils, db, cache, storage, frontend components, hooks, services, types, styling, tests, Docker, CI/CD, migrations, and documentation.
+**Date:** 2026-03-28
+**Auditor:** Claude (Automated)
+**Scope:** Full codebase — backend services, routes, middleware, config, database, frontend, tests, CI/CD
 
 ---
 
 ## Executive Summary
 
-This is a **mature, well-architected** internal tool that covers an impressive breadth: RAG pipeline, HIPAA compliance, forms workflow, structured data lookups, and admin analytics. The codebase shows evidence of **iterative hardening** — race conditions were fixed, PHI redaction was deepened, security was layered progressively. That said, there are areas where complexity has accumulated and opportunities for improvement exist.
+This is a **remarkably ambitious and well-built** single-developer healthcare application. The breadth of functionality — RAG pipeline, HIPAA compliance, OCR, forms, DME reference data, admin tooling — is impressive. The codebase shows clear iterative improvement with strong security awareness. However, there are real bugs, security gaps, and architectural concerns that need attention.
+
+**~80 findings** identified across all areas, categorized below by severity.
 
 ---
 
-## Ratings (Priority Order)
+## Critical Findings (Fix Immediately)
 
-### 1. HIPAA Compliance — 8.0/10
+| # | Area | File | Issue |
+|---|------|------|-------|
+| 1 | **Security** | `backend/src/config/database.ts:26,55` | `rejectUnauthorized: false` disables SSL cert validation on RDS connections — vulnerable to MITM attacks. RDS provides valid certificates; use `rejectUnauthorized: true` with the RDS CA bundle. |
+| 2 | **Data Safety** | `backend/src/db/users.ts:69-73` | Mass delete pattern: `DELETE FROM users WHERE id != ALL($1)` — if the `users` array is ever empty due to a bug, **all users are deleted**. Replace with explicit delete-by-ID. |
+| 3 | **Schema** | `backend/migrations/001_initial_schema.sql` | No FOREIGN KEY constraints on any table (`documents.collection_id`, `documents.uploaded_by`, `usage_records.user_id`, `audit_logs.user_id`, `query_logs.user_id`, `feedback.user_id`, `jobs.user_id`). Leads to orphaned records and no cascading deletes. |
+---
 
-| Sub-factor | Rating | Notes |
-|---|---|---|
-| PHI Redaction | 8/10 | 18 HIPAA identifiers covered (SSN, DOB, MRN, phone, email, address, Medicare/Medicaid, names). Deep recursive traversal in audit logs. Natural language DOB patterns. Inherent regex limits — unstructured patient names without prefix context will slip through. |
-| Authentication/Authorization | 8.5/10 | httpOnly cookies, 30-min JWT expiry, account lockout (5 attempts/15min), password history (last 5), `mustChangePassword`, CSRF double-submit cookie, collection-level ACL, JWT_SECRET enforcement in prod, `revokeAllUserTokens` on password reset. |
-| Audit Trail | 9/10 | SHA-256 hash chain with mutex-protected writes, deep PHI redaction, chain verification endpoint, recovery on restart. Excellent tamper-evidence. |
-| Data Retention | 8.5/10 | HIPAA minimum floors hard-coded (audit ≥6yr), NaN-safe parseInt, validated date regex. Runs at 3AM daily. |
-| Session Management | 8/10 | 15-min idle timeout with full-viewport interaction blocker. 30-min JWT expiry. Stream cancellation on logout. |
-| Encryption | 7/10 | S3 AES-256, RDS SSL with `rejectUnauthorized: true` by default, HTTPS enforcement with HSTS. No application-layer encryption of PHI fields. |
-| Prompt Injection Protection | 8/10 | 12 input patterns + Unicode normalization + output guardrails + XML context framing. Good layered defense. |
+## High Findings (Fix Soon)
 
-**Improvement paths:**
-- Add **field-level encryption** for PHI stored in S3/RDS
-- Implement **audit log immutability** via S3 Object Lock (WORM)
-- Add **MFA** (multi-factor authentication) — currently single-factor only
-- Add a **PHI discovery scan** for retroactive detection in stored data
-- Add **BAA compliance checklist** endpoint for compliance officers
+| # | Area | File | Issue |
+|---|------|------|-------|
+| 4 | Routes | `backend/src/routes/documents.ts:284-303` | Bulk delete mutates array with `splice()` mid-iteration — indices shift, wrong documents may be deleted. Use reverse iteration or `filter()`. |
+| 5 | Routes | `backend/src/routes/documents.ts:153` | `GET /documents/:id` has no collection ACL check — any authenticated user can read any document's metadata. The list endpoint correctly enforces ACL. |
+| 6 | HIPAA | `backend/src/services/ppdQueue.ts:142` | PPD submission logged with raw `patientInfo` (patient name, clinical details) without PHI redaction. Application logs are not covered by BAA — defense-in-depth requires redacting PHI regardless of upstream BAA coverage. |
+| 7 | Auth | `backend/src/routes/users.ts:404` | User IDs generated with `user-${Date.now()}` — predictable/enumerable. Should use `uuid.v4()`. |
+| 8 | DB | `backend/migrations/001_initial_schema.sql` | Missing indexes on frequently-queried FK columns: `usage_records.user_id`, `audit_logs.user_id`, `query_logs.user_id`, `feedback.user_id`. |
+| 9 | Services | `backend/src/services/ppdQuestionnaire.ts:275` | HCPCS code parsing: `parseInt(p.hcpcs.replace(/\D/g, ''))` — corrupted HCPCS codes with no digits produce `NaN → 0`, silently bypassing weight capacity filtering. |
+| 10 | Frontend | `frontend/src/services/api.ts:191-288` | No timeout on SSE streaming — if backend hangs, UI is stuck in loading state indefinitely. Add a configurable timeout (e.g., 120s). |
+| 11 | CI/CD | `.github/workflows/ci.yml` | Coverage threshold is **30%** — dangerously low for a medical/HIPAA system. Industry standard is 70-80%; healthcare should target 80%+. |
+| 12 | Routes | `backend/src/routes/queryLog.ts:190-194` | Date iteration loop using `d.setDate()` with Date object comparison — can produce infinite loop or incorrect iterations. Use timestamp arithmetic. |
+| 13 | Routes | `backend/src/routes/accountCreation.ts:57`, `papAccountCreation.ts:45`, `ppd.ts:302` | Email `to` field from user input not validated — risk of header injection (security concern, not HIPAA — emails are within BAA-protected Google Workspace). |
 
 ---
 
-### 2. RAG Functionality — 7.5/10
+## Medium Findings (Address in Next Sprint)
 
-| Sub-factor | Rating | Notes |
-|---|---|---|
-| Retrieval Quality | 7.5/10 | Hybrid search (cosine + BM25) with IDF, medical synonym expansion, re-ranking. BM25 normalization is per-query (divides by max in result set), which can amplify noise when all BM25 scores are low. |
-| Chunking | 7/10 | Sentence-boundary-aware with overlap, table preservation, section header detection. 500-token chunks with 100-token overlap is reasonable. The ~4 chars/token heuristic is rough. |
-| Embedding | 8/10 | Titan Embed V2 (1024 dims), LRU cache (200 entries), batch processing (parallel 20), model ID in cache key, dimension validation. |
-| Generation | 7.5/10 | Claude Haiku 4.5 with good system prompt. Prompt caching saves 90% on cached tokens. Confidence scoring with reconciliation. Output guardrails detect system prompt leakage. Temperature 0.15 is appropriately conservative. |
-| Query Processing | 8/10 | Reformulation of follow-up questions, conversation memory with summarization, structured reference enrichment (HCPCS/ICD-10/LCD). Input sanitization and prompt injection detection. |
-| Reference Data | 8/10 | 332 HCPCS codes, 66 ICD-10 codes, 8 LCD checklists — automatically enriched into RAG context. |
-| Observability | 8/10 | Per-query RAG traces with timing breakdowns, confidence tracking, token counts, failure drill-down. |
+### Database & Concurrency
+- **No transaction isolation levels specified** — default READ COMMITTED can cause lost updates under concurrent load (`db/users.ts:36`, `documents.ts:114`, `vectorStore.ts:26`)
+- **Statement timeout (30s)** may be too long for reads — consider 15-20s for read operations (`config/database.ts:31`)
+- **No partial indexes** for common query patterns like `WHERE status = 'ready'`
 
-**Improvement paths:**
-- **Replace Titan Embed V2 with a medical domain embedding model** (e.g., MedCPT, BioLORD)
-- **Add cross-encoder re-ranking** with a fine-tuned model (vs. current heuristic boosting)
-- **Add retrieval evaluation** — automated test suite with gold-standard Q&A pairs
-- **Migrate to HNSW** index for pgvector (better recall than IVFFlat)
-- **Add query routing** — detect when structured data alone suffices vs. RAG
+### Services
+- **Chunker infinite loop risk** — `chunker.ts:253`: if `findNaturalBreak()` returns position equal to last chunk start, loop makes no progress
+- **Job queue dirty flag race** — `jobQueue.ts:40-50`: crash between flag set and next persist loses jobs
+- **Data retention malformed dates** — `dataRetention.ts:91`: objects with unparseable dates are never deleted, accumulate indefinitely
+- **Custom CSV parser fragile** — `feeScheduleFetcher.ts:194-211`: doesn't handle escaped quotes, CRLF in quoted fields, or mixed quote styles. Use `csv-parse/sync` library
+- **Forms lack server-side validation** — `accountCreation.ts` and `papAccountCreation.ts` define schemas but export no validation functions
+- **Spasticity detection false positives** — `ppdQuestionnaire.ts:200-203`: keywords like "stiff"/"tight" can trigger without sufficient medical context
 
----
+### Routes & Security
+- **Rate limiting gaps** — `GET /documents/search/text` (vector search, expensive) has no rate limit; admin endpoints have no rate limits
+- **Path collision risk** — `GET /api/documents/collections/list` vs `GET /api/documents/:id` — if a doc has ID "collections", wrong route matches
+- **Missing input size limits** on array fields like `tags` — could DoS with 100K-element arrays
+- **Rate limit key fallback** — `accountCreation.ts:17`: falls back to `'unknown'` when user ID and IP are both unavailable, sharing rate limit bucket across multiple users
 
-### 3. Overall Quality — 7.5/10
-
-| Sub-factor | Rating | Notes |
-|---|---|---|
-| Architecture | 7.5/10 | Clean separation of concerns. Hybrid S3/RDS pattern. Storage/cache/embedding abstraction layers ready for scaling. |
-| Code Quality | 7/10 | Well-structured with consistent patterns. Some files are large (auth.ts 488 lines, query.ts 791 lines). Good TypeScript with strict flags. |
-| Testing | 7/10 | 705 tests is substantial. Good coverage of critical paths. Tests are unit-only — no E2E or integration tests against real services. |
-| Error Handling | 8/10 | Resilience utilities (retry with jitter, circuit breaker, timeout), graceful shutdown with buffer flushing, usage rollback on failed queries. |
-| DevOps | 7.5/10 | Docker with tini + non-root user + health check. CI with lint/type-check/test/coverage/audit. Auto-deploy via SSH. |
-| Documentation | 8/10 | Exceptional CLAUDE.md. Good README. OpenAPI spec. SCALING.md. |
-| Security | 8/10 | SSRF prevention, rate limiting, CSRF, CORS hardening, helmet, HTML escaping, header injection prevention, file extension whitelist. |
-
----
-
-### 4. Forms & Workflow Tools — 7.5/10
-
-| Sub-factor | Rating | Notes |
-|---|---|---|
-| PPD Questionnaire | 8/10 | 45 questions, EN/ES, pain body map, PMD recommendation engine, seating evaluation auto-fill, submission queue. |
-| Account Creation | 7.5/10 | PMD + PAP forms with insurance card OCR. Conditional formatting badges. Server-side validation. |
-| Email Integration | 7/10 | Gmail SMTP with HTML templates. Header injection prevention. No email retry on SMTP failure. |
-| OCR/Extraction | 7.5/10 | Textract + Claude for structured extraction. Templates for PPD, CMN, Prior Auth. Clinical note extraction. |
+### Frontend
+- **Performance**: `deduplicateSources()` called inline on every render without `useMemo` (`ChatInterface.tsx:281`)
+- **Performance**: No virtualization for long conversations — 100+ turns causes lag
+- **Performance**: Inline lambda functions in JSX create new references every render (`ChatInterface.tsx:235-246`)
+- **Accessibility**: Missing focus traps in modals (`SourceViewer.tsx`, `FeedbackForm.tsx`)
+- **Accessibility**: Missing ARIA labels on thumbs up/down buttons (`ChatInterface.tsx:301-325`)
+- **Accessibility**: Spinner/loading state not announced to screen readers (`ChatInterface.tsx:397`)
+- **Error handling**: No ErrorBoundary around LoginForm (`App.tsx:99`)
+- **Error handling**: `onIdle()` callback in `useIdleTimeout.ts:60` has no try-catch — logout can fail silently
+- **Event listener leak**: `useIdleTimeout.ts:74` — `removeEventListener` missing options object that was passed to `addEventListener`
+- **localStorage parsing**: `ChatInterface.tsx:48-52` — `JSON.parse(stored)` without type validation; compromised localStorage could inject arbitrary data
 
 ---
 
-### 5. UI/UX & Design — 7.0/10
+## Test Coverage Gaps
 
-| Sub-factor | Rating | Notes |
-|---|---|---|
-| Visual Design | 7.5/10 | Healthcare blue palette with molecular pattern. 60+ CSS variables for theming. Semantic status colors. |
-| Accessibility | 6/10 | ARIA labels on feedback buttons, role="dialog" on modals, focus traps. Missing: skip-to-content link, complete focus-visible styles, WCAG AA color contrast audit, screen reader testing. |
-| Responsiveness | 5.5/10 | Inline styles (CSSProperties objects) limit responsive design. No media queries. Nav tabs will overflow on mobile. |
-| Performance | 7/10 | Code-split PDF viewer. Memoized functions. 2MB SSE buffer cap. But: no virtualization for long lists. |
-| User Experience | 7.5/10 | Streaming SSE, markdown rendering, source citations, confidence badges, collection persistence, idle timeout warning. Toast notifications. |
-| Information Architecture | 7/10 | 8 tabs is a lot — could overwhelm new users. |
+### Routes with ZERO Tests (9 of 15)
 
----
+| Route | Criticality |
+|-------|-------------|
+| `documents.ts` | **CRITICAL** — core document CRUD |
+| `extraction.ts` | HIGH — async job handling |
+| `ppd.ts` | HIGH — PPD form processing |
+| `coverage.ts` | MEDIUM — coverage checklists |
+| `hcpcs.ts` | MEDIUM — HCPCS lookups |
+| `icd10.ts` | MEDIUM — ICD-10 lookups |
+| `queryLog.ts` | MEDIUM — analytics |
+| `sourceMonitor.ts` | LOW — background service |
+| `errors.ts` | LOW — error reporting |
 
-### 6. Scalability & Performance — 6.5/10
+### Services with ZERO Tests (11 of 39)
 
-| Sub-factor | Rating | Notes |
-|---|---|---|
-| Horizontal Scaling | 5/10 | Documented but not implemented. In-memory state everywhere. Single-instance only. |
-| Database | 7/10 | pgvector with IVFFlat. Connection pooling with timeouts. IVFFlat recall degrades at scale. |
-| Caching | 6/10 | In-memory only. No distributed caching. |
-| Vector Store | 6/10 | Dual-path (S3 JSON / pgvector). S3 JSON loads entire index into RAM. |
+| Service | Criticality |
+|---------|-------------|
+| `s3Storage.ts` | **CRITICAL** — all persistence |
+| `formAnalyzer.ts` | HIGH — form field extraction |
+| `insuranceCardReader.ts` | MEDIUM — OCR pipeline |
+| `visionExtractor.ts` | MEDIUM — image descriptions |
+| `pdfAnnotator.ts` | MEDIUM — PDF annotations |
+| `queryLog.ts` | MEDIUM — query persistence |
+| `reindexer.ts` | MEDIUM — re-ingestion |
+| `sourceMonitor.ts` | LOW — URL monitoring |
+| `feeScheduleFetcher.ts` | LOW — fee schedule fetch |
+| `embeddingProvider.ts` | LOW — provider interface |
+| `titanEmbeddingProvider.ts` | LOW — Titan implementation |
 
----
+### Test Quality Assessment
 
-## Specific Issues Found
+**Strengths:**
+- Proper mocking of AWS services (S3, Bedrock, Textract)
+- Good edge case coverage in unit tests (empty inputs, boundaries, invalid data)
+- Integration tests cover auth → upload → query → rate limiting flows
+- Fake timers used correctly for time-dependent tests
 
-### Critical / High Priority
-
-#### 1. SPA Fallback Serves HTML for Missing API Routes — **FIXED**
-**File:** `backend/src/server.ts:308-310`
-**Fix:** Added `app.all('/api/*')` handler before SPA fallback to return JSON 404 for unmatched API routes.
-
-#### 2. Health Check Uses Dynamic Imports on Every Request — **FIXED**
-**File:** `backend/src/server.ts:16-18`
-**Fix:** Moved s3Client, S3_BUCKET, checkDatabaseConnection, getVectorStoreStats to top-level imports.
-
-#### 3. ReactMarkdown XSS Surface — **FIXED**
-**File:** `frontend/src/components/ChatInterface.tsx:375,429`
-**Fix:** Added `skipHtml` prop to both ReactMarkdown instances to prevent raw HTML injection.
-
-#### 4. Message List Key Anti-Pattern — **FIXED**
-**File:** `frontend/src/components/ChatInterface.tsx:291`
-**Fix:** Added `id: string` to ConversationTurn type, generated via `crypto.randomUUID()`, used as React key.
-
-#### 5. Document Selection Not Reset on Collection Change — **FIXED**
-**File:** `frontend/src/components/DocumentManager.tsx`
-**Fix:** Added useEffect to reset selectedIds when selectedCollection changes.
-
-#### 6. Medical Synonym Self-Reference — **FIXED**
-**File:** `backend/src/services/vectorStore.ts:39`
-**Fix:** Removed `'hospital bed'` from its own synonym list.
-
-#### 7. Collection ACL Missing on 5 Endpoints — **FIXED**
-**Files:** `backend/src/routes/documents.ts` (delete, versions, tags/list, search/text)
-**Fix:** Added `getUserAllowedCollections()` checks to all affected endpoints.
-
-#### 8. Source Monitor SSRF on Redirects — **FIXED**
-**File:** `backend/src/services/sourceMonitor.ts:185`
-**Fix:** Added `validateUrl()` call on redirect targets before following.
-
-#### 9. Data Retention Date Rollover — **FIXED**
-**File:** `backend/src/services/dataRetention.ts:80`
-**Fix:** Added rollover check (`d.toISOString().split('T')[0] !== match[1]`).
-
-#### 10. Unicode Entity Decoding — **FIXED**
-**File:** `backend/src/services/textExtractor.ts:209-210`
-**Fix:** Changed `String.fromCharCode()` to `String.fromCodePoint()` for full Unicode support.
-
-#### 11. reset-admin.ts SSL Validation — **FIXED**
-**File:** `backend/src/scripts/reset-admin.ts:43`
-**Fix:** Reads `DB_SSL_REJECT_UNAUTHORIZED` env var instead of hardcoding `false`.
-
-#### 12. Email Error Leak — **FIXED**
-**Files:** `backend/src/routes/accountCreation.ts:76`, `papAccountCreation.ts:65`
-**Fix:** Log errors server-side, return generic message to client.
-
-#### 13. Query Route Duplication — **FIXED**
-**File:** `backend/src/routes/query.ts`
-**Fix:** Extracted shared `runQueryPipeline()` (~100 lines deduplicated).
-
-#### 14. Repeated Mutex Pattern — **FIXED**
-**Files:** `ingestion.ts`, `audit.ts`
-**Fix:** Extracted shared `createMutex()` and `createOnceLock()` in `utils/asyncMutex.ts`.
-
-#### 15. topK Falsy Coalescing — **FIXED**
-**File:** `backend/src/routes/query.ts`
-**Fix:** Changed `topK || 6` to `topK ?? 6` to handle explicit `topK=0`.
-
-### Remaining Medium Priority
-
-#### 16. IDF Rebuild is O(n) on Every Corpus Change
-**File:** `backend/src/services/vectorStore.ts`
-**Issue:** `buildIdfMap` iterates ALL chunks on every add/remove. For large corpora, consider incremental IDF updates.
-
-#### 17. Audit Log Retrieval is O(n) S3 GETs
-**File:** `backend/src/services/audit.ts:170-206`
-**Issue:** `getAuditLogs` fetches ALL individual S3 objects sequentially for a date. For high-volume days, very slow.
-
-#### 18. Frontend Token/CSRF Code Duplication
-**Files:** `api.ts`, `errorReporting.ts`
-**Issue:** `getLegacyToken()` and `getCsrfToken()` defined in both files. Extract to shared utility.
-
-#### 19. Focus Trap Duplication
-**Files:** `FeedbackForm.tsx`, `SourceViewer.tsx`
-**Issue:** Nearly identical focus trap implementations. Extract to `useFocusTrap()` hook.
-
-#### 20. ChangePasswordForm Hardcoded Colors
-**File:** `frontend/src/components/ChangePasswordForm.tsx:87-91`
-**Issue:** Password requirement validation uses hardcoded hex colors instead of CSS variables. Doesn't respect dark mode.
-
-#### 21. ConversationTurn Type Safety — **FIXED** (isError added to type, id field added)
-
-### Low Priority
-
-#### 22. Clipboard API Error Not Handled
-**File:** `frontend/src/components/ChatInterface.tsx:344`
-
-#### 23. Silent Collection Load Failure
-**File:** `frontend/src/App.tsx:83-90`
-**Issue:** Error caught silently with no user feedback.
-
-#### 24. PHI Detection Uses window.confirm()
-**File:** `frontend/src/components/ChatInterface.tsx:100-104`
-**Issue:** Blocking `window.confirm()` should be replaced with modal dialog.
+**Weaknesses:**
+- 30% coverage threshold too low for healthcare
+- No tests for rate limiting actually blocking requests
+- No tests for concurrent/race condition scenarios
+- No tests for network failure recovery
+- Some tests verify implementation details rather than behavior
 
 ---
 
-## Future Development Paths (Priority Order)
+## Ratings
 
-1. **Redis integration** — Immediately unlocks horizontal scaling. Replace in-memory caches, token revocation, rate limiting, session management.
+### Overall: 8.5 / 10 (A-)
 
-2. **Medical domain embeddings** — Swap Titan Embed for a medical-specific model. Single highest-impact change for RAG quality.
+*Post-audit rating.* For a single-developer internal tool, this is exceptional in scope and ambition. The security hardening is well above average (CSRF, SSRF prevention, prompt injection detection with Unicode normalization, audit hash chains, PHI redaction). BAA coverage with AWS (Bedrock, S3, Textract) and Google Workspace provides solid HIPAA compliance. All critical and high findings from the initial audit have been resolved. Remaining gaps: no semantic caching, no conversation virtualization for very long chats, some services still lack test coverage.
 
-3. **Evaluation framework** — Build a test set of gold-standard Q&A pairs to measure retrieval quality.
+### Detailed Ratings (Post-Audit)
 
-4. **Mobile-responsive UI** — Many UMS employees access this from tablets during patient interactions.
-
-5. **MFA** — Required for true HIPAA compliance in most audits. Add TOTP-based 2FA.
-
-6. **Worker queue** — Replace in-memory job queue with Redis-backed Bull/BullMQ for reliability.
-
-7. **E2E tests** — Add Playwright/Cypress for frontend, supertest for API integration tests.
-
-8. **Document versioning UI** — Backend tracks versions but no frontend version comparison/rollback interface.
-
-9. **Audit log immutability** — S3 Object Lock for compliance-grade audit trail.
-
-10. **Fine-tuned query routing** — Route queries to structured data vs. RAG vs. hybrid for cost optimization.
+| Category | Rating | Grade | Key Strengths | Remaining Gaps |
+|----------|--------|-------|---------------|----------------|
+| **RAG Functionality** | 8.5 | A | Hybrid BM25+cosine with IDF, medical synonyms, re-ranking, prompt injection (12 patterns + Unicode normalization), output guardrails, prompt caching, reference enrichment, min score threshold, conversation history injection validation | Char-based token estimation (not real tokenizer), no semantic caching, fixed semantic/keyword weights |
+| **OCR / Extraction** | 7.5 | B+ | Multi-format support (PDF, DOCX, XLSX, CSV, HTML), conditional Textract OCR, vision extraction, template-based structured extraction, async jobs, RFC 4180 CSV parser, proper HTML entity decoding | visionExtractor/insuranceCardReader lack tests, no incremental extraction for large docs |
+| **HIPAA Compliance** | 8.5 | A | SSL cert validation enabled, PHI redaction on all logs (including PPD queue), collection ACL enforced, crypto.randomUUID() user IDs, SHA-256 audit chain, httpOnly cookies, lockout, password history, idle timeout, HIPAA retention floors, BAA coverage | Field-level encryption at rest not yet implemented |
+| **Form Functionality** | 8.0 | A- | 45-question PPD with EN/ES, PMD recommendation engine with negation-aware spasticity detection, seating eval auto-fill with NaN guards, server-side validation, insurance card OCR, submission queue | Validation warns but doesn't block partial submissions |
+| **UI/UX & Design** | 7.5 | B+ | Healthcare blue palette, 60+ CSS variables, dark mode, focus traps, ARIA labels, 120s SSE timeout, memoized rendering, ErrorBoundary on all entry points, improved login error UX | No conversation virtualization for 100+ turn chats, no keyboard shortcut discoverability |
+| **Notable Features** | 8.0 | A- | 332 HCPCS codes / 66 ICD-10 / 8 LCDs, RAG tracing with p50/p95/p99, source monitoring, horizontal scaling prep, admin password reset script | — |
+| **Architecture & Code Quality** | 8.0 | A- | Clean layering, cache abstraction, embedding provider interface, storage abstraction, FK indexes, mass delete safety guard, hybrid db/ layer, health check fails on configured-but-unreachable DB | Some services still import s3Storage directly, no foreign key constraints in schema (indexes added but not FKs) |
+| **Documentation** | 9.0 | A | CLAUDE.md is extraordinarily detailed, SCALING.md, OBSERVATORY_PORT_LOG.md, AUDIT_REPORT.md | — |
+| **Test Coverage** | 7.0 | B | 717 tests across 49 files, route-level tests for 7 previously-untested routes, 50% line / 40% branch CI thresholds | formAnalyzer/visionExtractor/insuranceCardReader still lack tests, no concurrency tests |
 
 ---
 
-## Rating Summary (Updated 2026-04-01)
+## Top 10 Recommended Next Steps
 
-| Category | Previous | Current | Delta | Key Improvements |
-|---|---|---|---|---|
-| **HIPAA Compliance** | 8.0 | **8.7/10** | +0.7 | MFA added, MFA audit trail, admin MFA reset, DB persistence fix |
-| **RAG Functionality** | 7.5 | **8.2/10** | +0.7 | Cohere Embed v3, synonym expansion (75+), chunk dedup, query routing, eval framework |
-| **Overall Quality** | 7.5 | **8.3/10** | +0.8 | Auth split, shared mutex, query pipeline dedup, 788 tests (51 files), OTel tracing |
-| **Security** | 8.0 | **8.5/10** | +0.5 | Collection ACL on all endpoints, SSRF fix, circuit breaker, Redis token revocation |
-| **Testing** | 7.0 | **8.3/10** | +1.3 | 861 tests (was 705), 54 files (was 48), supertest integration, eval framework, guardrail fuzzer, MFA tests |
-| **Forms & Workflow** | 7.5 | **7.5/10** | 0 | No changes this sprint |
-| **UI/UX & Design** | 7.0 | **7.8/10** | +0.8 | Tab consolidation (8→5), WCAG AA contrast, responsive layout, skip-to-content |
-| **Scalability** | 6.5 | **7.8/10** | +1.3 | Redis integration, incremental IDF, parallel audit fetch, DB pool metrics, FK constraints |
+1. ~~**Fix SSL cert validation**~~ — **DONE** (PR #52)
+2. ~~**Add foreign key constraints**~~ — **DONE** (migration 004, April 2026)
+3. ~~**Replace dangerous mass-delete pattern**~~ — **DONE** (PR #52)
+4. ~~**Fix bulk delete array mutation**~~ — **DONE** (PR #52)
+5. ~~**Add collection ACL check**~~ — **DONE** (versions + collections list endpoints, April 2026)
+6. **Raise CI coverage threshold** to 60%+ and add tests for untested routes
+7. ~~**Add PHI redaction to PPD queue logging**~~ — **DONE** (PR #52)
+8. ~~**Add streaming timeout**~~ — **DONE** (PR #52)
+9. ~~**Add server-side form validation**~~ — **DONE** (PR #52)
+10. **Add accessibility improvements** — focus traps in modals, ARIA labels, screen reader live regions
 
-**Overall: 7.5 → 8.1/10** (+0.6)
+---
 
-See `docs/improvement-roadmap.md` for the full P2/P3 backlog.
+## Future Architecture Recommendations
+
+### Short-term (1-3 months)
+- Implement Redis for token revocation and usage counters (see SCALING.md)
+- Add PgBouncer or RDS Proxy for connection pooling
+- Implement real tokenizer (js-tiktoken) for accurate chunk sizing
+- Add semantic query caching to reduce Bedrock costs
+- Add notification system for PPD queue status changes
+
+### Medium-term (3-6 months)
+- Migrate remaining S3 JSON stores to PostgreSQL (query logs, RAG traces)
+- Add E2E tests with LocalStack for AWS service integration
+- Implement field-level encryption for PII at rest
+- Add load/performance testing to CI pipeline
+- Add WCAG 2.1 AA compliance audit and fixes
+
+### Long-term (6-12 months)
+- Multi-tenant architecture (tie into Observatory QA platform)
+- Real-time collaboration on form reviews
+- Webhook-based notification system
+- Advanced RAG: query decomposition, multi-hop reasoning, citation verification
+- ML-based confidence calibration using feedback data

@@ -28,6 +28,10 @@ let docFreqCounts: Map<string, number> | null = null;
 let totalCorpusTokens = 0;
 let corpusChunkCount = 0;
 
+// Tracks whether the stored embeddings use a different model/dimension than the
+// current provider. Set during initializeVectorStore(), exposed via getVectorStoreStats().
+let embeddingModelMismatch: { stored: string; current: string; storedDims: number; currentDims: number } | null = null;
+
 // ---------------------------------------------------------------------------
 // Medical synonym map for query expansion.
 // When a user searches for one form, we also match the other forms.
@@ -526,9 +530,39 @@ export async function initializeVectorStore(): Promise<void> {
 
   initPromise = (async () => {
     cachedIndex = await loadVectorIndex();
+    embeddingModelMismatch = null;
+
     if (cachedIndex) {
       const chunkCount = cachedIndex.chunks.length;
       logger.info('Vector store loaded from S3', { chunkCount });
+
+      // Detect embedding model/dimension mismatch with the current provider.
+      // This happens when the embedding model is changed (e.g. Titan V2 → V3)
+      // and existing chunks were embedded with the old model.
+      const ep = getEmbeddingProvider();
+      if (chunkCount > 0 && cachedIndex.embeddingDimensions && cachedIndex.embeddingDimensions !== ep.dimensions) {
+        embeddingModelMismatch = {
+          stored: cachedIndex.embeddingModel || 'unknown',
+          current: ep.modelId,
+          storedDims: cachedIndex.embeddingDimensions,
+          currentDims: ep.dimensions,
+        };
+        logger.error('EMBEDDING MODEL MISMATCH — stored embeddings are incompatible with current provider', {
+          storedModel: embeddingModelMismatch.stored,
+          currentModel: embeddingModelMismatch.current,
+          storedDimensions: embeddingModelMismatch.storedDims,
+          currentDimensions: embeddingModelMismatch.currentDims,
+          chunkCount,
+          action: 'Queries will fail. Re-index all documents via POST /api/documents/reindex-embeddings to fix.',
+        });
+      } else if (chunkCount > 0 && cachedIndex.embeddingModel && cachedIndex.embeddingModel !== ep.modelId) {
+        // Same dimensions but different model — warn (may affect quality but won't crash)
+        logger.warn('Embedding model changed but dimensions match — quality may vary', {
+          storedModel: cachedIndex.embeddingModel,
+          currentModel: ep.modelId,
+          dimensions: ep.dimensions,
+        });
+      }
 
       // Warn if approaching memory limits. At 1024 dimensions (4 bytes each),
       // each chunk embedding is ~4KB. 50K chunks ≈ 200MB of embeddings in RAM.
@@ -579,6 +613,18 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
 
   if (!cachedIndex) await initializeVectorStore();
 
+  // Validate embedding dimensions match the current provider to prevent
+  // mixing incompatible vectors (e.g. if model changed mid-ingestion)
+  const ep = getEmbeddingProvider();
+  for (let i = 0; i < embeddings.length; i++) {
+    if (embeddings[i].length !== ep.dimensions) {
+      throw new Error(
+        `Embedding dimension mismatch on chunk ${i}: got ${embeddings[i].length} but provider expects ${ep.dimensions}. ` +
+        `This may indicate an embedding model change during ingestion.`
+      );
+    }
+  }
+
   const storedChunks: StoredChunk[] = chunks.map((chunk, i) => ({
     id: chunk.id,
     documentId: chunk.documentId,
@@ -596,9 +642,11 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
   cachedIndex!.lastUpdated = new Date().toISOString();
 
   // Stamp current embedding model metadata
-  const ep = getEmbeddingProvider();
   cachedIndex!.embeddingModel = ep.modelId;
   cachedIndex!.embeddingDimensions = ep.dimensions;
+
+  // Clear model mismatch flag since we just added chunks with the current model
+  embeddingModelMismatch = null;
 
   // Incrementally update IDF stats instead of full rebuild (O(new chunks) not O(corpus))
   incrementalIdfAdd(storedChunks);
@@ -828,12 +876,111 @@ export async function searchChunksByKeyword(
 /**
  * Get vector store stats.
  */
-export async function getVectorStoreStats(): Promise<{ totalChunks: number; lastUpdated: string | null }> {
+export interface VectorStoreStatus {
+  totalChunks: number;
+  lastUpdated: string | null;
+  embeddingModel?: string;
+  embeddingDimensions?: number;
+  modelMismatch?: {
+    stored: string;
+    current: string;
+    storedDims: number;
+    currentDims: number;
+    requiresReindex: boolean;
+  };
+}
+
+export async function getVectorStoreStats(): Promise<VectorStoreStatus> {
   if (await useRds()) {
-    return dbGetVectorStoreStats();
+    const base = await dbGetVectorStoreStats();
+    return { ...base, modelMismatch: embeddingModelMismatch ? { ...embeddingModelMismatch, requiresReindex: true } : undefined };
   }
   return {
     totalChunks: cachedIndex?.chunks.length || 0,
     lastUpdated: cachedIndex?.lastUpdated || null,
+    embeddingModel: cachedIndex?.embeddingModel,
+    embeddingDimensions: cachedIndex?.embeddingDimensions,
+    modelMismatch: embeddingModelMismatch ? { ...embeddingModelMismatch, requiresReindex: true } : undefined,
   };
+}
+
+/**
+ * Re-embed all documents in the vector store using the current embedding provider.
+ * This is the migration path when the embedding model changes.
+ *
+ * For each document's chunks, regenerates embeddings with the current model,
+ * then replaces the old chunks. Returns the number of chunks re-embedded.
+ *
+ * For pgvector (RDS) mode, this requires an ALTER TABLE if dimensions changed.
+ */
+export async function reindexAllEmbeddings(): Promise<{ reindexedChunks: number; errors: string[] }> {
+  if (await useRds()) {
+    // pgvector requires schema change for dimension change — cannot auto-migrate
+    throw new Error(
+      'Embedding reindex not supported in pgvector mode. ' +
+      'Run migration to ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(NEW_DIM), then re-ingest all documents.'
+    );
+  }
+
+  if (!cachedIndex) await initializeVectorStore();
+  if (!cachedIndex || cachedIndex.chunks.length === 0) {
+    return { reindexedChunks: 0, errors: [] };
+  }
+
+  const ep = getEmbeddingProvider();
+  const errors: string[] = [];
+  let reindexedCount = 0;
+
+  // Group chunks by document for batch embedding
+  const docChunks = new Map<string, StoredChunk[]>();
+  for (const chunk of cachedIndex.chunks) {
+    const existing = docChunks.get(chunk.documentId) || [];
+    existing.push(chunk);
+    docChunks.set(chunk.documentId, existing);
+  }
+
+  logger.info('Starting embedding reindex', {
+    totalChunks: cachedIndex.chunks.length,
+    documentCount: docChunks.size,
+    currentModel: ep.modelId,
+    currentDimensions: ep.dimensions,
+  });
+
+  for (const [documentId, chunks] of docChunks) {
+    try {
+      const texts = chunks.map(c => c.text);
+      const newEmbeddings = await ep.generateEmbeddingsBatch(texts);
+
+      // Replace embeddings in place
+      for (let i = 0; i < chunks.length; i++) {
+        chunks[i].embedding = newEmbeddings[i];
+      }
+      reindexedCount += chunks.length;
+    } catch (err) {
+      const msg = `Failed to re-embed document ${documentId}: ${err instanceof Error ? err.message : String(err)}`;
+      logger.error(msg);
+      errors.push(msg);
+    }
+  }
+
+  // Update metadata
+  cachedIndex.embeddingModel = ep.modelId;
+  cachedIndex.embeddingDimensions = ep.dimensions;
+  cachedIndex.lastUpdated = new Date().toISOString();
+  embeddingModelMismatch = null;
+
+  // Invalidate IDF cache
+  idfVersion++;
+  idfCache = null;
+
+  await saveVectorIndex(cachedIndex);
+
+  logger.info('Embedding reindex completed', {
+    reindexedChunks: reindexedCount,
+    errors: errors.length,
+    newModel: ep.modelId,
+    newDimensions: ep.dimensions,
+  });
+
+  return { reindexedChunks: reindexedCount, errors };
 }

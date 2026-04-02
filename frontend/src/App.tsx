@@ -145,7 +145,7 @@ export default function App() {
               const visibleTabs = tabs.filter(t => !t.adminOnly || isAdmin);
               const currentIdx = visibleTabs.findIndex(t => t.key === activeTab);
               if (currentIdx < 0) return;
-              let nextIdx = currentIdx;
+              let nextIdx: number;
               if (e.key === 'ArrowRight') nextIdx = (currentIdx + 1) % visibleTabs.length;
               else if (e.key === 'ArrowLeft') nextIdx = (currentIdx - 1 + visibleTabs.length) % visibleTabs.length;
               else if (e.key === 'Home') nextIdx = 0;

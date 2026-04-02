@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { InsuranceCardUpload } from './InsuranceCardUpload';
+import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
 
 interface AcQuestion {
   id: string;
@@ -75,6 +76,9 @@ export function AccountCreationForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Warn user before leaving page if form has unsaved data
+  useUnsavedChanges(Object.keys(responses).length > 0 && !success);
   const [sendTo, setSendTo] = useState('');
 
   // Fetch questions from API

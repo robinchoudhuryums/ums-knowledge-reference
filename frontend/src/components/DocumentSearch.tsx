@@ -47,7 +47,7 @@ export function DocumentSearch({ collections }: Props) {
 
     const start = Math.max(0, earliest - 80);
     const end = Math.min(text.length, earliest + 300);
-    let snippet = (start > 0 ? '...' : '') + text.slice(start, end) + (end < text.length ? '...' : '');
+    const snippet = (start > 0 ? '...' : '') + text.slice(start, end) + (end < text.length ? '...' : '');
 
     return snippet;
   };
@@ -127,7 +127,7 @@ export function DocumentSearch({ collections }: Props) {
                 {result.matches.map((match, i) => (
                   <div key={i} style={styles.matchItem}>
                     <div style={styles.matchMeta}>
-                      {match.pageNumber != null && <span style={styles.matchBadge}>Page {match.pageNumber}</span>}
+                      {match.pageNumber !== null && match.pageNumber !== undefined && <span style={styles.matchBadge}>Page {match.pageNumber}</span>}
                       <span style={styles.matchBadge}>Chunk {match.chunkIndex + 1}</span>
                     </div>
                     <div style={styles.matchText}>

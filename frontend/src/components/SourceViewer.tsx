@@ -41,7 +41,7 @@ export function SourceViewer({ source, onClose }: Props) {
           <div>
             <h3 style={styles.title}>{source.documentName}</h3>
             <div style={styles.metaRow}>
-              {source.pageNumber != null && (
+              {source.pageNumber !== null && source.pageNumber !== undefined && (
                 <span style={styles.metaBadge}>Page {source.pageNumber}</span>
               )}
               {source.sectionHeader && (

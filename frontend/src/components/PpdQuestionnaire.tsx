@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import DOMPurify from 'dompurify';
+import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -166,6 +167,9 @@ export function PpdQuestionnaire() {
   const [preferred, setPreferred] = useState('');
   const [productStatus, setProductStatus] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState('');
+
+  // Warn user before leaving page if form has unsaved data
+  useUnsavedChanges(Object.keys(responses).length > 0 && !recommendations);
   const [seatingEvalHtml, setSeatingEvalHtml] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState('');

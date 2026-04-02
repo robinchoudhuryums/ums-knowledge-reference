@@ -104,6 +104,9 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
+      - name: Lint
+        run: npm run lint
+
       - name: Type-check
         run: npx tsc --noEmit
 

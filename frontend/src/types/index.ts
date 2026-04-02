@@ -49,6 +49,12 @@ export interface ConversationTurn {
   confidence?: 'high' | 'partial' | 'low';
   traceId?: string;
   isError?: boolean;
+  productImages?: Array<{
+    hcpcsCode: string;
+    productName: string;
+    imageUrl: string;
+    brochureUrl?: string;
+  }>;
 }
 
 export interface FeedbackRequest {

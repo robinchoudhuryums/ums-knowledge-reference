@@ -86,6 +86,11 @@ vi.mock('../middleware/auth', () => ({
 }));
 
 // Mock logger
+vi.mock('../services/productImageResolver', () => ({
+  findProductImages: vi.fn(() => []),
+  getProductImage: vi.fn(() => null),
+}));
+
 vi.mock('../utils/logger', () => ({
   logger: {
     info: vi.fn(),

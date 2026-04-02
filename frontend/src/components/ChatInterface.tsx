@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, FormEvent, KeyboardEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ConversationTurn, SourceCitation, Collection } from '../types';
-import { queryKnowledgeBaseStream, submitTraceFeedback } from '../services/api';
+import { queryKnowledgeBaseStream, submitTraceFeedback, ProductImageRef } from '../services/api';
 import { SourceViewer } from './SourceViewer';
 import { FeedbackForm } from './FeedbackForm';
 import { useConfirm } from './ConfirmDialog';
@@ -47,6 +47,7 @@ export function ChatInterface({ collections }: Props) {
   const [streamingSources, setStreamingSources] = useState<SourceCitation[]>([]);
   const [streamingConfidence, setStreamingConfidence] = useState<'high' | 'partial' | 'low' | null>(null);
   const [, setStreamingTraceId] = useState<string | null>(null);
+  const [streamingProductImages, setStreamingProductImages] = useState<ProductImageRef[]>([]);
   const [selectedCollections, setSelectedCollections] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('ums-selected-collections');
@@ -117,6 +118,7 @@ export function ChatInterface({ collections }: Props) {
     setStreamingSources([]);
     setStreamingConfidence(null);
     setStreamingTraceId(null);
+    setStreamingProductImages([]);
 
     const history = conversation.map(t => ({ role: t.role, content: t.content }));
 
@@ -143,10 +145,13 @@ export function ChatInterface({ collections }: Props) {
           setStreamingSources(sources => {
             setStreamingConfidence(conf => {
               setStreamingTraceId(tid => {
-                setConversation(conv => [
-                  ...conv,
-                  { id: crypto.randomUUID(), role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined },
-                ]);
+                setStreamingProductImages(pImages => {
+                  setConversation(conv => [
+                    ...conv,
+                    { id: crypto.randomUUID(), role: 'assistant', content: cleanText, sources, confidence: conf || undefined, traceId: tid || undefined, productImages: pImages.length > 0 ? pImages : undefined },
+                  ]);
+                  return [];
+                });
                 return null;
               });
               return null;
@@ -175,6 +180,10 @@ export function ChatInterface({ collections }: Props) {
       // onTraceId
       (traceId) => {
         setStreamingTraceId(traceId);
+      },
+      // onProductImages
+      (images) => {
+        setStreamingProductImages(images);
       },
     );
   }, [question, loading, conversation, selectedCollections]);
@@ -380,6 +389,32 @@ export function ChatInterface({ collections }: Props) {
                 <ReactMarkdown skipHtml>{turn.content}</ReactMarkdown>
               </div>
             )}
+            {turn.productImages && turn.productImages.length > 0 && (
+              <div style={styles.productImageSection}>
+                <div style={styles.productImageLabel}>Related Products:</div>
+                <div style={styles.productImageGrid}>
+                  {turn.productImages.map(img => (
+                    <div key={img.hcpcsCode} style={styles.productImageCard}>
+                      <img
+                        src={img.imageUrl}
+                        alt={img.productName}
+                        style={styles.productImageThumb}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <div style={styles.productImageInfo}>
+                        <span style={styles.productImageCode}>{img.hcpcsCode}</span>
+                        <span style={styles.productImageName}>{img.productName}</span>
+                      </div>
+                      {img.brochureUrl && (
+                        <a href={img.brochureUrl} target="_blank" rel="noopener noreferrer" style={styles.productImageLink}>
+                          Brochure
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {turn.sources && turn.sources.length > 0 && (
               <div style={styles.sourcesSection}>
                 <div style={styles.sourcesLabel}>Sources referenced:</div>
@@ -438,6 +473,22 @@ export function ChatInterface({ collections }: Props) {
                 <div className="skeleton-line" style={{ width: '100%' }} />
                 <div className="skeleton-line" style={{ width: '85%' }} />
                 <div className="skeleton-line" style={{ width: '60%' }} />
+              </div>
+            )}
+            {streamingProductImages.length > 0 && (
+              <div style={styles.productImageSection}>
+                <div style={styles.productImageLabel}>Related Products:</div>
+                <div style={styles.productImageGrid}>
+                  {streamingProductImages.map(img => (
+                    <div key={img.hcpcsCode} style={styles.productImageCard}>
+                      <img src={img.imageUrl} alt={img.productName} style={styles.productImageThumb} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      <div style={styles.productImageInfo}>
+                        <span style={styles.productImageCode}>{img.hcpcsCode}</span>
+                        <span style={styles.productImageName}>{img.productName}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             {streamingSources.length > 0 && (
@@ -569,6 +620,21 @@ const styles: Record<string, React.CSSProperties> = {
   thinkingText: { fontSize: '14px', color: 'var(--ums-text-muted)', fontStyle: 'italic' },
 
   sourcesSection: { marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--ums-border)' },
+  // Product image cards
+  productImageSection: { marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--ums-border-light)' },
+  productImageLabel: { fontSize: '11px', color: 'var(--ums-text-muted)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  productImageGrid: { display: 'flex', gap: '10px', flexWrap: 'wrap' as const },
+  productImageCard: {
+    display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px',
+    border: '1px solid var(--ums-border)', borderRadius: '10px',
+    background: 'var(--ums-bg-surface-alt)', maxWidth: '320px',
+  },
+  productImageThumb: { width: '48px', height: '48px', objectFit: 'contain' as const, borderRadius: '6px', flexShrink: 0, background: 'var(--ums-bg-surface)' },
+  productImageInfo: { display: 'flex', flexDirection: 'column' as const, gap: '2px', minWidth: 0, flex: 1 },
+  productImageCode: { fontSize: '13px', fontWeight: 700, color: 'var(--ums-brand-text)' },
+  productImageName: { fontSize: '12px', color: 'var(--ums-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
+  productImageLink: { fontSize: '11px', color: 'var(--ums-brand-text)', textDecoration: 'none', flexShrink: 0, fontWeight: 500 },
+
   sourcesLabel: { fontSize: '11px', color: 'var(--ums-text-muted)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' },
   sourcesRow: { display: 'flex', flexWrap: 'wrap', gap: '6px' },
   sourceChip: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px', background: 'var(--ums-bg-surface)', cursor: 'pointer', fontSize: '12px', color: 'var(--ums-text-muted)', transition: 'all 0.15s', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' },

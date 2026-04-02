@@ -301,6 +301,13 @@ export function cancelActiveStream(): void {
   }
 }
 
+export interface ProductImageRef {
+  hcpcsCode: string;
+  productName: string;
+  imageUrl: string;
+  brochureUrl?: string;
+}
+
 export async function queryKnowledgeBaseStream(
   question: string,
   collectionIds: string[] | undefined,
@@ -311,6 +318,7 @@ export async function queryKnowledgeBaseStream(
   onDone: () => void,
   onError: (error: string) => void,
   onTraceId?: (traceId: string) => void,
+  onProductImages?: (images: ProductImageRef[]) => void,
 ): Promise<void> {
   // Cancel any previous stream before starting a new one
   cancelActiveStream();
@@ -397,6 +405,8 @@ export async function queryKnowledgeBaseStream(
             onConfidence(data.confidence);
           } else if (data.type === 'traceId') {
             onTraceId?.(data.traceId);
+          } else if (data.type === 'productImages') {
+            onProductImages?.(data.productImages);
           } else if (data.type === 'done') {
             onDone();
           } else if (data.type === 'error') {

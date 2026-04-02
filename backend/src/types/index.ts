@@ -128,6 +128,13 @@ export interface QueryResponse {
   traceId?: string;
   /** True if the response was flagged as potentially containing PHI from source documents */
   phiDetected?: boolean;
+  /** Product images relevant to the response (matched by HCPCS code) */
+  productImages?: Array<{
+    hcpcsCode: string;
+    productName: string;
+    imageUrl: string;
+    brochureUrl?: string;
+  }>;
 }
 
 export interface FeedbackEntry {

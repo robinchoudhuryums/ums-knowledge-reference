@@ -12,6 +12,7 @@ import { bedrockClient, BEDROCK_GENERATION_MODEL, bedrockCircuitBreaker } from '
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
 import { enrichQueryWithStructuredData, classifyQuery } from '../services/referenceEnrichment';
+import { findProductImages } from '../services/productImageResolver';
 import { withSpan } from '../utils/traceSpan';
 import rateLimit from 'express-rate-limit';
 
@@ -550,15 +551,18 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       question, collectionIds, effectiveCollectionIds,
       traceId, pipelineStart, searchQuery, searchResults,
       embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
-      sources, enrichments, messages, queryRoute,
+      sources, enrichments, context, messages, queryRoute,
     } = pipeline;
 
     // Structured-only route: return enrichments directly without LLM call.
-    // Saves ~2-4s and avoids Bedrock API costs for pure code/checklist lookups.
     if (queryRoute === 'structured' && enrichments.length > 0) {
       const answer = enrichments.map(e => `**${e.sourceLabel}**\n${e.contextBlock}`).join('\n\n');
       const responseTimeMs = Date.now() - pipelineStart;
-      const response: QueryResponse = { answer, sources: [], confidence: 'high', traceId };
+      const structuredProductImages = findProductImages(answer);
+      const response: QueryResponse = {
+        answer, sources: [], confidence: 'high', traceId,
+        ...(structuredProductImages.length > 0 && { productImages: structuredProductImages }),
+      };
 
       await logAuditEvent(req.user!.id, req.user!.username, 'query', {
         question: redactPhi(question).text, confidence: 'high', traceId,
@@ -700,7 +704,14 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       inputTokens, outputTokens,
     }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
 
-    const response: QueryResponse = { answer, sources, confidence, traceId, ...(phiDetectedInResponse && { phiDetected: true }) };
+    // Detect product images referenced in the answer (by HCPCS code)
+    const productImages = findProductImages(answer + ' ' + context);
+
+    const response: QueryResponse = {
+      answer, sources, confidence, traceId,
+      ...(phiDetectedInResponse && { phiDetected: true }),
+      ...(productImages.length > 0 && { productImages }),
+    };
     res.json(response);
   } catch (error) {
     logger.error('Query failed', { error: String(error) });
@@ -720,7 +731,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       question, collectionIds, effectiveCollectionIds,
       traceId, pipelineStart, searchQuery, searchResults,
       embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
-      sources, enrichments, messages, queryRoute,
+      sources, enrichments, context, messages, queryRoute,
     } = pipeline;
 
     // SSE headers
@@ -735,6 +746,10 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       const answer = enrichments.map(e => `**${e.sourceLabel}**\n${e.contextBlock}`).join('\n\n');
       res.write(`data: ${JSON.stringify({ type: 'sources', sources: [] })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'text', text: answer })}\n\n`);
+      const streamStructuredImages = findProductImages(answer);
+      if (streamStructuredImages.length > 0) {
+        res.write(`data: ${JSON.stringify({ type: 'productImages', productImages: streamStructuredImages })}\n\n`);
+      }
       res.write(`data: ${JSON.stringify({ type: 'confidence', confidence: 'high' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
@@ -841,8 +856,13 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       res.write(`data: ${JSON.stringify({ type: 'phiWarning', redactionCount: streamPhiScan.redactionCount })}\n\n`);
     }
 
+    // Detect product images referenced in the response
+    const streamProductImages = findProductImages(fullAnswer + ' ' + context);
+    if (streamProductImages.length > 0) {
+      res.write(`data: ${JSON.stringify({ type: 'productImages', productImages: streamProductImages })}\n\n`);
+    }
+
     res.write(`data: ${JSON.stringify({ type: 'confidence', confidence })}\n\n`);
-    // Send traceId so frontend can link feedback to this trace
     res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
     res.end();

@@ -167,6 +167,32 @@ export async function resetPasswordWithCode(username: string, code: string, newP
   });
 }
 
+// ─── Product Images ──────────────────────────────────────────────────────────
+
+export interface ProductImage {
+  filename: string;
+  url: string;
+  size?: number;
+  lastModified?: string;
+}
+
+export async function listProductImages(): Promise<{ images: ProductImage[] }> {
+  return request('/products/images');
+}
+
+export async function uploadProductImage(file: File): Promise<ProductImage> {
+  const formData = new FormData();
+  formData.append('image', file);
+  return request('/products/images', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function deleteProductImage(filename: string): Promise<void> {
+  return request(`/products/images/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+}
+
 // Change password
 export async function changePassword(currentPassword: string, newPassword: string): Promise<{ token: string; user: User }> {
   return request('/auth/change-password', {

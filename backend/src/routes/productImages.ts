@@ -11,7 +11,7 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
 import { s3Client, S3_BUCKET } from '../config/aws';
-import { GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -131,6 +131,33 @@ router.post('/images', authenticate, requireAdmin, upload.single('image'), async
   } catch (error) {
     logger.error('Failed to upload product image', { error: String(error) });
     res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+/**
+ * DELETE /api/products/images/:filename — Delete a product image (admin only).
+ */
+router.delete('/images/:filename', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const filename = decodeURIComponent(req.params.filename);
+    const safe = filename.replace(/[^a-zA-Z0-9._\- ]/g, '');
+    if (!safe || safe.includes('..')) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
+
+    const key = `${S3_PREFIX}${safe}`;
+
+    await s3Client.send(new DeleteObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+    }));
+
+    logger.info('Product image deleted', { filename: safe, deletedBy: req.user!.username });
+    res.json({ message: `Image "${safe}" deleted` });
+  } catch (error) {
+    logger.error('Failed to delete product image', { error: String(error) });
+    res.status(500).json({ error: 'Failed to delete image' });
   }
 });
 

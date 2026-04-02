@@ -70,7 +70,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Utils** (`backend/src/utils/`): `logger.ts` (structured JSON logging with correlation IDs), `correlationId.ts` (AsyncLocalStorage per-request tracing), `phiRedactor.ts` (PHI scrubbing with natural language DOB, MRN, SSN, phone, email, address, Medicare/Medicaid), `htmlEscape.ts` (HTML entity escaping for safe email template interpolation), `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention), `resilience.ts` (shared retry with jitter, circuit breaker, timeout), `metrics.ts` (in-memory request metrics with per-route latency percentiles), `textractPoller.ts` (shared Textract async job polling + pagination with transient error retry)
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): 715 total tests across 49 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
+- **Tests** (`backend/src/__tests__/`): 725 total tests across 49 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
 - **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`
 
 ### Frontend (`frontend/`)
@@ -147,7 +147,7 @@ cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v 
 - System prompt: `backend/src/routes/query.ts` (line ~70)
 - Temperature: `0.15` (RAG), `0.05` (extraction), `0.1` (vision), `0` (reformulation)
 - Max tokens: `4096` (RAG), `8192` (extraction), `150` (reformulation)
-- Default topK: `6` chunks
+- Default topK: `8` chunks (was 6; increased for richer context on multi-faceted medical questions)
 
 ## Tuning Knobs for Response Quality
 - **System prompt** (`query.ts:70`): Controls tone, conciseness, citation style
@@ -168,6 +168,12 @@ cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v 
 When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to track which changes are candidates for porting to the multi-tenant [Observatory QA](https://github.com/robinchoudhuryums/observatory-qa) platform. The log tracks porting status (Ported/Pending/N/A) across security, RAG quality, compliance, and observability categories.
 
 ## Recent Changes (reverse chronological)
+- **RAG quality improvements** (1 commit):
+  - **Adaptive search weighting**: Query type classification (`code_lookup`, `coverage_question`, `general`) with automatic semantic/keyword weight adjustment. HCPCS/ICD-10 code queries use 0.4/0.6 (keyword-heavy); coverage questions use 0.55/0.45 (balanced); general queries use 0.7/0.3 (semantic-heavy). Caller can still override via `semanticWeight`/`keywordWeight` options.
+  - **Confidence scoring**: Inverted avgScore/topScore blend from 0.6/0.4 to 0.35/0.65 — a single strong match (0.7) now properly lifts confidence even when average is pulled down by noise. Reconciliation floor raised to 0.30. Thresholds retuned (LOW=0.30, PARTIAL=0.42).
+  - **Re-ranking diversity**: Added token-overlap deduplication pass. When two chunks share >70% tokens, the lower-scored one gets a penalty (scaled 0→0.06 from 70%→100% overlap). Prevents returning 3 variations of the same paragraph from overlapping chunks.
+  - **Threshold tuning**: MIN_SCORE_THRESHOLD raised from 0.10 to 0.15 (filters ~30% marginal noise). Default topK raised from 6 to 8 (richer context for multi-faceted medical questions).
+  - **Tests**: 10 new tests for query classification (HCPCS, ICD-10, coverage, general), adaptive weights, and re-ranking diversity (duplicate penalty, low-overlap preservation). 725 total.
 - **Code quality & architecture improvements** (1 commit):
   - **DRY**: Extracted shared Textract async polling utility (`textractPoller.ts`) from duplicated code in `ocr.ts` and `formAnalyzer.ts`. Includes transient error retry (was missing in formAnalyzer), configurable pagination limits, and consistent logging.
   - **Dead code**: Removed deprecated `checkUsageLimit()` and `recordQuery()` from `usage.ts` (verified unused across codebase). Removed 2 associated legacy tests.

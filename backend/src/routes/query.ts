@@ -133,12 +133,12 @@ function buildSystemBlocks(responseStyle: ResponseStyle = 'detailed'): Array<{ t
 }
 
 // Score-based confidence thresholds for fallback when model doesn't output a confidence tag.
-// Tuned for hybrid search (0.7 semantic + 0.3 keyword) where typical score ranges are:
-// - Strong match: 0.55+ (query terms appear in text AND embedding is very similar)
-// - Moderate match: 0.40-0.55 (good semantic match but partial keyword overlap)
-// - Weak match: <0.40 (tangentially related content)
-const LOW_CONFIDENCE_THRESHOLD = 0.35;
-const PARTIAL_CONFIDENCE_THRESHOLD = 0.45;
+// Tuned for hybrid search where typical score ranges are:
+// - Strong match: 0.50+ (query terms appear in text AND embedding is very similar)
+// - Moderate match: 0.35-0.50 (good semantic match but partial keyword overlap)
+// - Weak match: <0.35 (tangentially related content)
+const LOW_CONFIDENCE_THRESHOLD = 0.30;
+const PARTIAL_CONFIDENCE_THRESHOLD = 0.42;
 // If the top score is very high, the model's PARTIAL can be upgraded to HIGH
 const UPGRADE_TOP_SCORE_THRESHOLD = 0.65;
 
@@ -237,8 +237,9 @@ function buildSourceCitations(searchResults: SearchResult[]): SourceCitation[] {
  */
 function computeEffectiveScore(avgScore: number, topScore?: number, resultCount?: number): number {
   const top = topScore ?? avgScore;
-  // Blend avg (60%) and top (40%) — a single strong match lifts confidence
-  let effective = avgScore * 0.6 + top * 0.4;
+  // Blend avg (35%) and top (65%) — a single strong match should lift confidence
+  // more than average, since one high-quality retrieval is actionable context
+  let effective = avgScore * 0.35 + top * 0.65;
 
   // Penalize when we got very few results — less evidence to draw from
   if (resultCount !== undefined && resultCount <= 1 && effective > 0) {
@@ -260,7 +261,7 @@ function computeEffectiveScore(avgScore: number, topScore?: number, resultCount?
 // If retrieval scores are below this threshold, the model's confidence tag
 // is downgraded even if it says HIGH. This prevents the model from being
 // over-confident when the retrieved chunks barely match the query.
-const RECONCILIATION_FLOOR = 0.25;
+const RECONCILIATION_FLOOR = 0.30;
 
 function parseConfidence(
   rawAnswer: string,
@@ -535,9 +536,9 @@ async function runQueryPipeline(
   const embeddingTimeMs = Date.now() - embeddingStart;
 
   const retrievalStart = Date.now();
-  const searchResults = await withSpan('rag.retrieval', { topK: topK ?? 6 }, async (span) => {
+  const searchResults = await withSpan('rag.retrieval', { topK: topK ?? 8 }, async (span) => {
     const results = await searchVectorStore(queryEmbedding, searchQuery, {
-      topK: topK ?? 6,
+      topK: topK ?? 8,
       collectionIds: effectiveCollectionIds,
     });
     span.setAttribute('results.count', results.length);

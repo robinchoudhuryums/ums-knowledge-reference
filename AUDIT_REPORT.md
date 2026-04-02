@@ -142,7 +142,7 @@ This is a **remarkably ambitious and well-built** single-developer healthcare ap
 | **Notable Features** | 8.0 | A- | 332 HCPCS codes / 66 ICD-10 / 8 LCDs, RAG tracing with p50/p95/p99, source monitoring, horizontal scaling prep, admin password reset script | — |
 | **Architecture & Code Quality** | 8.0 | A- | Clean layering, cache abstraction, embedding provider interface, storage abstraction, FK indexes, mass delete safety guard, hybrid db/ layer, health check fails on configured-but-unreachable DB | Some services still import s3Storage directly, no foreign key constraints in schema (indexes added but not FKs) |
 | **Documentation** | 9.0 | A | CLAUDE.md is extraordinarily detailed, SCALING.md, OBSERVATORY_PORT_LOG.md, AUDIT_REPORT.md | — |
-| **Test Coverage** | 7.0 | B | 715 tests across 49 files, route-level tests for 7 previously-untested routes, 50% line / 40% branch CI thresholds | formAnalyzer/visionExtractor/insuranceCardReader still lack tests, no concurrency tests |
+| **Test Coverage** | 7.0 | B | 725 tests across 49 files, route-level tests for 7 previously-untested routes, 50% line / 40% branch CI thresholds | formAnalyzer/visionExtractor/insuranceCardReader still lack tests, no concurrency tests |
 
 ---
 

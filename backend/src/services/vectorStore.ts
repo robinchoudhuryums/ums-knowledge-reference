@@ -141,6 +141,45 @@ for (const [key, synonyms] of MEDICAL_SYNONYMS) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Query type classification — determines adaptive semantic/keyword weighting.
+// Medical code lookups (HCPCS, ICD-10) need strong keyword matching, while
+// symptom/condition queries need strong semantic understanding.
+// ---------------------------------------------------------------------------
+export type QueryType = 'code_lookup' | 'coverage_question' | 'general';
+
+export function classifyQuery(query: string): QueryType {
+  const upper = query.toUpperCase();
+  // HCPCS codes (E1234, K0813, L0631, A4253) or ICD-10 codes (J44.1, G12.21, M54.5)
+  if (/\b[AEHJKLM]\d{4}\b/.test(upper) || /\b[A-Z]\d{2}\.\d{1,4}\b/.test(upper)) {
+    return 'code_lookup';
+  }
+  // Coverage/policy questions
+  const coverageTerms = /\b(coverage|cover|covered|criteria|lcd|policy|medical necessity|prior auth|documentation required|qualify|eligible)\b/i;
+  if (coverageTerms.test(query)) {
+    return 'coverage_question';
+  }
+  return 'general';
+}
+
+/**
+ * Get adaptive semantic/keyword weights based on query type.
+ * - Code lookups: favor keyword matching (exact code matches matter most)
+ * - Coverage questions: balanced (need both exact terms and semantic context)
+ * - General: favor semantic (natural language understanding)
+ */
+export function getAdaptiveWeights(queryType: QueryType): { semantic: number; keyword: number } {
+  switch (queryType) {
+    case 'code_lookup':
+      return { semantic: 0.4, keyword: 0.6 };
+    case 'coverage_question':
+      return { semantic: 0.55, keyword: 0.45 };
+    case 'general':
+    default:
+      return { semantic: 0.7, keyword: 0.3 };
+  }
+}
+
 /**
  * Expand a query with medical synonyms.
  * Returns the original query with synonym terms appended, boosting BM25 recall.
@@ -430,9 +469,10 @@ export function reRankResults(
     docChunkCounts.set(r.chunk.documentId, (docChunkCounts.get(r.chunk.documentId) || 0) + 1);
   }
 
-  return results.map(r => {
+  const boosted = results.map(r => {
     let boost = 0;
 
+    // Section header match: boost chunks whose header contains query terms
     if (r.chunk.sectionHeader) {
       const headerTerms = tokenize(r.chunk.sectionHeader);
       const matchCount = headerTerms.filter(t => queryTerms.has(t)).length;
@@ -441,17 +481,40 @@ export function reRankResults(
       }
     }
 
+    // Document frequency: boost chunks from documents with multiple matching chunks
     const docCount = docChunkCounts.get(r.chunk.documentId) || 1;
     if (docCount > 1) {
       boost += 0.02 * Math.min(docCount - 1, 3);
     }
 
+    // Short chunk penalty: very short chunks are often noise (headers, footers)
     if (r.chunk.text.length < 50) {
       boost -= 0.1;
     }
 
     return { ...r, score: r.score + boost };
   });
+
+  // Diversity pass: penalize near-duplicate chunks using token overlap.
+  // When two chunks share >70% of their tokens, the lower-scored one gets
+  // a penalty to promote diverse results. This avoids returning 3 variations
+  // of the same paragraph from overlapping chunks.
+  boosted.sort((a, b) => b.score - a.score);
+  for (let i = 1; i < boosted.length; i++) {
+    const iTokens = new Set(tokenize(boosted[i].chunk.text));
+    for (let j = 0; j < i; j++) {
+      const jTokens = tokenize(boosted[j].chunk.text);
+      const overlap = jTokens.filter(t => iTokens.has(t)).length;
+      const overlapRatio = overlap / Math.max(iTokens.size, 1);
+      if (overlapRatio > 0.7) {
+        // Scale penalty from 0 at 70% overlap to -0.06 at 100% overlap
+        boosted[i].score -= 0.06 * (overlapRatio - 0.7) / 0.3;
+        break; // Only penalize once (against highest-scored similar chunk)
+      }
+    }
+  }
+
+  return boosted;
 }
 
 /**
@@ -702,9 +765,15 @@ export async function searchVectorStore(
 
   if (!cachedIndex) await initializeVectorStore();
 
-  const topK = options.topK || 5;
-  const semanticWeight = options.semanticWeight ?? 0.7;
-  const keywordWeight = options.keywordWeight ?? 0.3;
+  const topK = options.topK || 8;
+
+  // Use caller-supplied weights if provided, otherwise auto-detect from query type.
+  // This allows the API to override for specific use cases while defaulting to
+  // adaptive weights that match the query's intent (code lookup vs. natural language).
+  const queryType = classifyQuery(queryText);
+  const adaptiveWeights = getAdaptiveWeights(queryType);
+  const semanticWeight = options.semanticWeight ?? adaptiveWeights.semantic;
+  const keywordWeight = options.keywordWeight ?? adaptiveWeights.keyword;
 
   // Get document index to filter by collection/tags and resolve document info
   const documents = await getDocumentsIndex();
@@ -794,8 +863,9 @@ export async function searchVectorStore(
   reRanked.sort((a, b) => b.score - a.score);
 
   // Apply minimum score threshold — discard results with negligible relevance.
-  // A combined score < 0.1 means neither semantic nor keyword search found meaningful overlap.
-  const MIN_SCORE_THRESHOLD = 0.1;
+  // 0.15 filters the ~30% of results that are marginal noise (0.10-0.15 range)
+  // while retaining anything with meaningful semantic or keyword signal.
+  const MIN_SCORE_THRESHOLD = 0.15;
   const thresholded = reRanked.filter(r => r.score >= MIN_SCORE_THRESHOLD);
 
   // Deduplicate near-identical chunks (from overlapping documents) before final selection

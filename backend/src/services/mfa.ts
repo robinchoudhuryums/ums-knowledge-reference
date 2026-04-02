@@ -13,6 +13,8 @@
  */
 
 import { TOTP, Secret } from 'otpauth';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { encryptField, decryptField } from '../utils/fieldEncryption';
 
 const ISSUER = 'UMS Knowledge Base';
@@ -65,4 +67,44 @@ export function verifyMfaCode(storedSecret: string, code: string): boolean {
   // delta = null means invalid, delta = 0 means current period, ±1 means adjacent
   const delta = totp.validate({ token: code, window: 1 });
   return delta !== null;
+}
+
+// ─── Recovery Codes ─────────────────────────────────────────────────────────
+
+const RECOVERY_CODE_COUNT = 10;
+
+/**
+ * Generate 10 recovery codes (8-char alphanumeric, grouped as XXXX-XXXX).
+ * Returns both the plaintext codes (shown to user once) and bcrypt hashes (stored).
+ */
+export async function generateRecoveryCodes(): Promise<{ plainCodes: string[]; hashedCodes: string[] }> {
+  const plainCodes: string[] = [];
+  const hashedCodes: string[] = [];
+
+  for (let i = 0; i < RECOVERY_CODE_COUNT; i++) {
+    // Generate 4 random bytes → 8 hex chars → split into XXXX-XXXX format
+    const raw = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const code = `${raw.slice(0, 4)}-${raw.slice(4, 8)}`;
+    plainCodes.push(code);
+    // Hash with low cost (4) since these are high-entropy random codes
+    hashedCodes.push(await bcrypt.hash(code, 4));
+  }
+
+  return { plainCodes, hashedCodes };
+}
+
+/**
+ * Verify a recovery code against the stored hashed codes.
+ * Returns the index of the matched code (for removal), or -1 if no match.
+ */
+export async function verifyRecoveryCode(code: string, hashedCodes: string[]): Promise<number> {
+  // Normalize: strip spaces, uppercase
+  const normalized = code.replace(/\s/g, '').toUpperCase();
+
+  for (let i = 0; i < hashedCodes.length; i++) {
+    if (await bcrypt.compare(normalized, hashedCodes[i])) {
+      return i;
+    }
+  }
+  return -1;
 }

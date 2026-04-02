@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { generateMfaSecret, verifyMfaCode } from '../services/mfa';
+import { generateMfaSecret, verifyMfaCode, generateRecoveryCodes, verifyRecoveryCode } from '../services/mfa';
 import { TOTP, Secret } from 'otpauth';
 
 describe('MFA Service', () => {
@@ -100,6 +100,72 @@ describe('MFA Service', () => {
       expect(verifyMfaCode(user1.secret, code1)).toBe(true);
       // But NOT with user2's secret (different secret = different code space)
       expect(verifyMfaCode(user2.secret, code1)).toBe(false);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Recovery Codes
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('generateRecoveryCodes', () => {
+    it('generates 10 recovery codes', async () => {
+      const { plainCodes, hashedCodes } = await generateRecoveryCodes();
+      expect(plainCodes.length).toBe(10);
+      expect(hashedCodes.length).toBe(10);
+    });
+
+    it('codes are in XXXX-XXXX format', async () => {
+      const { plainCodes } = await generateRecoveryCodes();
+      for (const code of plainCodes) {
+        expect(code).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}$/);
+      }
+    });
+
+    it('codes are unique', async () => {
+      const { plainCodes } = await generateRecoveryCodes();
+      const unique = new Set(plainCodes);
+      expect(unique.size).toBe(plainCodes.length);
+    });
+
+    it('hashed codes are bcrypt hashes', async () => {
+      const { hashedCodes } = await generateRecoveryCodes();
+      for (const hash of hashedCodes) {
+        expect(hash.startsWith('$2')).toBe(true);
+      }
+    });
+  });
+
+  describe('verifyRecoveryCode', () => {
+    it('verifies a valid recovery code', async () => {
+      const { plainCodes, hashedCodes } = await generateRecoveryCodes();
+      const idx = await verifyRecoveryCode(plainCodes[0], hashedCodes);
+      expect(idx).toBe(0);
+    });
+
+    it('verifies any code in the set', async () => {
+      const { plainCodes, hashedCodes } = await generateRecoveryCodes();
+      const idx = await verifyRecoveryCode(plainCodes[5], hashedCodes);
+      expect(idx).toBe(5);
+    });
+
+    it('rejects an invalid code', async () => {
+      const { hashedCodes } = await generateRecoveryCodes();
+      const idx = await verifyRecoveryCode('XXXX-XXXX', hashedCodes);
+      expect(idx).toBe(-1);
+    });
+
+    it('is case-insensitive', async () => {
+      const { plainCodes, hashedCodes } = await generateRecoveryCodes();
+      const lower = plainCodes[0].toLowerCase();
+      const idx = await verifyRecoveryCode(lower, hashedCodes);
+      expect(idx).toBe(0);
+    });
+
+    it('ignores spaces in code', async () => {
+      const { plainCodes, hashedCodes } = await generateRecoveryCodes();
+      const spaced = plainCodes[0].replace('-', ' - ');
+      const idx = await verifyRecoveryCode(spaced, hashedCodes);
+      expect(idx).toBe(0);
     });
   });
 });

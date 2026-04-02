@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, FormEvent, KeyboardEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ConversationTurn, SourceCitation, Collection } from '../types';
-import { queryKnowledgeBaseStream, submitTraceFeedback, ProductImageRef } from '../services/api';
+import { queryKnowledgeBaseStream, submitTraceFeedback, ProductImageRef, ResponseStyle } from '../services/api';
 import { SourceViewer } from './SourceViewer';
 import { FeedbackForm } from './FeedbackForm';
 import { useConfirm } from './ConfirmDialog';
@@ -63,6 +63,10 @@ export function ChatInterface({ collections }: Props) {
   const [thumbsVoted, setThumbsVoted] = useState<Record<string, 'up' | 'down'>>({});
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [failedQuery, setFailedQuery] = useState<string | null>(null);
+  const [responseStyle, setResponseStyle] = useState<ResponseStyle>(() => {
+    const stored = localStorage.getItem('ums-response-style');
+    return (stored === 'concise' || stored === 'comprehensive') ? stored : 'detailed';
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -73,6 +77,10 @@ export function ChatInterface({ collections }: Props) {
   // Persist collection selection to localStorage so it survives page refreshes
   useEffect(() => {
     try { localStorage.setItem('ums-selected-collections', JSON.stringify(selectedCollections)); } catch {}
+  }, [selectedCollections]);
+
+  useEffect(() => {
+    try { localStorage.setItem('ums-response-style', responseStyle); } catch {}
   }, [selectedCollections]);
 
   // Filter out deleted collections from selection when collection list updates
@@ -185,8 +193,9 @@ export function ChatInterface({ collections }: Props) {
       (images) => {
         setStreamingProductImages(images);
       },
+      responseStyle,
     );
-  }, [question, loading, conversation, selectedCollections]);
+  }, [question, loading, conversation, selectedCollections, responseStyle]);
 
   // Find the user question that preceded a given assistant turn index
   const getQuestionForTurn = (turnIndex: number): string => {
@@ -536,6 +545,21 @@ export function ChatInterface({ collections }: Props) {
             rows={1}
             aria-label="Question input — do not enter patient names or PHI"
           />
+          <div style={styles.responseStyleToggle}>
+            {(['concise', 'detailed', 'comprehensive'] as ResponseStyle[]).map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setResponseStyle(s)}
+                style={responseStyle === s ? styles.styleButtonActive : styles.styleButton}
+                title={s === 'concise' ? 'Short, direct answers (1-3 sentences)' :
+                       s === 'detailed' ? 'Balanced with supporting details' :
+                       'Thorough with full context and steps'}
+              >
+                {s === 'concise' ? 'Brief' : s === 'detailed' ? 'Detailed' : 'Full'}
+              </button>
+            ))}
+          </div>
           <button
             type="submit"
             disabled={loading || !question.trim()}
@@ -648,6 +672,19 @@ const styles: Record<string, React.CSSProperties> = {
   inputArea: { padding: '14px 20px 12px', borderTop: '1px solid var(--ums-border)', background: 'var(--ums-bg-surface-alt)' },
   inputWrapper: { display: 'flex', alignItems: 'flex-end', gap: '10px', background: 'var(--ums-bg-surface)', border: '1px solid var(--ums-border)', borderRadius: '14px', padding: '10px 14px', transition: 'all 0.2s ease', boxShadow: 'var(--ums-shadow-sm)', backdropFilter: 'blur(8px)' },
   textarea: { flex: 1, padding: '4px 0', border: 'none', background: 'transparent', fontSize: '14px', lineHeight: '1.5', resize: 'none', outline: 'none', fontFamily: 'inherit', minHeight: '24px', maxHeight: '120px', color: 'var(--ums-text-secondary)' },
+  responseStyleToggle: {
+    display: 'flex', borderRadius: '6px', overflow: 'hidden',
+    border: '1px solid var(--ums-border)', flexShrink: 0,
+  },
+  styleButton: {
+    padding: '4px 8px', fontSize: '11px', fontWeight: 500, cursor: 'pointer',
+    border: 'none', background: 'var(--ums-bg-surface-alt)', color: 'var(--ums-text-muted)',
+    transition: 'all 0.15s',
+  },
+  styleButtonActive: {
+    padding: '4px 8px', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+    border: 'none', background: 'var(--ums-brand-primary)', color: '#fff',
+  },
   sendButton: { padding: '8px 14px', background: 'var(--ums-brand-gradient)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', lineHeight: '1', flexShrink: 0, boxShadow: '0 2px 6px rgba(27, 111, 201, 0.25)' },
   inputHint: { textAlign: 'center', fontSize: '11px', color: 'var(--ums-text-placeholder)', marginTop: '6px' },
 };

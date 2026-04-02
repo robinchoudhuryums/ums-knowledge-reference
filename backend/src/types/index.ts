@@ -69,6 +69,8 @@ export interface User {
   mfaSecret?: string;
   /** Whether MFA is fully enabled (secret set AND verified with a code). */
   mfaEnabled?: boolean;
+  /** Bcrypt-hashed one-time recovery codes for MFA backup (consumed on use). */
+  mfaRecoveryCodes?: string[];
 }
 
 export interface SearchResult {
@@ -109,11 +111,14 @@ export interface StoredChunk {
   embedding: number[];
 }
 
+export type ResponseStyle = 'concise' | 'detailed' | 'comprehensive';
+
 export interface QueryRequest {
   question: string;
   collectionIds?: string[];
   conversationHistory?: ConversationTurn[];
   topK?: number;
+  responseStyle?: ResponseStyle;
 }
 
 export interface ConversationTurn {

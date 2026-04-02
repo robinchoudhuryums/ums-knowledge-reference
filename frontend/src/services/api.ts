@@ -193,6 +193,34 @@ export async function deleteProductImage(filename: string): Promise<void> {
   return request(`/products/images/${encodeURIComponent(filename)}`, { method: 'DELETE' });
 }
 
+// ─── Usage Limits (Admin) ────────────────────────────────────────────────────
+
+export interface UsageLimits {
+  dailyPerUser: number;
+  dailyTotal: number;
+  monthlyTotal: number;
+}
+
+export interface UsageStats {
+  today: {
+    date: string;
+    users: Record<string, { queryCount: number; lastQuery?: string }>;
+    totalQueries: number;
+  };
+  limits: UsageLimits;
+}
+
+export async function getUsageStats(): Promise<UsageStats> {
+  return request('/usage/stats');
+}
+
+export async function updateUsageLimits(limits: Partial<UsageLimits>): Promise<{ limits: UsageLimits }> {
+  return request('/usage/limits', {
+    method: 'PUT',
+    body: JSON.stringify(limits),
+  });
+}
+
 // Change password
 export async function changePassword(currentPassword: string, newPassword: string): Promise<{ token: string; user: User }> {
   return request('/auth/change-password', {

@@ -14,6 +14,7 @@ import { ToolsTab } from './components/ToolsTab';
 import { DocumentsTab } from './components/DocumentsTab';
 import { UserManagement } from './components/UserManagement';
 import { ProductImageManager } from './components/ProductImageManager';
+import { UsageLimitsManager } from './components/UsageLimitsManager';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/ConfirmDialog';
@@ -229,6 +230,9 @@ export default function App() {
                 </div>
                 <div style={styles.adminSection}>
                   <QueryLogViewer />
+                </div>
+                <div style={styles.adminSection}>
+                  <UsageLimitsManager />
                 </div>
                 <div style={styles.adminSection}>
                   <UserManagement />

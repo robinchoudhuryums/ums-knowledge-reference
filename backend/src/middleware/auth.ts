@@ -42,7 +42,6 @@ import {
   validatePassword,
   isPasswordReused,
   isAccountLocked,
-  getLockoutRemainingSeconds,
   updateLockoutCache,
   isAccountLockedFromCache,
   MAX_FAILED_ATTEMPTS,
@@ -137,8 +136,8 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   const user = users.find(u => u.username === username);
 
   if (user && isAccountLocked(user)) {
-    const remaining = getLockoutRemainingSeconds(user);
-    logger.warn('Login attempt on locked account', { username, remainingSeconds: remaining });
+    // Log without timing details — revealing remaining lockout time aids brute-force timing attacks
+    logger.warn('Login attempt on locked account', { username });
     res.status(423).json({ error: 'Account is locked due to too many failed attempts. Please try again later.' });
     return;
   }

@@ -242,15 +242,15 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
  */
 export function startRetentionScheduler(): void {
   const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-  const TARGET_HOUR = 3; // 3 AM local time
+  const TARGET_HOUR_UTC = 3; // 3 AM UTC (consistent with UTC-based expiration checks)
 
-  // Calculate milliseconds until the next 3 AM
+  // Calculate milliseconds until the next 3 AM UTC
   const now = new Date();
   const next3AM = new Date(now);
-  next3AM.setHours(TARGET_HOUR, 0, 0, 0);
+  next3AM.setUTCHours(TARGET_HOUR_UTC, 0, 0, 0);
   if (next3AM.getTime() <= now.getTime()) {
-    // Already past 3 AM today — schedule for tomorrow
-    next3AM.setDate(next3AM.getDate() + 1);
+    // Already past 3 AM UTC today — schedule for tomorrow
+    next3AM.setUTCDate(next3AM.getUTCDate() + 1);
   }
   const initialDelayMs = next3AM.getTime() - now.getTime();
 
@@ -268,7 +268,7 @@ export function startRetentionScheduler(): void {
 
   logger.info('Data retention scheduler started', {
     nextRunIn: `${Math.round(initialDelayMs / 60000)} minutes`,
-    targetHour: `${TARGET_HOUR}:00`,
+    targetHour: `${TARGET_HOUR_UTC}:00 UTC`,
     retentionAuditDays: RETENTION_AUDIT_DAYS,
     retentionQueryLogDays: RETENTION_QUERY_LOG_DAYS,
     retentionRagTraceDays: RETENTION_RAG_TRACE_DAYS,

@@ -109,7 +109,9 @@ if (process.env.NODE_ENV === 'production') {
 // read the cookie value to include it in the header.
 const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'x-csrf-token';
-const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/health'];
+// Unauthenticated endpoints are exempt from CSRF (no session to protect).
+// Health check is exempt since ALB probes don't send cookies.
+const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/forgot-password', '/api/auth/reset-password', '/api/health'];
 
 app.use((req, res, next) => {
   // Set/refresh the CSRF cookie on every response

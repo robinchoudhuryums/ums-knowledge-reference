@@ -240,7 +240,7 @@ This is a **mature, well-architected** internal tool that covers an impressive b
 | **RAG Functionality** | 7.5 | **8.2/10** | +0.7 | Cohere Embed v3, synonym expansion (75+), chunk dedup, query routing, eval framework |
 | **Overall Quality** | 7.5 | **8.3/10** | +0.8 | Auth split, shared mutex, query pipeline dedup, 788 tests (51 files), OTel tracing |
 | **Security** | 8.0 | **8.5/10** | +0.5 | Collection ACL on all endpoints, SSRF fix, circuit breaker, Redis token revocation |
-| **Testing** | 7.0 | **8.0/10** | +1.0 | 788 tests (was 705), 51 files (was 48), supertest integration tests, eval framework |
+| **Testing** | 7.0 | **8.3/10** | +1.3 | 861 tests (was 705), 54 files (was 48), supertest integration, eval framework, guardrail fuzzer, MFA tests |
 | **Forms & Workflow** | 7.5 | **7.5/10** | 0 | No changes this sprint |
 | **UI/UX & Design** | 7.0 | **7.8/10** | +0.8 | Tab consolidation (8→5), WCAG AA contrast, responsive layout, skip-to-content |
 | **Scalability** | 6.5 | **7.8/10** | +1.3 | Redis integration, incremental IDF, parallel audit fetch, DB pool metrics, FK constraints |

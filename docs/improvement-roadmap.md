@@ -1,7 +1,7 @@
 # UMS Knowledge Base — Improvement Roadmap
 
-**Last updated:** 2026-04-01
-**Based on:** Comprehensive audit of 44K+ lines, 788 tests, 51 files
+**Last updated:** 2026-04-02
+**Based on:** Comprehensive audit of 48K+ lines, 861 tests, 54 files
 
 ---
 
@@ -20,76 +20,92 @@
 - [x] Email error messages no longer leaked to clients
 - [x] reset-admin.ts SSL validation
 - [x] Query pipeline deduplicated (runQueryPipeline)
-- [x] Auth.ts split into 3 modules
+- [x] Auth.ts split into 3 modules (authConfig, tokenService, auth)
 - [x] Database startup retry (3x exponential backoff)
 - [x] Bedrock circuit breaker
 - [x] Redis integration (token revocation, rate limiting, embedding cache)
-- [x] TOTP MFA
+- [x] TOTP MFA with recovery codes
 - [x] OpenTelemetry tracing
-- [x] 788 tests across 51 files
+- [x] MFA recovery codes (10 one-time XXXX-XXXX codes)
+- [x] MFA secret encrypted at rest (AES-256-GCM)
+- [x] Prompt injection fuzzer tests (Unicode homoglyphs, delimiter evasion, false positive prevention)
+- [x] Admin user management UI panel
+- [x] Forgot password self-service email flow with direct user delivery
+- [x] User email field for password resets
+- [x] S3-backed product images (migrated from jsDelivr CDN)
+- [x] Admin product image upload/manage panel
+- [x] RAG product image integration (auto-detect HCPCS codes → show product images)
+- [x] Admin usage limits UI panel
+- [x] Per-user response style toggle (Brief/Detailed/Full)
+- [x] Favicon (SVG brain icon)
+- [x] Multi-instance audit chain coordination (DB-backed SELECT FOR UPDATE)
+- [x] Forms glassmorphism styling + dark mode header text fixes
+- [x] Progress circle cards + SVG fill fix
+- [x] PPD Queue restructured into per-form sub-pages
+- [x] Tab consolidation (8→5 tabs)
+- [x] WCAG AA color contrast fixes
+- [x] Helmet CSP configured for production
+- [x] Temp password entropy increased (128-bit)
+- [x] CSRF cookie parser centralized
+- [x] CI coverage thresholds raised (60/50/50%)
+- [x] CI xmldom vulnerability exempted
+- [x] 861 tests across 54 files
 
 ---
 
 ## P2 — Improve Soon
 
+### Testing
+- [ ] **Add remaining service unit tests** (12 untested services) — formAnalyzer, insuranceCardReader, pdfAnnotator, queryLog, reindexer, sourceMonitor, visionExtractor, feeScheduleFetcher, titanEmbeddingProvider
+- [ ] **E2E tests with Playwright** — browser-level tests for login → MFA → chat → document upload → admin flows
+- [ ] **MFA integration tests** — full setup → verify → login with code → recovery code → disable flow via supertest
+
 ### Security
-- [ ] **Rate-limit MFA verification attempts** separately from login (currently shares the login lockout counter but not a dedicated MFA rate limit)
-- [ ] **Encrypt mfa_secret at rest** — currently stored as plaintext base32 in database. Should use application-layer encryption with a KMS-managed key
-- [ ] **MFA recovery codes** — currently no backup if authenticator is lost (admin must manually disable). Generate 10 one-time recovery codes during MFA setup
-- [ ] **CSRF token rotation** — current CSRF token persists for 24h. Consider rotating on each state-changing request
-- [ ] **Helmet CSP in production** — currently `undefined` (uses helmet defaults). Should configure explicit Content-Security-Policy
+- [ ] **CSRF token rotation** — rotate on each state-changing request instead of 24h TTL
+- [ ] **MFA setup QR code display** — render otpauth URI as QR code in browser for easy scanning
 
 ### Code Quality
-- [ ] **Extract frontend shared utilities** — `useFocusTrap` hook from FeedbackForm/SourceViewer, token/CSRF helpers from api.ts/errorReporting.ts
-- [ ] **Remove Proxy pattern in cache/index.ts** — the `cache` and `sets` proxy exports add complexity; direct `getCache()`/`getSets()` calls are cleaner
-- [ ] **Consistent error response format** — some routes return `{ error: string }`, others `{ error: string, details: ... }`. Standardize.
-- [ ] **Type-safe route params** — use zod or similar for runtime validation of req.body/req.params instead of manual checks
+- [ ] **Shared constants package** — frontend hardcodes password min length, lockout timing. Share via API config endpoint
+- [ ] **Remove Proxy pattern in cache/index.ts** — direct getCache()/getSets() calls are cleaner
+- [ ] **Type-safe route params** — use zod for runtime validation of req.body/req.params
 
 ### Architecture
-- [ ] **Shared types package** — frontend/backend types diverge (frontend User has `mfaEnabled?`, backend has `mfaSecret`/`mfaEnabled`). Extract shared types to a common package or generate from OpenAPI spec
-- [ ] **Event-driven audit logging** — current pattern imports `logAuditEvent` into every handler. Consider an EventEmitter or middleware pattern
-- [ ] **Background job processing** — migrate from in-memory job queue to Bull/BullMQ (depends on Redis, which is now available)
-
-### Testing
-- [ ] **MFA integration tests** — setup → verify → login with code → disable flow not yet covered by supertest tests
-- [ ] **Redis cache integration tests** — verify cache/sets behavior with Redis (currently only tests in-memory provider)
-- [ ] **E2E with Playwright** — browser-level tests for login flow, chat, document upload
-- [ ] **Critical path coverage** — aim for 90%+ on auth, PHI redaction, data retention modules
+- [ ] **Extend product image resolver** to non-PMD categories (oxygen, CPAP, beds, etc.)
+- [ ] **Event-driven audit logging** — middleware pattern instead of importing logAuditEvent into every handler
+- [ ] **Background job processing** — migrate from in-memory job queue to Bull/BullMQ (Redis now available)
 
 ---
 
 ## P3 — Long-Term
 
-### Scalability
-- [ ] **HNSW index for pgvector** — better recall than IVFFlat as corpus grows past 50K chunks
-- [ ] **Worker queue (Bull/BullMQ)** — replace in-memory job queue for document ingestion, extraction
-- [ ] **Horizontal auto-scaling** — ECS/Fargate with ALB, leveraging Redis for shared state
-- [ ] **CDN for static assets** — CloudFront in front of the frontend build
-
 ### RAG Quality
-- [ ] **Cross-encoder re-ranking** — replace heuristic `reRankResults()` with a learned MiniLM model
+- [ ] **Cross-encoder re-ranking** — replace heuristic reRankResults() with learned MiniLM model
 - [ ] **Multi-document summarization** — synthesize answers spanning many sources
 - [ ] **Answer grounding verification** — post-generation check that citations support claims
-- [ ] **Confidence calibration from feedback** — use thumbs-up/down data to tune score thresholds
+- [ ] **Confidence calibration from feedback** — use thumbs-up/down data to tune thresholds
+
+### Scalability
+- [ ] **HNSW index for pgvector** — better recall than IVFFlat as corpus grows past 50K chunks
+- [ ] **Worker queue (Bull/BullMQ)** — replace in-memory job queue for document ingestion
+- [ ] **Horizontal auto-scaling** — ECS/Fargate with ALB
+- [ ] **CDN for static assets** — CloudFront in front of frontend build
 
 ### Security Hardening
-- [ ] **Field-level encryption** for PHI in database (SSN, DOB, member ID columns)
 - [ ] **Audit log immutability** via S3 Object Lock (WORM mode)
 - [ ] **SSO/OIDC integration** for enterprise single sign-on
 - [ ] **IP allowlisting** for admin endpoints
-- [ ] **WAF rules** — AWS WAF in front of ALB for DDoS and bot protection
+- [ ] **WAF rules** — AWS WAF for DDoS and bot protection
 
 ### UI/UX
-- [ ] **Onboarding flow** — first-time user walkthrough
+- [ ] **Onboarding flow** for new users
 - [ ] **Keyboard shortcuts** — Ctrl+K for search, Escape for modals
-- [ ] **Document versioning UI** — frontend for version comparison and rollback
-- [ ] **MFA setup UI** — QR code display, recovery code download
-- [ ] **Mobile-native improvements** — touch gestures, swipe between tabs
+- [ ] **Document versioning UI** — frontend version comparison and rollback
+- [ ] **Skeleton loading** on all data-fetching components
 
 ### Observability
-- [ ] **Grafana dashboard** — pre-built panels for latency, error rate, RAG quality
-- [ ] **CloudWatch alarms** — automated alerts on error rate spikes, health check failures
-- [ ] **Cost tracking** — per-query Bedrock cost estimation in traces
+- [ ] **Grafana/CloudWatch dashboard** — pre-built panels for latency, error rate, RAG quality
+- [ ] **CloudWatch alarms** — automated alerts on error rate spikes
+- [ ] **Per-query Bedrock cost estimation** in traces
 
 ---
 
@@ -97,10 +113,32 @@
 
 | Metric | Current | Target |
 |---|---|---|
-| Test count | 788 | 1000+ |
-| Test files | 51 | 60+ |
+| Test count | 861 | 1000+ |
+| Test files | 54 | 65+ |
 | Line coverage | ~60% | 75%+ |
 | Branch coverage | ~50% | 65%+ |
 | CI thresholds | 60/50/50% | 70/60/60% |
-| Auth test coverage | ~70% | 90%+ |
+| Auth test coverage | ~75% | 90%+ |
 | PHI redactor coverage | ~85% | 95%+ |
+
+---
+
+## Post-Deploy Checklist
+
+After merging to main and deploying:
+
+1. **Run product image migration** (one-time):
+   ```bash
+   cd backend && env $(cat ~/ums-knowledge.env | grep -v '^#' | xargs) npx tsx src/scripts/migrateProductImages.ts
+   ```
+
+2. **Set FIELD_ENCRYPTION_KEY** for MFA secret encryption:
+   ```bash
+   echo "FIELD_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" >> ~/ums-knowledge.env
+   ```
+
+3. **Upload knowledge base documents** via the Documents tab
+
+4. **Set user emails** in Admin → User Management for password reset delivery
+
+5. **Set up MFA** for admin accounts via the login flow

@@ -51,8 +51,9 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.field}>
-            <label style={styles.label}>Current Password</label>
+            <label style={styles.label} htmlFor="chpwd-current">Current Password</label>
             <input
+              id="chpwd-current"
               type="password"
               value={currentPassword}
               onChange={e => setCurrentPassword(e.target.value)}
@@ -60,14 +61,17 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
               style={styles.input}
               required
               autoFocus
+              aria-invalid={touched.currentPassword && !currentPassword}
+              aria-describedby={touched.currentPassword && !currentPassword ? 'chpwd-current-error' : undefined}
             />
             {touched.currentPassword && !currentPassword && (
-              <div style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Current password is required</div>
+              <div id="chpwd-current-error" role="alert" style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Current password is required</div>
             )}
           </div>
           <div style={styles.field}>
-            <label style={styles.label}>New Password</label>
+            <label style={styles.label} htmlFor="chpwd-new">New Password</label>
             <input
+              id="chpwd-new"
               type="password"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
@@ -75,9 +79,10 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
               style={styles.input}
               required
               minLength={8}
+              aria-describedby="chpwd-new-requirements"
             />
             {touched.newPassword && (
-              <div style={{ marginTop: '4px' }}>
+              <div id="chpwd-new-requirements" aria-live="polite" style={{ marginTop: '4px' }}>
                 {[
                   { label: 'At least 8 characters', met: newPassword.length >= 8 },
                   { label: 'At least one uppercase letter', met: /[A-Z]/.test(newPassword) },
@@ -93,14 +98,17 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
             )}
           </div>
           <div style={styles.field}>
-            <label style={styles.label}>Confirm New Password</label>
+            <label style={styles.label} htmlFor="chpwd-confirm">Confirm New Password</label>
             <input
+              id="chpwd-confirm"
               type="password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               onBlur={() => setTouched(prev => ({ ...prev, confirmPassword: true }))}
               style={styles.input}
               required
+              aria-invalid={touched.confirmPassword && confirmPassword !== newPassword}
+              aria-describedby={touched.confirmPassword && confirmPassword !== newPassword ? 'chpwd-confirm-error' : undefined}
             />
             {touched.confirmPassword && confirmPassword && newPassword !== confirmPassword && (
               <div style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Passwords do not match</div>

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, createContext, useContext } from 'react';
+import { useState, useCallback, useEffect, useRef, createContext, useContext } from 'react';
 
 interface ConfirmOptions {
   title: string;
@@ -40,24 +40,52 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
   const isDanger = state.options.variant === 'danger';
 
-  // Close on Escape key
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // Close on Escape key + focus trap (Tab cycles between dialog buttons only)
   useEffect(() => {
     if (!state.open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement;
+
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose(false);
+      if (e.key === 'Escape') {
+        handleClose(false);
+        return;
+      }
+      // Focus trap: keep Tab/Shift+Tab within dialog
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      // Restore focus to the element that triggered the dialog
+      previousFocusRef.current?.focus();
+    };
   }, [state.open]);
 
   return (
     <ConfirmContext.Provider value={{ confirm }}>
       {children}
       {state.open && (
-        <div style={styles.overlay} onClick={() => handleClose(false)} role="dialog" aria-modal="true">
-          <div style={styles.dialog} onClick={e => e.stopPropagation()}>
-            <h3 style={styles.title}>{state.options.title}</h3>
-            <p style={styles.message}>{state.options.message}</p>
+        <div style={styles.overlay} onClick={() => handleClose(false)} role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+          <div style={styles.dialog} onClick={e => e.stopPropagation()} ref={dialogRef}>
+            <h3 style={styles.title} id="confirm-dialog-title">{state.options.title}</h3>
+            <p style={styles.message} id="confirm-dialog-message">{state.options.message}</p>
             <div style={styles.actions}>
               <button
                 onClick={() => handleClose(false)}

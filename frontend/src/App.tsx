@@ -140,7 +140,24 @@ export default function App() {
             <div style={styles.logoMark}><Brain size={20} /></div>
             <h1 style={styles.logo}>UMS Knowledge Base</h1>
           </div>
-          <nav style={styles.nav}>
+          <nav style={styles.nav} role="tablist" aria-label="Main navigation"
+            onKeyDown={(e) => {
+              const visibleTabs = tabs.filter(t => !t.adminOnly || isAdmin);
+              const currentIdx = visibleTabs.findIndex(t => t.key === activeTab);
+              if (currentIdx < 0) return;
+              let nextIdx = currentIdx;
+              if (e.key === 'ArrowRight') nextIdx = (currentIdx + 1) % visibleTabs.length;
+              else if (e.key === 'ArrowLeft') nextIdx = (currentIdx - 1 + visibleTabs.length) % visibleTabs.length;
+              else if (e.key === 'Home') nextIdx = 0;
+              else if (e.key === 'End') nextIdx = visibleTabs.length - 1;
+              else return;
+              e.preventDefault();
+              setActiveTab(visibleTabs[nextIdx].key);
+              // Focus the newly active tab button
+              const btn = e.currentTarget.querySelector(`[data-tab="${visibleTabs[nextIdx].key}"]`) as HTMLElement;
+              btn?.focus();
+            }}
+          >
             {tabs
               .filter(t => !t.adminOnly || isAdmin)
               .map(t => {
@@ -148,6 +165,10 @@ export default function App() {
                 return (
                   <button
                     key={t.key}
+                    data-tab={t.key}
+                    role="tab"
+                    aria-selected={activeTab === t.key}
+                    tabIndex={activeTab === t.key ? 0 : -1}
                     onClick={() => setActiveTab(t.key)}
                     className={clsx(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium border-none cursor-pointer transition-all duration-200',
@@ -219,27 +240,41 @@ export default function App() {
                 <p style={styles.adminSubtitle}>Analytics, query logs, and knowledge base insights</p>
               </div>
               <div style={styles.adminGrid} className="admin-grid">
-                <div style={styles.adminSection}>
-                  <ObservabilityDashboard />
-                </div>
-                <div style={styles.adminSection}>
-                  <QualityDashboard />
-                </div>
-                <div style={styles.adminSection}>
-                  <FaqDashboard />
-                </div>
-                <div style={styles.adminSection}>
-                  <QueryLogViewer />
-                </div>
-                <div style={styles.adminSection}>
-                  <UsageLimitsManager />
-                </div>
-                <div style={styles.adminSection}>
-                  <UserManagement />
-                </div>
-                <div style={styles.adminSection}>
-                  <ProductImageManager />
-                </div>
+                <ErrorBoundary fallbackMessage="Observability dashboard encountered an error.">
+                  <div style={styles.adminSection}>
+                    <ObservabilityDashboard />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="Quality dashboard encountered an error.">
+                  <div style={styles.adminSection}>
+                    <QualityDashboard />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="FAQ dashboard encountered an error.">
+                  <div style={styles.adminSection}>
+                    <FaqDashboard />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="Query log viewer encountered an error.">
+                  <div style={styles.adminSection}>
+                    <QueryLogViewer />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="Usage manager encountered an error.">
+                  <div style={styles.adminSection}>
+                    <UsageLimitsManager />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="User management encountered an error.">
+                  <div style={styles.adminSection}>
+                    <UserManagement />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="Product image manager encountered an error.">
+                  <div style={styles.adminSection}>
+                    <ProductImageManager />
+                  </div>
+                </ErrorBoundary>
               </div>
             </div>
           )}

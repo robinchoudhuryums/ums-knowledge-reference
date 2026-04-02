@@ -294,7 +294,8 @@ describe('Extraction Routes', () => {
         .field('templateId', 'ppd');
 
       expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Bedrock timeout');
+      // Internal Bedrock errors are sanitized — user sees a safe generic message
+      expect(res.body.error).toBe('Extraction service temporarily unavailable. Please try again later.');
     });
   });
 

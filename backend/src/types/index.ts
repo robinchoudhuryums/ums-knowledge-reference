@@ -111,11 +111,14 @@ export interface StoredChunk {
   embedding: number[];
 }
 
+export type ResponseStyle = 'concise' | 'detailed' | 'comprehensive';
+
 export interface QueryRequest {
   question: string;
   collectionIds?: string[];
   conversationHistory?: ConversationTurn[];
   topK?: number;
+  responseStyle?: ResponseStyle;
 }
 
 export interface ConversationTurn {

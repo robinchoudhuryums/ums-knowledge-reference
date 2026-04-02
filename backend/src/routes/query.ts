@@ -6,7 +6,7 @@ import { logAuditEvent } from '../services/audit';
 import { checkAndRecordQuery, rollbackQuery } from '../services/usage';
 import { logQuery } from '../services/queryLog';
 import { generateTraceId, logRagTrace } from '../services/ragTrace';
-import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult } from '../types';
+import { QueryRequest, QueryResponse, SourceCitation, ConversationTurn, SearchResult, ResponseStyle } from '../types';
 import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { bedrockClient, BEDROCK_GENERATION_MODEL, bedrockCircuitBreaker } from '../config/aws';
 import { logger } from '../utils/logger';
@@ -101,12 +101,33 @@ Guidelines:
  * The cache_control breakpoint tells Bedrock to cache everything up to and
  * including that block. Cache reads cost 0.1x base input price.
  */
-function buildSystemBlocks(): Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> {
+// ─── Response Style Configuration ─────────────────────────────────────────
+const STYLE_CONFIG: Record<ResponseStyle, { maxTokens: number; instruction: string }> = {
+  concise: {
+    maxTokens: 2048,
+    instruction: 'Keep your response concise and to the point. Lead with the direct answer in 1-3 sentences. Use bullet points only if listing multiple items. Avoid lengthy explanations.',
+  },
+  detailed: {
+    maxTokens: 4096,
+    instruction: 'Provide a balanced response with the direct answer followed by relevant supporting details. Use bullet points for multi-part answers.',
+  },
+  comprehensive: {
+    maxTokens: 8192,
+    instruction: 'Provide a thorough, comprehensive response. Include all relevant details, step-by-step procedures where applicable, related context, and any important caveats or exceptions from the source documents.',
+  },
+};
+
+function buildSystemBlocks(responseStyle: ResponseStyle = 'detailed'): Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> {
+  const styleInstruction = STYLE_CONFIG[responseStyle].instruction;
   return [
     {
       type: 'text' as const,
       text: SYSTEM_PROMPT,
       cache_control: { type: 'ephemeral' as const },
+    },
+    {
+      type: 'text' as const,
+      text: `Response style: ${styleInstruction}`,
     },
   ];
 }
@@ -442,6 +463,7 @@ interface PipelineResult {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   /** 'structured' = skip LLM, return enrichments directly; 'hybrid'/'rag' = normal flow */
   queryRoute: 'structured' | 'hybrid' | 'rag';
+  responseStyle: ResponseStyle;
 }
 
 async function runQueryPipeline(
@@ -449,7 +471,8 @@ async function runQueryPipeline(
   res: Response,
   label: string,
 ): Promise<PipelineResult | null> {
-  const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK }: QueryRequest = req.body;
+  const { question: rawQuestion, collectionIds, conversationHistory: rawHistory, topK, responseStyle: rawStyle }: QueryRequest = req.body;
+  const responseStyle: ResponseStyle = (['concise', 'detailed', 'comprehensive'].includes(rawStyle!) ? rawStyle : 'detailed') as ResponseStyle;
   const question = rawQuestion ? sanitizeInput(rawQuestion) : '';
   const conversationHistory = sanitizeConversationHistory(rawHistory);
 
@@ -499,7 +522,7 @@ async function runQueryPipeline(
       question, conversationHistory, collectionIds, effectiveCollectionIds,
       traceId, pipelineStart, searchQuery: question, searchResults: [],
       embeddingTimeMs: 0, retrievalTimeMs: 0, avgScore: 0, topScore: 0,
-      sources: [], enrichments, context, messages, queryRoute,
+      sources: [], enrichments, context, messages, queryRoute, responseStyle,
     };
   }
 
@@ -537,7 +560,7 @@ async function runQueryPipeline(
     question, conversationHistory, collectionIds, effectiveCollectionIds,
     traceId, pipelineStart, searchQuery, searchResults,
     embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
-    sources, enrichments, context, messages, queryRoute,
+    sources, enrichments, context, messages, queryRoute, responseStyle,
   };
 }
 
@@ -551,7 +574,7 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       question, collectionIds, effectiveCollectionIds,
       traceId, pipelineStart, searchQuery, searchResults,
       embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
-      sources, enrichments, context, messages, queryRoute,
+      sources, enrichments, context, messages, queryRoute, responseStyle,
     } = pipeline;
 
     // Structured-only route: return enrichments directly without LLM call.
@@ -615,8 +638,8 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       accept: 'application/json',
       body: JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31',
-        max_tokens: 4096,
-        system: buildSystemBlocks(),
+        max_tokens: STYLE_CONFIG[responseStyle].maxTokens,
+        system: buildSystemBlocks(responseStyle),
         messages,
         temperature: 0.15,
       }),
@@ -731,7 +754,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       question, collectionIds, effectiveCollectionIds,
       traceId, pipelineStart, searchQuery, searchResults,
       embeddingTimeMs, retrievalTimeMs, avgScore, topScore,
-      sources, enrichments, context, messages, queryRoute,
+      sources, enrichments, context, messages, queryRoute, responseStyle,
     } = pipeline;
 
     // SSE headers
@@ -803,8 +826,8 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       accept: 'application/json',
       body: JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31',
-        max_tokens: 4096,
-        system: buildSystemBlocks(),
+        max_tokens: STYLE_CONFIG[responseStyle].maxTokens,
+        system: buildSystemBlocks(responseStyle),
         messages,
         temperature: 0.15,
       }),

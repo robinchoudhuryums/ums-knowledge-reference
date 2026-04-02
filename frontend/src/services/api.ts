@@ -336,6 +336,8 @@ export interface ProductImageRef {
   brochureUrl?: string;
 }
 
+export type ResponseStyle = 'concise' | 'detailed' | 'comprehensive';
+
 export async function queryKnowledgeBaseStream(
   question: string,
   collectionIds: string[] | undefined,
@@ -347,6 +349,7 @@ export async function queryKnowledgeBaseStream(
   onError: (error: string) => void,
   onTraceId?: (traceId: string) => void,
   onProductImages?: (images: ProductImageRef[]) => void,
+  responseStyle?: ResponseStyle,
 ): Promise<void> {
   // Cancel any previous stream before starting a new one
   cancelActiveStream();
@@ -364,7 +367,7 @@ export async function queryKnowledgeBaseStream(
       ...(legacyToken ? { Authorization: `Bearer ${legacyToken}` } : {}),
       ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
     },
-    body: JSON.stringify({ question, collectionIds, conversationHistory }),
+    body: JSON.stringify({ question, collectionIds, conversationHistory, ...(responseStyle && { responseStyle }) }),
   });
 
   if (!response.ok) {

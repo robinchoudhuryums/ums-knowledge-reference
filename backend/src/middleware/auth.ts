@@ -15,7 +15,7 @@ import bcrypt from 'bcryptjs';
 import { User } from '../types';
 import { getUsers as dbGetUsers, saveUsers as dbSaveUsers } from '../db';
 import { logger } from '../utils/logger';
-import { generateMfaSecret, verifyMfaCode } from '../services/mfa';
+import { generateMfaSecret, verifyMfaCode, generateRecoveryCodes, verifyRecoveryCode } from '../services/mfa';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
 
@@ -167,14 +167,31 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
       res.status(200).json({ mfaRequired: true });
       return;
     }
-    if (!verifyMfaCode(user.mfaSecret, mfaCode)) {
-      // Invalid MFA code — count as a failed attempt
+    // Try TOTP code first, then recovery code
+    let mfaValid = verifyMfaCode(user.mfaSecret, mfaCode);
+
+    if (!mfaValid && user.mfaRecoveryCodes && user.mfaRecoveryCodes.length > 0) {
+      // Check if it's a recovery code (format: XXXX-XXXX)
+      const recoveryIdx = await verifyRecoveryCode(mfaCode, user.mfaRecoveryCodes);
+      if (recoveryIdx >= 0) {
+        // Consume the recovery code (single-use)
+        user.mfaRecoveryCodes.splice(recoveryIdx, 1);
+        mfaValid = true;
+        logger.info('MFA login via recovery code', { userId: user.id, remainingCodes: user.mfaRecoveryCodes.length });
+        logAuditEvent(user.id, user.username, 'login', {
+          action: 'mfa_recovery_code_used',
+          remainingCodes: user.mfaRecoveryCodes.length,
+        }).catch(() => {});
+      }
+    }
+
+    if (!mfaValid) {
       user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
       if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
         user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
       }
       await saveUsers(users);
-      res.status(401).json({ error: 'Invalid MFA code' });
+      res.status(401).json({ error: 'Invalid MFA code or recovery code' });
       return;
     }
   }
@@ -348,13 +365,20 @@ export async function mfaVerifyHandler(req: AuthRequest, res: Response): Promise
     return;
   }
 
+  // Generate recovery codes when MFA is first enabled
+  const { plainCodes, hashedCodes } = await generateRecoveryCodes();
+
   user.mfaEnabled = true;
+  user.mfaRecoveryCodes = hashedCodes;
   await saveUsers(users);
 
-  logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_enabled' })
+  logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_enabled', recoveryCodesGenerated: plainCodes.length })
     .catch(err => logger.warn('Audit log failed', { error: String(err) }));
-  logger.info('MFA enabled', { userId: user.id });
-  res.json({ message: 'MFA is now enabled. You will need your authenticator app for future logins.' });
+  logger.info('MFA enabled with recovery codes', { userId: user.id });
+  res.json({
+    message: 'MFA is now enabled. Save your recovery codes — they will not be shown again.',
+    recoveryCodes: plainCodes,
+  });
 }
 
 /**
@@ -386,6 +410,7 @@ export async function mfaDisableHandler(req: AuthRequest, res: Response): Promis
 
   user.mfaSecret = undefined;
   user.mfaEnabled = false;
+  user.mfaRecoveryCodes = undefined;
   await saveUsers(users);
 
   logAuditEvent(user.id, user.username, 'user_update', { action: 'mfa_disabled_by_user' })

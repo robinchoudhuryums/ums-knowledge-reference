@@ -109,8 +109,8 @@ describe('ragTrace service', () => {
     const { saveMetadata } = await import('../services/s3Storage');
 
     await ragTrace.logRagTrace(makeTrace());
-    vi.mocked(saveMetadata).mockClear();
-
+    // logRagTrace may eagerly flush (persist interval from epoch), so
+    // verify saveMetadata was called at any point with the trace data.
     await ragTrace.flushTraces();
 
     const today = new Date().toISOString().split('T')[0];

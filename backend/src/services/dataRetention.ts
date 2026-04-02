@@ -261,9 +261,9 @@ export function startRetentionScheduler(): void {
   };
 
   // Schedule first run at ~3 AM, then repeat every 24 hours
-  setTimeout(() => {
+  retentionInitialTimeout = setTimeout(() => {
     runCleanup();
-    setInterval(runCleanup, TWENTY_FOUR_HOURS_MS);
+    retentionRepeatInterval = setInterval(runCleanup, TWENTY_FOUR_HOURS_MS);
   }, initialDelayMs);
 
   logger.info('Data retention scheduler started', {
@@ -275,4 +275,18 @@ export function startRetentionScheduler(): void {
     retentionFeedbackDays: RETENTION_FEEDBACK_DAYS,
     retentionPpdDays: RETENTION_PPD_DAYS,
   });
+}
+
+let retentionInitialTimeout: ReturnType<typeof setTimeout> | null = null;
+let retentionRepeatInterval: ReturnType<typeof setInterval> | null = null;
+
+export function stopRetentionScheduler(): void {
+  if (retentionInitialTimeout) {
+    clearTimeout(retentionInitialTimeout);
+    retentionInitialTimeout = null;
+  }
+  if (retentionRepeatInterval) {
+    clearInterval(retentionRepeatInterval);
+    retentionRepeatInterval = null;
+  }
 }

@@ -59,6 +59,8 @@ export async function cleanupOrphanedDocuments(): Promise<number> {
 /**
  * Start the background orphan cleanup scheduler.
  */
+let orphanInterval: ReturnType<typeof setInterval> | null = null;
+
 export function startOrphanCleanup(): void {
   // Run once on startup (after a short delay to let initialization complete)
   setTimeout(() => {
@@ -68,11 +70,18 @@ export function startOrphanCleanup(): void {
   }, 30_000);
 
   // Then run every hour
-  setInterval(() => {
+  orphanInterval = setInterval(() => {
     cleanupOrphanedDocuments().catch(err =>
       logger.error('Orphan cleanup failed', { error: String(err) })
     );
   }, CHECK_INTERVAL_MS);
 
   logger.info('Orphan cleanup scheduler started (every 1 hour)');
+}
+
+export function stopOrphanCleanup(): void {
+  if (orphanInterval) {
+    clearInterval(orphanInterval);
+    orphanInterval = null;
+  }
 }

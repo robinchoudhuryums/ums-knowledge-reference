@@ -469,6 +469,22 @@ async function start() {
       server.close(() => logger.info('HTTP server closed'));
 
       try {
+        // Stop all scheduled background tasks first (before flushing buffers)
+        const { stopSourceMonitor } = await import('./services/sourceMonitor');
+        const { stopReindexScheduler } = await import('./services/reindexer');
+        const { stopFeeScheduleFetcher } = await import('./services/feeScheduleFetcher');
+        const { stopOrphanCleanup } = await import('./services/orphanCleanup');
+        const { stopRetentionScheduler } = await import('./services/dataRetention');
+        const { stopJobCleanup } = await import('./services/jobQueue');
+        stopSourceMonitor();
+        stopReindexScheduler();
+        stopFeeScheduleFetcher();
+        stopOrphanCleanup();
+        stopRetentionScheduler();
+        stopJobCleanup();
+        logger.info('All scheduled tasks stopped');
+
+        // Flush in-memory buffers to S3
         const { flushQueryLog } = await import('./services/queryLog');
         const { flushTraces } = await import('./services/ragTrace');
         const { flushUsage } = await import('./services/usage');

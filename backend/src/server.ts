@@ -109,7 +109,9 @@ if (process.env.NODE_ENV === 'production') {
 // read the cookie value to include it in the header.
 const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'x-csrf-token';
-const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/health'];
+// Unauthenticated endpoints are exempt from CSRF (no session to protect).
+// Health check is exempt since ALB probes don't send cookies.
+const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/forgot-password', '/api/auth/reset-password', '/api/health'];
 
 app.use((req, res, next) => {
   // Set/refresh the CSRF cookie on every response
@@ -467,6 +469,22 @@ async function start() {
       server.close(() => logger.info('HTTP server closed'));
 
       try {
+        // Stop all scheduled background tasks first (before flushing buffers)
+        const { stopSourceMonitor } = await import('./services/sourceMonitor');
+        const { stopReindexScheduler } = await import('./services/reindexer');
+        const { stopFeeScheduleFetcher } = await import('./services/feeScheduleFetcher');
+        const { stopOrphanCleanup } = await import('./services/orphanCleanup');
+        const { stopRetentionScheduler } = await import('./services/dataRetention');
+        const { stopJobCleanup } = await import('./services/jobQueue');
+        stopSourceMonitor();
+        stopReindexScheduler();
+        stopFeeScheduleFetcher();
+        stopOrphanCleanup();
+        stopRetentionScheduler();
+        stopJobCleanup();
+        logger.info('All scheduled tasks stopped');
+
+        // Flush in-memory buffers to S3
         const { flushQueryLog } = await import('./services/queryLog');
         const { flushTraces } = await import('./services/ragTrace');
         const { flushUsage } = await import('./services/usage');

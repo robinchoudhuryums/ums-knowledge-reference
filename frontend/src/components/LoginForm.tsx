@@ -106,8 +106,9 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
           ) : !mfaRequired ? (
             <>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Username</label>
+                <label style={styles.label} htmlFor="login-username">Username</label>
                 <input
+                  id="login-username"
                   type="text"
                   placeholder="Enter your username"
                   value={username}
@@ -115,14 +116,17 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
                   onBlur={() => setTouched(prev => ({ ...prev, username: true }))}
                   style={styles.input}
                   required
+                  aria-invalid={touched.username && !username}
+                  aria-describedby={touched.username && !username ? 'login-username-error' : undefined}
                 />
                 {touched.username && !username && (
-                  <div style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Username is required</div>
+                  <div id="login-username-error" role="alert" style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Username is required</div>
                 )}
               </div>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Password</label>
+                <label style={styles.label} htmlFor="login-password">Password</label>
                 <input
+                  id="login-password"
                   type="password"
                   placeholder="Enter your password"
                   value={password}
@@ -130,9 +134,11 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
                   onBlur={() => setTouched(prev => ({ ...prev, password: true }))}
                   style={styles.input}
                   required
+                  aria-invalid={touched.password && !password}
+                  aria-describedby={touched.password && !password ? 'login-password-error' : undefined}
                 />
                 {touched.password && !password && (
-                  <div style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Password is required</div>
+                  <div id="login-password-error" role="alert" style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Password is required</div>
                 )}
               </div>
             </>

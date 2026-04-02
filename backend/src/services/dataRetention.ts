@@ -242,15 +242,15 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
  */
 export function startRetentionScheduler(): void {
   const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-  const TARGET_HOUR = 3; // 3 AM local time
+  const TARGET_HOUR_UTC = 3; // 3 AM UTC (consistent with UTC-based expiration checks)
 
-  // Calculate milliseconds until the next 3 AM
+  // Calculate milliseconds until the next 3 AM UTC
   const now = new Date();
   const next3AM = new Date(now);
-  next3AM.setHours(TARGET_HOUR, 0, 0, 0);
+  next3AM.setUTCHours(TARGET_HOUR_UTC, 0, 0, 0);
   if (next3AM.getTime() <= now.getTime()) {
-    // Already past 3 AM today — schedule for tomorrow
-    next3AM.setDate(next3AM.getDate() + 1);
+    // Already past 3 AM UTC today — schedule for tomorrow
+    next3AM.setUTCDate(next3AM.getUTCDate() + 1);
   }
   const initialDelayMs = next3AM.getTime() - now.getTime();
 
@@ -261,18 +261,32 @@ export function startRetentionScheduler(): void {
   };
 
   // Schedule first run at ~3 AM, then repeat every 24 hours
-  setTimeout(() => {
+  retentionInitialTimeout = setTimeout(() => {
     runCleanup();
-    setInterval(runCleanup, TWENTY_FOUR_HOURS_MS);
+    retentionRepeatInterval = setInterval(runCleanup, TWENTY_FOUR_HOURS_MS);
   }, initialDelayMs);
 
   logger.info('Data retention scheduler started', {
     nextRunIn: `${Math.round(initialDelayMs / 60000)} minutes`,
-    targetHour: `${TARGET_HOUR}:00`,
+    targetHour: `${TARGET_HOUR_UTC}:00 UTC`,
     retentionAuditDays: RETENTION_AUDIT_DAYS,
     retentionQueryLogDays: RETENTION_QUERY_LOG_DAYS,
     retentionRagTraceDays: RETENTION_RAG_TRACE_DAYS,
     retentionFeedbackDays: RETENTION_FEEDBACK_DAYS,
     retentionPpdDays: RETENTION_PPD_DAYS,
   });
+}
+
+let retentionInitialTimeout: ReturnType<typeof setTimeout> | null = null;
+let retentionRepeatInterval: ReturnType<typeof setInterval> | null = null;
+
+export function stopRetentionScheduler(): void {
+  if (retentionInitialTimeout) {
+    clearTimeout(retentionInitialTimeout);
+    retentionInitialTimeout = null;
+  }
+  if (retentionRepeatInterval) {
+    clearInterval(retentionRepeatInterval);
+    retentionRepeatInterval = null;
+  }
 }

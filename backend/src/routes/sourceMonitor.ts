@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
 import {
   getMonitoredSources,
@@ -13,6 +14,17 @@ import { logger } from '../utils/logger';
 
 const router = Router();
 
+// Rate limit admin write operations to prevent accidental or abusive bulk actions.
+// Force-check and seed operations are expensive (external HTTP calls).
+const adminWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  message: { error: 'Too many source monitor requests. Please wait before trying again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // List all monitored sources
 router.get('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
@@ -25,7 +37,7 @@ router.get('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respon
 });
 
 // Add a new monitored source
-router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { name, url, collectionId, checkIntervalHours, fileType, category } = req.body;
 
@@ -71,7 +83,7 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
 });
 
 // Update a monitored source
-router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { name, url, collectionId, checkIntervalHours, fileType, enabled, category } = req.body;
 
@@ -103,7 +115,7 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
 });
 
 // Delete a monitored source
-router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
   try {
     await removeMonitoredSource(req.params.id);
 
@@ -124,7 +136,7 @@ router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: 
 });
 
 // Force-check a single source now (regardless of interval)
-router.post('/:id/check', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/:id/check', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const result = await forceCheckSource(req.params.id);
 
@@ -147,7 +159,7 @@ router.post('/:id/check', authenticate, requireAdmin, async (req: AuthRequest, r
 });
 
 // Check all due sources now
-router.post('/check-all', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/check-all', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const result = await checkAllDueSources();
 
@@ -182,7 +194,7 @@ const LCD_SOURCES = [
   { name: 'LCD L33791 — Walking Devices & Accessories', lcdId: '33791' },
 ];
 
-router.post('/seed-lcds', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/seed-lcds', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const { getCollectionsIndex, saveCollectionsIndex } = await import('../services/s3Storage');
     const { v4: uuidv4 } = await import('uuid');

@@ -44,14 +44,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
       <div style={styles.container} aria-live="polite">
         {toasts.map(toast => (
-          <ToastItem key={toast.id} toast={toast} onDismiss={removeToast} />
+          <ToastItemView key={toast.id} toast={toast} onDismiss={removeToast} />
         ))}
       </div>
     </ToastContext.Provider>
   );
 }
 
-function ToastItem({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: number) => void }) {
+function ToastItemView({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: number) => void }) {
   const [exiting, setExiting] = useState(false);
 
   useEffect(() => {

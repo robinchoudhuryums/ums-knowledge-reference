@@ -4,11 +4,12 @@
 
 | File | Variables | What it stores | Risk with 2+ instances |
 |------|-----------|----------------|----------------------|
-| `backend/src/services/vectorStore.ts` | `cachedIndex`, `idfCache`, `idfChunkCount` | Full vector index + IDF term weights | Each instance has its own stale copy; uploads on one instance are invisible to others |
-| `backend/src/services/queryLog.ts` | `todayEntries`, `todayDate` | Today's query log buffer (flushes to S3 every 15s) | Concurrent flushes from multiple instances overwrite each other, losing entries |
-| `backend/src/services/ragTrace.ts` | `todayTraces`, `todayFeedback`, `todayDate` | Today's RAG trace + feedback buffer (flushes to S3 every 15s) | Same overwrite problem as queryLog |
+| `backend/src/services/vectorStore.ts` | `cachedIndex`, `idfCache`, `docFreqCounts`, `totalCorpusTokens`, `corpusChunkCount`, `embeddingModelMismatch` | Full vector index + incremental IDF state + embedding model tracking | Each instance has its own stale copy; uploads on one instance are invisible to others until they reload |
+| `backend/src/services/queryLog.ts` | `todayEntries`, `todayDate` | Today's query log buffer (flushes to S3 every 15s) | **Mitigated**: read-merge-write flush pattern with deduplication prevents entry loss |
+| `backend/src/services/ragTrace.ts` | `todayTraces`, `todayFeedback`, `todayDate` | Today's RAG trace + feedback buffer (flushes to S3 every 15s) | **Mitigated**: read-merge-write flush with traceId deduplication prevents loss |
 | `backend/src/services/usage.ts` | `todayRecord`, `cachedLimits` | Per-user daily query counts and rate limits | Users can exceed limits by hitting different instances |
-| `backend/src/middleware/auth.ts` | `revokedTokens` (Set) | JWTs invalidated on logout (TTL: 35min) | Logout on instance A does not revoke the token on instance B |
+| `backend/src/middleware/auth.ts` | `revokedTokens`, `revokedUserIds` (Sets) | JWTs invalidated on logout (TTL: 35min) | Logout on instance A does not revoke the token on instance B |
+| `backend/src/middleware/auth.ts` | Reset codes (via cache abstraction) | Password reset codes (TTL: 15min) | **Mitigated**: uses CacheProvider — in-memory for single instance, Redis when REDIS_URL configured |
 
 ## Migration Path
 

@@ -61,7 +61,20 @@ async function persistIfNeeded(): Promise<void> {
 
 async function forceFlush(): Promise<void> {
   if (todayEntries.length === 0) return;
-  await saveMetadata(`${LOG_PREFIX}${todayDate}.json`, todayEntries);
+  const key = `${LOG_PREFIX}${todayDate}.json`;
+
+  // Read-merge-write: load existing entries from S3 (may include entries from other
+  // instances or from our own previous flush), merge with local buffer, then save.
+  // This prevents concurrent instances from overwriting each other's entries.
+  // Deduplication by timestamp+userId prevents double-counting on retry.
+  const existing = await loadMetadata<QueryLogEntry[]>(key);
+  const merged = [...(existing || []), ...todayEntries];
+  const deduped = Array.from(
+    new Map(merged.map(e => [`${e.timestamp}-${e.userId}-${e.question?.slice(0, 20)}`, e])).values()
+  );
+
+  await saveMetadata(key, deduped);
+  todayEntries = [];
   lastPersist = Date.now();
 }
 

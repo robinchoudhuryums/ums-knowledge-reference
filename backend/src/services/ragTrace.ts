@@ -107,11 +107,24 @@ async function persistIfNeeded(): Promise<void> {
 
 async function forceFlush(): Promise<void> {
   const promises: Promise<void>[] = [];
+
+  // Read-merge-write: load existing data from S3 and merge with local buffer.
+  // Deduplication by traceId/feedbackId prevents double-counting across instances.
   if (todayTraces.length > 0) {
-    promises.push(saveMetadata(`${TRACE_PREFIX}${todayDate}-traces.json`, todayTraces));
+    const traceKey = `${TRACE_PREFIX}${todayDate}-traces.json`;
+    const existing = await loadMetadata<RagTrace[]>(traceKey);
+    const merged = [...(existing || []), ...todayTraces];
+    const deduped = Array.from(new Map(merged.map(t => [t.traceId, t])).values());
+    promises.push(saveMetadata(traceKey, deduped));
+    todayTraces = [];
   }
   if (todayFeedback.length > 0) {
-    promises.push(saveMetadata(`${TRACE_PREFIX}${todayDate}-feedback.json`, todayFeedback));
+    const fbKey = `${TRACE_PREFIX}${todayDate}-feedback.json`;
+    const existing = await loadMetadata<RagFeedback[]>(fbKey);
+    const merged = [...(existing || []), ...todayFeedback];
+    const deduped = Array.from(new Map(merged.map(f => [f.traceId + f.feedbackType, f])).values());
+    promises.push(saveMetadata(fbKey, deduped));
+    todayFeedback = [];
   }
   if (promises.length > 0) {
     await Promise.all(promises);
@@ -237,9 +250,9 @@ export async function purgeDocumentFromTraces(documentId: string): Promise<numbe
  */
 export async function getTraces(date: string): Promise<RagTrace[]> {
   if (date === todayDate) {
-    await forceFlush();
-    return todayTraces;
+    await forceFlush(); // Flush local buffer to S3 first
   }
+  // Always read from S3 (flush cleared the local buffer)
   return await loadMetadata<RagTrace[]>(`${TRACE_PREFIX}${date}-traces.json`) || [];
 }
 
@@ -249,7 +262,6 @@ export async function getTraces(date: string): Promise<RagTrace[]> {
 export async function getTraceFeedback(date: string): Promise<RagFeedback[]> {
   if (date === todayDate) {
     await forceFlush();
-    return todayFeedback;
   }
   return await loadMetadata<RagFeedback[]>(`${TRACE_PREFIX}${date}-feedback.json`) || [];
 }

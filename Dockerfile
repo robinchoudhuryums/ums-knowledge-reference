@@ -1,12 +1,14 @@
 # Multi-stage build: build frontend + backend, then run as a single service
-FROM node:20-slim AS frontend-build
+# Pin to specific Node.js LTS patch for deterministic builds.
+# Update this version periodically (check: https://nodejs.org/en/download/)
+FROM node:20.19.0-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM node:20-slim AS backend-build
+FROM node:20.19.0-slim AS backend-build
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci
@@ -15,7 +17,7 @@ COPY backend/src ./src
 RUN npm run build
 
 # Production image
-FROM node:20-slim
+FROM node:20.19.0-slim
 WORKDIR /app
 
 # Install tini for proper PID 1 signal handling and curl for health checks

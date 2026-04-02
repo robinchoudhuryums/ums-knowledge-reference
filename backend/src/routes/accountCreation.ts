@@ -64,6 +64,12 @@ router.post('/submit', authenticate, submitLimiter, async (req: AuthRequest, res
 
     // If sendTo is provided and email is configured, send it
     if (sendTo && isEmailConfigured()) {
+      // Validate email format and reject control characters (header injection prevention)
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      if (/[\x00-\x1F\x7F\r\n]/.test(sendTo) || !emailRegex.test(sendTo)) {
+        res.status(400).json({ error: 'Invalid email address format' });
+        return;
+      }
       const html = buildAccountCreationHtml(patientName, dob || '', responses);
       const emailResult = await sendEmail({
         to: sendTo,

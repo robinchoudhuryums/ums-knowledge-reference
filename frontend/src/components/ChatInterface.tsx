@@ -84,11 +84,11 @@ export function ChatInterface({ collections }: Props) {
 
   // Persist collection selection to localStorage so it survives page refreshes
   useEffect(() => {
-    try { localStorage.setItem('ums-selected-collections', JSON.stringify(selectedCollections)); } catch {}
+    try { localStorage.setItem('ums-selected-collections', JSON.stringify(selectedCollections)); } catch { /* storage full or disabled */ }
   }, [selectedCollections]);
 
   useEffect(() => {
-    try { localStorage.setItem('ums-response-style', responseStyle); } catch {}
+    try { localStorage.setItem('ums-response-style', responseStyle); } catch { /* storage full or disabled */ }
   }, [selectedCollections]);
 
   // Filter out deleted collections from selection when collection list updates
@@ -449,7 +449,7 @@ export function ChatInterface({ collections }: Props) {
                     >
                       <span style={styles.sourceIcon}>&#128196;</span>
                       {docName}
-                      {chunks[0].pageNumber != null && (
+                      {chunks[0].pageNumber !== null && chunks[0].pageNumber !== undefined && (
                         <span style={styles.sourcePageBadge}>p.{chunks[0].pageNumber}</span>
                       )}
                       <span style={styles.sourceScore}>{Math.round(chunks[0].score * 100)}%</span>

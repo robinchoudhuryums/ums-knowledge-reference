@@ -424,3 +424,32 @@ tr:hover td {
     padding: 8px !important;
   }
 }
+
+/* ─── Accessibility: invalid input styling ──────────────────────── */
+
+input[aria-invalid="true"],
+textarea[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: var(--ums-error) !important;
+  box-shadow: 0 0 0 1px var(--ums-error-light);
+}
+
+input[aria-invalid="true"]:focus,
+textarea[aria-invalid="true"]:focus,
+select[aria-invalid="true"]:focus {
+  outline-color: var(--ums-error);
+  box-shadow: 0 0 0 2px var(--ums-error-light);
+}
+
+/* ─── Accessibility: reduced motion preference ──────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

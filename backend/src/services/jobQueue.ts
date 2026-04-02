@@ -185,3 +185,10 @@ export function startJobCleanup(): void {
   cleanupInterval = setInterval(cleanupOldJobs, 10 * 60 * 1000);
   logger.info('Job cleanup scheduler started (every 10 minutes)');
 }
+
+export function stopJobCleanup(): void {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+}

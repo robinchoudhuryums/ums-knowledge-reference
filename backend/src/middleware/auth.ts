@@ -42,7 +42,6 @@ import {
   validatePassword,
   isPasswordReused,
   isAccountLocked,
-  getLockoutRemainingSeconds,
   updateLockoutCache,
   isAccountLockedFromCache,
   MAX_FAILED_ATTEMPTS,
@@ -137,8 +136,8 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   const user = users.find(u => u.username === username);
 
   if (user && isAccountLocked(user)) {
-    const remaining = getLockoutRemainingSeconds(user);
-    logger.warn('Login attempt on locked account', { username, remainingSeconds: remaining });
+    // Log without timing details — revealing remaining lockout time aids brute-force timing attacks
+    logger.warn('Login attempt on locked account', { username });
     res.status(423).json({ error: 'Account is locked due to too many failed attempts. Please try again later.' });
     return;
   }
@@ -421,9 +420,12 @@ export async function mfaDisableHandler(req: AuthRequest, res: Response): Promis
 
 // ─── Forgot Password ────────────────────────────────────────────────────────
 
-// In-memory store for password reset codes (code → { userId, expiresAt })
-// For multi-instance, move to Redis via the cache abstraction.
-const resetCodes = new Map<string, { userId: string; expiresAt: number }>();
+// Password reset codes stored via cache abstraction (in-memory or Redis).
+// TTL-based expiration eliminates manual cleanup. Multi-instance safe when
+// REDIS_URL is configured (codes set on instance A are visible on instance B).
+import { getCache } from '../cache';
+const RESET_CODE_PREFIX = 'reset-code:';
+const RESET_CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 /**
  * Request a password reset code sent via email.
@@ -458,14 +460,9 @@ export async function forgotPasswordHandler(req: Request, res: Response): Promis
 
   // Generate a 6-digit numeric code (easy to type from email)
   const code = crypto.randomInt(100000, 999999).toString();
-  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
 
-  resetCodes.set(code, { userId: user.id, expiresAt });
-
-  // Clean up expired codes
-  for (const [key, val] of resetCodes) {
-    if (val.expiresAt < Date.now()) resetCodes.delete(key);
-  }
+  // Store code with TTL — auto-expires, no manual cleanup needed
+  await getCache().set(`${RESET_CODE_PREFIX}${code}`, { userId: user.id }, RESET_CODE_TTL_MS);
 
   // Send email with reset code — directly to user if they have an email,
   // otherwise fall back to admin email
@@ -514,8 +511,9 @@ export async function resetPasswordWithCodeHandler(req: Request, res: Response):
     return;
   }
 
-  const entry = resetCodes.get(code);
-  if (!entry || entry.expiresAt < Date.now()) {
+  // Look up code from cache (TTL handles expiration automatically)
+  const entry = await getCache().get<{ userId: string }>(`${RESET_CODE_PREFIX}${code}`);
+  if (!entry) {
     res.status(400).json({ error: 'Invalid or expired reset code' });
     return;
   }
@@ -528,8 +526,8 @@ export async function resetPasswordWithCodeHandler(req: Request, res: Response):
     return;
   }
 
-  // Consume the code (single use)
-  resetCodes.delete(code);
+  // Consume the code (single use) — delete from cache
+  await getCache().delete(`${RESET_CODE_PREFIX}${code}`);
 
   // Check password history
   if (await isPasswordReused(newPassword, user)) {

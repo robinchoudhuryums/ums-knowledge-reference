@@ -424,6 +424,45 @@ describe('Documents Route', () => {
       expect(res.body.versions[0].version).toBe(2);
       expect(res.body.versions[1].version).toBe(1);
     });
+
+    it('returns 404 when user lacks collection ACL for the document', async () => {
+      const docs = [
+        makeDoc({ id: 'doc-restricted', version: 1, collectionId: 'restricted-col' }),
+      ];
+      (getDocumentsIndex as ReturnType<typeof vi.fn>).mockResolvedValue(docs);
+      (getUserAllowedCollections as ReturnType<typeof vi.fn>).mockResolvedValue(['other-col']);
+
+      const res = await request(app).get('/api/documents/doc-restricted/versions');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Document not found');
+    });
+
+    it('allows access when user has matching collection ACL', async () => {
+      const docs = [
+        makeDoc({ id: 'doc-allowed', version: 1, collectionId: 'my-col', originalName: 'file.pdf' }),
+      ];
+      (getDocumentsIndex as ReturnType<typeof vi.fn>).mockResolvedValue(docs);
+      (getUserAllowedCollections as ReturnType<typeof vi.fn>).mockResolvedValue(['my-col']);
+
+      const res = await request(app).get('/api/documents/doc-allowed/versions');
+
+      expect(res.status).toBe(200);
+      expect(res.body.versions).toHaveLength(1);
+    });
+
+    it('allows access when user has no collection restrictions (admin/unrestricted)', async () => {
+      const docs = [
+        makeDoc({ id: 'doc-any', version: 1, collectionId: 'any-col', originalName: 'file.pdf' }),
+      ];
+      (getDocumentsIndex as ReturnType<typeof vi.fn>).mockResolvedValue(docs);
+      (getUserAllowedCollections as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const res = await request(app).get('/api/documents/doc-any/versions');
+
+      expect(res.status).toBe(200);
+      expect(res.body.versions).toHaveLength(1);
+    });
   });
 
   // =============================================
@@ -431,15 +470,43 @@ describe('Documents Route', () => {
   // =============================================
 
   describe('GET /collections/list — List collections', () => {
-    it('returns collections', async () => {
+    it('returns all collections for unrestricted users', async () => {
       const cols = [makeCollection({ id: 'col-1', name: 'Policies' })];
       (getCollectionsIndex as ReturnType<typeof vi.fn>).mockResolvedValue(cols);
+      (getUserAllowedCollections as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
       const res = await request(app).get('/api/documents/collections/list');
 
       expect(res.status).toBe(200);
       expect(res.body.collections).toHaveLength(1);
       expect(res.body.collections[0].name).toBe('Policies');
+    });
+
+    it('filters collections by user ACL', async () => {
+      const cols = [
+        makeCollection({ id: 'col-allowed', name: 'Allowed' }),
+        makeCollection({ id: 'col-restricted', name: 'Restricted' }),
+        makeCollection({ id: 'col-also-allowed', name: 'Also Allowed' }),
+      ];
+      (getCollectionsIndex as ReturnType<typeof vi.fn>).mockResolvedValue(cols);
+      (getUserAllowedCollections as ReturnType<typeof vi.fn>).mockResolvedValue(['col-allowed', 'col-also-allowed']);
+
+      const res = await request(app).get('/api/documents/collections/list');
+
+      expect(res.status).toBe(200);
+      expect(res.body.collections).toHaveLength(2);
+      expect(res.body.collections.map((c: any) => c.name)).toEqual(['Allowed', 'Also Allowed']);
+    });
+
+    it('returns empty list when user has no matching collections', async () => {
+      const cols = [makeCollection({ id: 'col-1', name: 'Secret' })];
+      (getCollectionsIndex as ReturnType<typeof vi.fn>).mockResolvedValue(cols);
+      (getUserAllowedCollections as ReturnType<typeof vi.fn>).mockResolvedValue(['col-other']);
+
+      const res = await request(app).get('/api/documents/collections/list');
+
+      expect(res.status).toBe(200);
+      expect(res.body.collections).toHaveLength(0);
     });
   });
 

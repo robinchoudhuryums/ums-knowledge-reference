@@ -353,7 +353,8 @@ router.get('/:id/versions', authenticate, async (req: AuthRequest, res: Response
       return;
     }
 
-    // Enforce collection-level ACL
+    // Enforce collection ACL — non-admin users with restricted collections
+    // must not access version history of documents outside their allowed set
     const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
     if (allowedCollections && !allowedCollections.includes(targetDoc.collectionId)) {
       res.status(404).json({ error: 'Document not found' });
@@ -392,10 +393,17 @@ router.get('/:id/versions', authenticate, async (req: AuthRequest, res: Response
 // --- Collections ---
 
 // List collections
-router.get('/collections/list', authenticate, async (_req: AuthRequest, res: Response) => {
+router.get('/collections/list', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const collections = await getCollectionsIndex();
-    res.json({ collections });
+
+    // Enforce collection ACL — restrict listing to allowed collections
+    const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);
+    const filtered = allowedCollections
+      ? collections.filter(c => allowedCollections.includes(c.id))
+      : collections;
+
+    res.json({ collections: filtered });
   } catch {
     res.status(500).json({ error: 'Failed to list collections' });
   }

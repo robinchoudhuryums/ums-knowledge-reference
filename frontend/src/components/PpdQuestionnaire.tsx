@@ -55,6 +55,24 @@ function storageKey(patient: string): string {
   return `ppd_responses_${patient.replace(/\s+/g, '_').toLowerCase()}`;
 }
 
+/** Convert a non-PNG image blob to PNG for clipboard compatibility */
+function convertToPng(blob: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('Canvas not supported')); return; }
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('PNG conversion failed')), 'image/png');
+    };
+    img.onerror = () => reject(new Error('Image load failed'));
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
 // ── Styles ─────────────────────────────────────────────────────────────────
 
 const sty = {
@@ -432,9 +450,24 @@ export function PpdQuestionnaire() {
               <button
                 type="button"
                 style={sty.copyBtn}
-                onClick={() => { navigator.clipboard.writeText(product.imageUrl!); setCopiedId(`img_${key}`); setTimeout(() => setCopiedId(''), 2000); }}
+                onClick={async () => {
+                  try {
+                    // Fetch image as blob and copy to clipboard as an image
+                    const res = await fetch(product.imageUrl!, { credentials: 'same-origin' });
+                    const blob = await res.blob();
+                    // ClipboardItem requires image/png for broad compatibility
+                    const pngBlob = blob.type === 'image/png' ? blob : await convertToPng(blob);
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+                    setCopiedId(`img_${key}`);
+                  } catch {
+                    // Fallback: copy URL if clipboard image API not supported
+                    navigator.clipboard.writeText(product.imageUrl!).catch(() => {});
+                    setCopiedId(`img_${key}`);
+                  }
+                  setTimeout(() => setCopiedId(''), 2000);
+                }}
               >
-                {copiedId === `img_${key}` ? 'Copied!' : 'Copy Image URL'}
+                {copiedId === `img_${key}` ? 'Copied!' : 'Copy Image'}
               </button>
             )}
             {product.brochureUrl && (

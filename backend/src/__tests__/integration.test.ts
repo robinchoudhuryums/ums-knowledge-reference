@@ -136,6 +136,11 @@ vi.mock('../utils/malwareScan', () => ({
 }));
 
 // Mock reference enrichment — pass through
+vi.mock('../services/productImageResolver', () => ({
+  findProductImages: vi.fn(() => []),
+  getProductImage: vi.fn(() => null),
+}));
+
 vi.mock('../services/referenceEnrichment', () => ({
   enrichQueryWithStructuredData: vi.fn(() => []),
   classifyQuery: vi.fn(() => 'rag'),

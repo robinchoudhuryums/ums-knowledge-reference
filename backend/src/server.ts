@@ -57,6 +57,7 @@ import coverageRoutes from './routes/coverage';
 import ppdRoutes from './routes/ppd';
 import accountCreationRoutes from './routes/accountCreation';
 import papAccountCreationRoutes from './routes/papAccountCreation';
+import productImageRoutes from './routes/productImages';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -68,7 +69,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],  // React inline styles require unsafe-inline
-      imgSrc: ["'self'", 'data:', 'blob:', 'https://cdn.jsdelivr.net'],     // data: for base64, blob: for PDF, jsdelivr for product images
+      imgSrc: ["'self'", 'data:', 'blob:'],     // data: for base64, blob: for PDF preview
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       connectSrc: ["'self'"],                    // API calls to same origin
       frameSrc: ["'none'"],
@@ -341,6 +342,9 @@ app.use('/api/account-creation', accountCreationRoutes);
 
 // PAP Account Creation routes
 app.use('/api/pap-account', papAccountCreationRoutes);
+
+// Product images (S3-backed)
+app.use('/api/products', productImageRoutes);
 
 // In production, serve the frontend static files from the same server.
 // The built frontend is expected at ../frontend/dist relative to the backend root.

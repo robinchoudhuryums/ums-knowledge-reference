@@ -96,6 +96,11 @@ vi.mock('../config/aws', () => ({
 vi.mock('../utils/fileValidation', () => ({ validateFileContent: vi.fn(() => null) }));
 vi.mock('../utils/malwareScan', () => ({ scanFileForMalware: vi.fn(async () => ({ scanned: false, clean: true })) }));
 
+vi.mock('../services/productImageResolver', () => ({
+  findProductImages: vi.fn(() => []),
+  getProductImage: vi.fn(() => null),
+}));
+
 vi.mock('../services/referenceEnrichment', () => ({
   enrichQueryWithStructuredData: vi.fn(() => []),
   classifyQuery: vi.fn(() => 'rag'),

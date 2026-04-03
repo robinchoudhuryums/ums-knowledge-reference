@@ -12,7 +12,7 @@ import { bedrockClient, BEDROCK_GENERATION_MODEL, bedrockCircuitBreaker } from '
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
 import { enrichQueryWithStructuredData, classifyQuery } from '../services/referenceEnrichment';
-import { findProductImages } from '../services/productImageResolver';
+import { findProductImages, ProductImageMatch } from '../services/productImageResolver';
 import { withSpan } from '../utils/traceSpan';
 import rateLimit from 'express-rate-limit';
 
@@ -400,6 +400,125 @@ const OUTPUT_ANOMALY_REPLACEMENT =
   'I can only answer questions based on the uploaded knowledge base documents. ' +
   'Please rephrase your question to ask about the documents in the system.';
 
+const NO_RESULT_ANSWER =
+  'This information is not covered in the current knowledge base documents. ' +
+  'Please contact your supervisor or the relevant department for guidance, or try rephrasing your question.';
+
+// --- Shared post-generation processing ---
+// Extracted from streaming and non-streaming endpoints to deduplicate ~56 lines of
+// confidence parsing, guardrails, PHI scanning, audit/trace/query logging.
+
+interface PostGenerationParams {
+  rawAnswer: string;
+  avgScore: number;
+  topScore: number;
+  searchResults: SearchResult[];
+  question: string;
+  searchQuery: string;
+  context: string;
+  sources: SourceCitation[];
+  collectionIds?: string[];
+  effectiveCollectionIds?: string[];
+  userId: string;
+  username: string;
+  traceId: string;
+  pipelineStart: number;
+  embeddingTimeMs: number;
+  retrievalTimeMs: number;
+  generationTimeMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  streamed: boolean;
+}
+
+interface PostGenerationResult {
+  answer: string;
+  confidence: 'high' | 'partial' | 'low';
+  productImages: ProductImageMatch[];
+  phiDetected: boolean;
+  anomalyDetected: boolean;
+  anomalyReason?: string;
+}
+
+async function processPostGeneration(params: PostGenerationParams): Promise<PostGenerationResult> {
+  const {
+    rawAnswer, avgScore, topScore, searchResults, question, searchQuery, context,
+    sources, collectionIds, effectiveCollectionIds, userId, username, traceId,
+    pipelineStart, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
+    inputTokens, outputTokens, streamed,
+  } = params;
+
+  let { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore, searchResults.length);
+
+  // Output-side guardrail: detect if the response shows signs of injection bypass
+  const outputCheck = detectOutputAnomaly(answer);
+  let anomalyDetected = false;
+  if (outputCheck.anomaly) {
+    logger.warn('Output anomaly detected', {
+      reason: outputCheck.reason, userId, traceId, streamed,
+    });
+    anomalyDetected = true;
+    if (!streamed) answer = OUTPUT_ANOMALY_REPLACEMENT;
+    confidence = 'low';
+  }
+
+  // PHI scan on RAG response for HIPAA monitoring
+  const phiScan = redactPhi(answer);
+  const phiDetected = phiScan.redactionCount > 0;
+  if (phiDetected) {
+    logger.warn('PHI detected in RAG response', {
+      traceId, userId, redactionCount: phiScan.redactionCount, streamed,
+    });
+  }
+
+  const productImages = findProductImages(answer + ' ' + context);
+
+  const responseTimeMs = Date.now() - pipelineStart;
+
+  // Audit, query log, and RAG trace
+  const auditPromise = logAuditEvent(userId, username, 'query', {
+    question: redactPhi(question).text,
+    sourcesUsed: sources.length,
+    accessedDocumentIds: [...new Set(sources.map(s => s.documentId))],
+    accessedDocumentNames: [...new Set(sources.map(s => s.documentName))],
+    collectionIds: effectiveCollectionIds,
+    confidence,
+    ...(streamed && { streamed: true }),
+    traceId,
+  });
+
+  const queryLogPromise = logQuery(userId, username, question, answer, confidence, sources, collectionIds);
+
+  const redactedReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
+  const tracePromise = logRagTrace({
+    traceId, timestamp: new Date().toISOString(),
+    userId, username,
+    queryText: redactPhi(question).text, reformulatedQuery: redactedReformulated,
+    retrievedChunkIds: searchResults.map(r => r.chunk.id),
+    retrievalScores: searchResults.map(r => r.score),
+    avgRetrievalScore: avgScore,
+    chunksPassedToModel: searchResults.length,
+    modelId: BEDROCK_GENERATION_MODEL,
+    responseText: answer, confidence,
+    responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
+    collectionIds, streamed,
+    inputTokens, outputTokens,
+  });
+
+  // Non-streaming: await audit, fire-and-forget trace/query log
+  // Streaming: fire-and-forget all
+  if (streamed) {
+    auditPromise.catch(err => logger.warn('Async operation failed', { error: String(err) }));
+    queryLogPromise.catch(err => logger.warn('Async operation failed', { error: String(err) }));
+  } else {
+    await auditPromise;
+    await queryLogPromise;
+  }
+  tracePromise.catch(err => logger.warn('Async operation failed', { error: String(err) }));
+
+  return { answer, confidence, productImages, phiDetected, anomalyDetected, anomalyReason: outputCheck.reason };
+}
+
 /**
  * Validate and sanitize conversation history to prevent abuse.
  * Limits the number of turns, total character count, and validates structure.
@@ -611,8 +730,7 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
       // Usage already recorded by checkAndRecordQuery above
       const responseTimeMs = Date.now() - pipelineStart;
       const response: QueryResponse = {
-        answer:
-          "This information is not covered in the current knowledge base documents. Please contact your supervisor or the relevant department for guidance, or try rephrasing your question.",
+        answer: NO_RESULT_ANSWER,
         sources: [],
         confidence: 'low',
         traceId,
@@ -669,72 +787,17 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
     const inputTokens = responseBody.usage?.input_tokens;
     const outputTokens = responseBody.usage?.output_tokens;
 
-    let { answer, confidence } = parseConfidence(rawAnswer, avgScore, topScore, searchResults.length);
-
-    // Output-side guardrail: detect if the response shows signs of injection bypass
-    const outputCheck = detectOutputAnomaly(answer);
-    if (outputCheck.anomaly) {
-      logger.warn('Output anomaly detected, replacing response', {
-        reason: outputCheck.reason, userId: req.user!.id, traceId,
-      });
-      answer = OUTPUT_ANOMALY_REPLACEMENT;
-      confidence = 'low';
-    }
-
-    // PHI scan on RAG response: if the LLM quoted PHI from source documents,
-    // log a warning for HIPAA monitoring. We don't block the response since
-    // the user uploaded the documents, but we flag it for audit visibility.
-    const phiScan = redactPhi(answer);
-    let phiDetectedInResponse = false;
-    if (phiScan.redactionCount > 0) {
-      phiDetectedInResponse = true;
-      logger.warn('PHI detected in RAG response', {
-        traceId, userId: req.user!.id, redactionCount: phiScan.redactionCount,
-      });
-    }
-
-    const responseTimeMs = Date.now() - pipelineStart;
-
-    // Usage already recorded by checkAndRecordQuery above
-
-    await logAuditEvent(req.user!.id, req.user!.username, 'query', {
-      question: redactPhi(question).text,
-      sourcesUsed: sources.length,
-      accessedDocumentIds: [...new Set(sources.map(s => s.documentId))],
-      accessedDocumentNames: [...new Set(sources.map(s => s.documentName))],
-      collectionIds: effectiveCollectionIds,
-      confidence,
-      traceId,
+    const result = await processPostGeneration({
+      rawAnswer, avgScore, topScore, searchResults, question, searchQuery, context,
+      sources, collectionIds, effectiveCollectionIds, userId: req.user!.id,
+      username: req.user!.username, traceId, pipelineStart, embeddingTimeMs,
+      retrievalTimeMs, generationTimeMs, inputTokens, outputTokens, streamed: false,
     });
 
-    // Log query for analytics / CSV export
-    await logQuery(req.user!.id, req.user!.username, question, answer, confidence, sources, collectionIds);
-
-    // Log RAG trace asynchronously (fire-and-forget)
-    // Redact reformulated query — it may contain PHI expanded from conversation context
-    const redactedReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
-    logRagTrace({
-      traceId, timestamp: new Date().toISOString(),
-      userId: req.user!.id, username: req.user!.username,
-      queryText: redactPhi(question).text, reformulatedQuery: redactedReformulated,
-      retrievedChunkIds: searchResults.map(r => r.chunk.id),
-      retrievalScores: searchResults.map(r => r.score),
-      avgRetrievalScore: avgScore,
-      chunksPassedToModel: searchResults.length,
-      modelId: BEDROCK_GENERATION_MODEL,
-      responseText: answer, confidence,
-      responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
-      collectionIds, streamed: false,
-      inputTokens, outputTokens,
-    }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
-
-    // Detect product images referenced in the answer (by HCPCS code)
-    const productImages = findProductImages(answer + ' ' + context);
-
     const response: QueryResponse = {
-      answer, sources, confidence, traceId,
-      ...(phiDetectedInResponse && { phiDetected: true }),
-      ...(productImages.length > 0 && { productImages }),
+      answer: result.answer, sources, confidence: result.confidence, traceId,
+      ...(result.phiDetected && { phiDetected: true }),
+      ...(result.productImages.length > 0 && { productImages: result.productImages }),
     };
     res.json(response);
   } catch (error) {
@@ -800,7 +863,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
     res.write(`data: ${JSON.stringify({ type: 'sources', sources })}\n\n`);
 
     if (searchResults.length === 0) {
-      const noResultAnswer = "This information is not covered in the current knowledge base documents. Please contact your supervisor or the relevant department for guidance, or try rephrasing your question.";
+      const noResultAnswer = NO_RESULT_ANSWER;
       res.write(`data: ${JSON.stringify({ type: 'text', text: noResultAnswer })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'confidence', confidence: 'low' })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
@@ -856,74 +919,29 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
     }
     const generationTimeMs = Date.now() - generationStart;
 
-    // Parse confidence from the completed answer
-    let { confidence } = parseConfidence(fullAnswer, avgScore, topScore, searchResults.length);
+    const result = await processPostGeneration({
+      rawAnswer: fullAnswer, avgScore, topScore, searchResults, question, searchQuery, context,
+      sources, collectionIds, effectiveCollectionIds, userId: req.user!.id,
+      username: req.user!.username, traceId, pipelineStart, embeddingTimeMs,
+      retrievalTimeMs, generationTimeMs, inputTokens: streamInputTokens,
+      outputTokens: streamOutputTokens, streamed: true,
+    });
 
-    // Output-side guardrail for streaming: check completed answer for anomalies.
-    // Since text was already streamed, we send a warning event so the frontend can
-    // overlay a caution message rather than silently forwarding a suspicious response.
-    const streamOutputCheck = detectOutputAnomaly(fullAnswer);
-    if (streamOutputCheck.anomaly) {
-      logger.warn('Output anomaly detected in streamed response', {
-        reason: streamOutputCheck.reason, userId: req.user!.id, traceId,
-      });
-      confidence = 'low';
+    // Stream-specific SSE events for guardrails detected after full answer is assembled
+    if (result.anomalyDetected) {
       res.write(`data: ${JSON.stringify({ type: 'warning', message: OUTPUT_ANOMALY_REPLACEMENT })}\n\n`);
     }
-
-    // PHI scan on streamed response for HIPAA monitoring
-    const streamPhiScan = redactPhi(fullAnswer);
-    if (streamPhiScan.redactionCount > 0) {
-      logger.warn('PHI detected in streamed RAG response', {
-        traceId, userId: req.user!.id, redactionCount: streamPhiScan.redactionCount,
-      });
-      res.write(`data: ${JSON.stringify({ type: 'phiWarning', redactionCount: streamPhiScan.redactionCount })}\n\n`);
+    if (result.phiDetected) {
+      res.write(`data: ${JSON.stringify({ type: 'phiWarning', redactionCount: redactPhi(fullAnswer).redactionCount })}\n\n`);
+    }
+    if (result.productImages.length > 0) {
+      res.write(`data: ${JSON.stringify({ type: 'productImages', productImages: result.productImages })}\n\n`);
     }
 
-    // Detect product images referenced in the response
-    const streamProductImages = findProductImages(fullAnswer + ' ' + context);
-    if (streamProductImages.length > 0) {
-      res.write(`data: ${JSON.stringify({ type: 'productImages', productImages: streamProductImages })}\n\n`);
-    }
-
-    res.write(`data: ${JSON.stringify({ type: 'confidence', confidence })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'confidence', confidence: result.confidence })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'traceId', traceId })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
     res.end();
-
-    const responseTimeMs = Date.now() - pipelineStart;
-
-    // Usage already recorded by checkAndRecordQuery above; just log audit
-    logAuditEvent(req.user!.id, req.user!.username, 'query', {
-      question: redactPhi(question).text,
-      sourcesUsed: sources.length,
-      accessedDocumentIds: [...new Set(sources.map(s => s.documentId))],
-      accessedDocumentNames: [...new Set(sources.map(s => s.documentName))],
-      collectionIds: effectiveCollectionIds,
-      confidence,
-      streamed: true,
-      traceId,
-    }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
-    // Log query for analytics / CSV export
-    const { answer: cleanAnswer } = parseConfidence(fullAnswer, avgScore, topScore, searchResults.length);
-    logQuery(req.user!.id, req.user!.username, question, cleanAnswer, confidence, sources, collectionIds).catch(err => logger.warn('Async operation failed', { error: String(err) }));
-    // Log RAG trace (fire and forget)
-    // Redact query and reformulated query — may contain PHI from conversation context
-    const redactedStreamReformulated = searchQuery !== question ? redactPhi(searchQuery).text : undefined;
-    logRagTrace({
-      traceId, timestamp: new Date().toISOString(),
-      userId: req.user!.id, username: req.user!.username,
-      queryText: redactPhi(question).text, reformulatedQuery: redactedStreamReformulated,
-      retrievedChunkIds: searchResults.map(r => r.chunk.id),
-      retrievalScores: searchResults.map(r => r.score),
-      avgRetrievalScore: avgScore,
-      chunksPassedToModel: searchResults.length,
-      modelId: BEDROCK_GENERATION_MODEL,
-      responseText: cleanAnswer, confidence,
-      responseTimeMs, embeddingTimeMs, retrievalTimeMs, generationTimeMs,
-      collectionIds, streamed: true,
-      inputTokens: streamInputTokens, outputTokens: streamOutputTokens,
-    }).catch(err => logger.warn('Async operation failed', { error: String(err) }));
   } catch (error) {
     logger.error('Streaming query failed', { error: String(error) });
     // Roll back usage so users don't lose quota on failed queries

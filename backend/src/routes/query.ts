@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest, getUserAllowedCollections } from '../middleware/auth';
+import { captureException } from '../utils/sentry';
 import { generateEmbedding } from '../services/embeddings';
 import { searchVectorStore } from '../services/vectorStore';
 import { logAuditEvent } from '../services/audit';
@@ -802,6 +803,7 @@ router.post('/', authenticate, queryLimiter, async (req: AuthRequest, res: Respo
     res.json(response);
   } catch (error) {
     logger.error('Query failed', { error: String(error) });
+    captureException(error instanceof Error ? error : new Error(String(error)), { route: 'query' });
     // Roll back usage so users don't lose quota on failed queries
     rollbackQuery(req.user!.id).catch(err => logger.warn('Async operation failed', { error: String(err) }));
     res.status(500).json({ error: 'Query processing failed' });
@@ -944,6 +946,7 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
     res.end();
   } catch (error) {
     logger.error('Streaming query failed', { error: String(error) });
+    captureException(error instanceof Error ? error : new Error(String(error)), { route: 'query/stream' });
     // Roll back usage so users don't lose quota on failed queries
     rollbackQuery(req.user!.id).catch(err => logger.warn('Async operation failed', { error: String(err) }));
     if (res.headersSent) {

@@ -5,6 +5,10 @@ dotenv.config();
 // hooks are registered before Express, HTTP, and AWS SDK modules load.
 import './tracing';
 
+// Sentry must be initialized early so it can capture errors from all modules.
+import { initSentry, captureException as sentryCaptureException } from './utils/sentry';
+initSentry();
+
 import path from 'path';
 import crypto from 'crypto';
 import express from 'express';
@@ -383,6 +387,7 @@ if (process.env.NODE_ENV === 'production') {
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error('Unhandled error', { error: err.message, stack: err.stack });
+  sentryCaptureException(err);
   res.status(500).json({ error: 'Internal server error' });
 });
 

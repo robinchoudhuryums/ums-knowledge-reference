@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import { PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { AuditLogEntry } from '../types';
@@ -8,6 +8,11 @@ import { redactPhi } from '../utils/phiRedactor';
 import { createMutex } from '../utils/asyncMutex';
 
 const GENESIS_HASH = 'GENESIS';
+
+// HMAC secret for audit log integrity chain.
+// Using HMAC (vs plain SHA-256) ensures an attacker with DB access cannot
+// recompute the chain — they'd need the application secret.
+const AUDIT_HMAC_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'audit-log-integrity-key';
 
 // Module-level variable tracking the hash of the last written entry
 let lastEntryHash: string = GENESIS_HASH;
@@ -20,18 +25,29 @@ const withAuditLock = createMutex();
 
 /**
  * Compute SHA-256 hash of a string.
+ * Kept for backward-compatible chain verification of entries written before HMAC upgrade.
  */
-function sha256(data: string): string {
+export function sha256(data: string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
 /**
+ * Compute HMAC-SHA256 of a string with the audit secret.
+ */
+function hmacSha256(data: string): string {
+  return createHmac('sha256', AUDIT_HMAC_SECRET).update(data).digest('hex');
+}
+
+/**
  * Compute the entryHash for an audit log entry.
- * Hashes the JSON of the entry with the entryHash field excluded.
+ * Uses HMAC-SHA256 keyed with a secret so the chain cannot be recomputed
+ * by an attacker who only has access to the stored entries.
+ * The hash covers: entry content (without entryHash) + previousHash linkage.
  */
 function computeEntryHash(entry: AuditLogEntry): string {
   const { entryHash: _, ...rest } = entry;
-  return sha256(JSON.stringify(rest));
+  const content = JSON.stringify(rest);
+  return hmacSha256(content + (entry.previousHash || GENESIS_HASH));
 }
 
 /**

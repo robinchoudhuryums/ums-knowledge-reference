@@ -93,6 +93,11 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
+// Application-level WAF — must be after body parsing (needs parsed JSON)
+// but before CSRF and routes (blocks malicious requests early)
+import { wafMiddleware } from './middleware/waf';
+app.use(wafMiddleware());
+
 // Disable X-Powered-By (helmet does this too, belt + suspenders)
 app.disable('x-powered-by');
 

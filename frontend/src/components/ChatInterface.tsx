@@ -89,7 +89,7 @@ export function ChatInterface({ collections }: Props) {
 
   useEffect(() => {
     try { localStorage.setItem('ums-response-style', responseStyle); } catch { /* storage full or disabled */ }
-  }, [selectedCollections]);
+  }, [responseStyle]);
 
   // Filter out deleted collections from selection when collection list updates
   useEffect(() => {

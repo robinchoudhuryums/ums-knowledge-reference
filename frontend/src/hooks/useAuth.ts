@@ -8,7 +8,7 @@ export function useAuth() {
     const userStr = localStorage.getItem('user');
     return {
       token: isLoggedIn ? 'httponly' : null,
-      user: userStr ? JSON.parse(userStr) : null,
+      user: userStr ? (() => { try { return JSON.parse(userStr); } catch { return null; } })() : null,
     };
   });
 

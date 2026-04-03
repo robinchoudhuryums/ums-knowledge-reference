@@ -1,0 +1,258 @@
+# UMS Knowledge Base — Error Monitor
+# Checks Docker container status, app health, and database connectivity on a schedule.
+# Creates a GitHub Issue if problems are detected (with deduplication).
+#
+# Checks performed:
+#   1. Docker container status (running/exited/restarting)
+#   2. HTTP health check (/api/health)
+#   3. Recent Docker error logs (last 4 hours)
+#   4. Disk space check (warn if >85% used)
+#   5. Database connectivity (PostgreSQL SELECT 1)
+#   6. Memory usage check (warn if >90%)
+#
+# Required GitHub Secrets:
+#   EC2_SSH_KEY, EC2_HOST, EC2_USER
+#
+# HIPAA note: Error logs should NOT contain PHI (the app redacts PHI
+# from logs). However, keep this repo private.
+#
+# Ported from assemblyai_tool/.github/workflows/error-monitor.yml
+# and adapted for Docker-based deployment.
+
+name: Error Monitor
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Every 4 hours
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  check-errors:
+    name: Check for errors
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Check container status, health, and logs
+        id: check
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            ISSUES=""
+
+            # --- 1. Check Docker container status ---
+            CONTAINER_STATUS=$(docker ps --filter "name=ums-knowledge" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+            echo "CONTAINER_STATUS=$CONTAINER_STATUS"
+
+            if [ -z "$CONTAINER_STATUS" ] || echo "$CONTAINER_STATUS" | grep -qi "exited\|restarting\|dead"; then
+              ISSUES="${ISSUES}CONTAINER_DOWN,"
+              echo "::CONTAINER_DOWN::"
+              docker ps -a --filter "name=ums-knowledge" 2>/dev/null || true
+            fi
+
+            # --- 2. HTTP health check (with retry) ---
+            HEALTH="000"
+            for attempt in 1 2 3; do
+              HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://localhost:${PORT:-3001}/api/health 2>/dev/null || echo "000")
+              if [ "$HEALTH" = "200" ]; then
+                break
+              fi
+              sleep 2
+            done
+            echo "HEALTH_STATUS=$HEALTH"
+
+            if [ "$HEALTH" != "200" ]; then
+              ISSUES="${ISSUES}HEALTH_FAILED,"
+              echo "::HEALTH_FAILED::"
+              HEALTH_BODY=$(curl -s --max-time 10 http://localhost:${PORT:-3001}/api/health 2>/dev/null || echo "No response")
+              echo "HEALTH_BODY=$HEALTH_BODY"
+            fi
+
+            # --- 3. Check for recent errors in Docker logs ---
+            RECENT_ERRORS=$(docker logs --since=4h ums-knowledge 2>&1 | grep -i "error\|fatal\|ECONNREFUSED\|ENOMEM" | tail -50 2>/dev/null || echo "")
+            if [ -n "$RECENT_ERRORS" ]; then
+              ISSUES="${ISSUES}ERRORS_FOUND,"
+              echo "::ERRORS_FOUND::"
+              echo "$RECENT_ERRORS"
+            else
+              echo "::NO_RECENT_ERRORS::"
+            fi
+
+            # --- 4. Disk space check ---
+            DISK_PCT=$(df -h / | awk 'NR==2 {gsub(/%/,"",$5); print $5}' 2>/dev/null || echo "0")
+            echo "DISK_USAGE=${DISK_PCT}%"
+            if [ "$DISK_PCT" -gt 85 ] 2>/dev/null; then
+              ISSUES="${ISSUES}DISK_HIGH,"
+              echo "::DISK_HIGH:: ${DISK_PCT}% used"
+            fi
+
+            # --- 5. Database connectivity check ---
+            DB_URL=$(docker exec ums-knowledge printenv DATABASE_URL 2>/dev/null || echo "")
+            if [ -n "$DB_URL" ]; then
+              DB_OK=$(docker exec ums-knowledge node -e "
+                const { Pool } = require('pg');
+                const p = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 });
+                p.query('SELECT 1').then(() => { console.log('1'); p.end(); }).catch(() => { console.log('FAIL'); p.end(); });
+              " 2>/dev/null || echo "FAIL")
+              echo "DB_CHECK=$DB_OK"
+              if [ "$DB_OK" != "1" ]; then
+                ISSUES="${ISSUES}DB_UNREACHABLE,"
+                echo "::DB_UNREACHABLE::"
+              fi
+            else
+              echo "::DB_NOT_CONFIGURED::"
+            fi
+
+            # --- 6. Memory check ---
+            MEM_PCT=$(free | awk '/^Mem:/ {printf("%.0f", $3/$2 * 100)}' 2>/dev/null || echo "0")
+            echo "MEMORY_USAGE=${MEM_PCT}%"
+            if [ "$MEM_PCT" -gt 90 ] 2>/dev/null; then
+              ISSUES="${ISSUES}MEMORY_HIGH,"
+              echo "::MEMORY_HIGH:: ${MEM_PCT}% used"
+            fi
+
+            # Final summary
+            if [ -z "$ISSUES" ]; then
+              echo "::ALL_CLEAR::"
+            fi
+            echo "ISSUES=$ISSUES"
+
+      - name: Check for existing open alerts (deduplication)
+        if: |
+          contains(steps.check.outputs.response, '::ERRORS_FOUND::') ||
+          contains(steps.check.outputs.response, '::CONTAINER_DOWN::') ||
+          contains(steps.check.outputs.response, '::HEALTH_FAILED::') ||
+          contains(steps.check.outputs.response, '::DB_UNREACHABLE::') ||
+          contains(steps.check.outputs.response, '::DISK_HIGH::') ||
+          contains(steps.check.outputs.response, '::MEMORY_HIGH::')
+        id: dedup
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'alert,production',
+              state: 'open',
+              per_page: 5,
+              sort: 'created',
+              direction: 'desc'
+            });
+
+            const now = new Date();
+            const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000);
+            const recentOpen = issues.data.find(i => new Date(i.created_at) > oneDayAgo);
+
+            if (recentOpen) {
+              core.setOutput('existing_issue', recentOpen.number);
+              core.setOutput('should_create', 'false');
+            } else {
+              core.setOutput('existing_issue', '');
+              core.setOutput('should_create', 'true');
+            }
+
+      - name: Create or update alert issue
+        if: |
+          contains(steps.check.outputs.response, '::ERRORS_FOUND::') ||
+          contains(steps.check.outputs.response, '::CONTAINER_DOWN::') ||
+          contains(steps.check.outputs.response, '::HEALTH_FAILED::') ||
+          contains(steps.check.outputs.response, '::DB_UNREACHABLE::') ||
+          contains(steps.check.outputs.response, '::DISK_HIGH::') ||
+          contains(steps.check.outputs.response, '::MEMORY_HIGH::')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `${{ steps.check.outputs.response }}`.substring(0, 3000);
+            const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+            const shouldCreate = '${{ steps.dedup.outputs.should_create }}' === 'true';
+            const existingIssue = parseInt('${{ steps.dedup.outputs.existing_issue }}') || null;
+
+            let severity = 'warning';
+            let title = `[Alert] Production issues detected — ${now} UTC`;
+            let labels = ['alert', 'production'];
+
+            if (output.includes('::CONTAINER_DOWN::') || output.includes('::HEALTH_FAILED::')) {
+              severity = 'critical';
+              title = `[CRITICAL] Production down — ${now} UTC`;
+              labels.push('critical');
+            }
+
+            const checks = [];
+            if (output.includes('::CONTAINER_DOWN::')) checks.push('- **Docker container down or restarting**');
+            if (output.includes('::HEALTH_FAILED::')) checks.push('- **HTTP health check failed**');
+            if (output.includes('::DB_UNREACHABLE::')) checks.push('- **Database connectivity failed**');
+            if (output.includes('::ERRORS_FOUND::')) checks.push('- Recent error log entries detected');
+            if (output.includes('::DISK_HIGH::')) checks.push('- Disk usage above 85%');
+            if (output.includes('::MEMORY_HIGH::')) checks.push('- Memory usage above 90%');
+
+            const body = [
+              '## Automated Error Alert',
+              '',
+              `**Time:** ${now} UTC`,
+              `**Severity:** ${severity}`,
+              `**Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              '### Issues Detected',
+              ...checks,
+              '',
+              '### Log Output',
+              '```',
+              output,
+              '```',
+              '',
+              '---',
+              '*Created by Error Monitor workflow. Close this issue once resolved.*',
+            ].join('\n');
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: label });
+              } catch {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner, repo: context.repo.repo, name: label,
+                  color: label === 'critical' ? 'FF0000' : label === 'alert' ? 'FFA500' : '0E8A16'
+                });
+              }
+            }
+
+            if (shouldCreate) {
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, labels, body
+              });
+              console.log(`Created alert issue #${issue.data.number}`);
+            } else if (existingIssue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: existingIssue,
+                body: [
+                  `## Follow-up check — ${now} UTC`,
+                  '', `**Severity:** ${severity}`, '',
+                  '### Issues Still Present', ...checks, '',
+                  '<details><summary>Log output</summary>', '', '```', output, '```', '', '</details>',
+                  '', `[Workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+                ].join('\n')
+              });
+              console.log(`Added comment to existing alert issue #${existingIssue}`);
+
+              if (severity === 'critical') {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: existingIssue, labels: ['critical']
+                });
+              }
+            }
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Error Monitor Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          RESPONSE='${{ steps.check.outputs.response }}'
+          if echo "$RESPONSE" | grep -q "::ALL_CLEAR::"; then
+            echo "All checks passed. No issues detected." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Issues detected. Check the workflow steps above for details." >> $GITHUB_STEP_SUMMARY
+          fi

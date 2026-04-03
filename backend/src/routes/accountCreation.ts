@@ -4,6 +4,7 @@ import { getAccountCreationQuestions, getAccountCreationGroups, AccountCreationR
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
 import { readInsuranceCard, compareInsuranceFields } from '../services/insuranceCardReader';
+import { stripImageMetadata } from '../utils/stripMetadata';
 import { logger } from '../utils/logger';
 import { escapeHtml } from '../utils/htmlEscape';
 import rateLimit from 'express-rate-limit';
@@ -176,7 +177,12 @@ router.post('/read-insurance-card', authenticate, upload.single('file'), async (
       return;
     }
 
-    const extracted = await readInsuranceCard(file.buffer, file.originalname, req.user?.id);
+    // Strip EXIF metadata before processing (GPS, timestamps, device info)
+    // The visible card content (member ID, group #, etc.) is preserved for OCR.
+    const stripped = await stripImageMetadata(file.buffer, file.mimetype, file.originalname);
+    const cleanBuffer = stripped.stripped ? stripped.buffer : file.buffer;
+
+    const extracted = await readInsuranceCard(cleanBuffer, file.originalname, req.user?.id);
 
     // If agent provided existing entries, compare them
     const enteredInsurance = req.body?.enteredInsurance;

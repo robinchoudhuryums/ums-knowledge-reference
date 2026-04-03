@@ -15,6 +15,7 @@ import { addChunksToStore, removeDocumentChunks } from './vectorStore';
 import { logAuditEvent } from './audit';
 import { logger } from '../utils/logger';
 import { createMutex } from '../utils/asyncMutex';
+import { stripImageMetadata } from '../utils/stripMetadata';
 
 // Allowed file extensions for uploaded documents
 const ALLOWED_EXTENSIONS = new Set([
@@ -102,6 +103,18 @@ export async function ingestDocument(
   let chunksAddedToStore = false;
 
   try {
+    // Step 0.5: Strip image metadata (EXIF, IPTC, XMP) — HIPAA defense-in-depth.
+    // Camera phones embed GPS, timestamps, and device info that could identify patients.
+    // Visible image content (pixels) is preserved; only hidden metadata is removed.
+    const stripResult = await stripImageMetadata(fileBuffer, mimeType, originalName);
+    if (stripResult.stripped && stripResult.metadataFound) {
+      fileBuffer = stripResult.buffer;
+      document.sizeBytes = stripResult.strippedSize;
+      logger.info('Ingestion: Image metadata stripped before storage', {
+        documentId, originalSize: stripResult.originalSize, strippedSize: stripResult.strippedSize,
+      });
+    }
+
     // Step 1: Upload original file to S3
     logger.info('Ingestion: Uploading to S3', { documentId, originalName });
     await uploadDocumentToS3(fileBuffer, s3Key, mimeType);

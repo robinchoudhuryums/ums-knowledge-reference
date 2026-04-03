@@ -124,12 +124,13 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
-      - name: Deploy via SSH
+      - name: Deploy via SSH (blue-green)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 10m
           script: |
             cd ~/ums-knowledge-reference
             git fetch origin main
@@ -149,11 +150,42 @@ jobs:
               exit 1
             fi
 
-            # Rename the running container so we can roll back if the new one fails
+            # --- Blue-green: start new container on staging port while old keeps serving ---
+            STAGING_NAME="ums-knowledge-staging"
+            docker rm -f "$STAGING_NAME" 2>/dev/null || true
+
+            docker run -d \
+              --name "$STAGING_NAME" \
+              --restart no \
+              --env-file ~/ums-knowledge.env \
+              -e PORT=3001 \
+              -p 3002:3001 \
+              "$NEW_TAG"
+
+            # Health check staging container (up to 30s)
+            HEALTHY=false
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:3002/api/health > /dev/null 2>&1; then
+                HEALTHY=true
+                echo "Staging healthy after ${i}s"
+                break
+              fi
+              sleep 1
+            done
+
+            if [ "$HEALTHY" != "true" ]; then
+              echo "ERROR: Staging health check failed — old container still serving"
+              docker logs --tail 30 "$STAGING_NAME" 2>/dev/null || true
+              docker rm -f "$STAGING_NAME" 2>/dev/null || true
+              exit 1
+            fi
+
+            # Swap: stop staging, rename old, start new on production port
+            docker stop "$STAGING_NAME" 2>/dev/null || true
+            docker rm "$STAGING_NAME" 2>/dev/null || true
             docker rename ums-knowledge ums-knowledge-old 2>/dev/null || true
             docker stop ums-knowledge-old 2>/dev/null || true
 
-            # Start the new container
             docker run -d \
               --name ums-knowledge \
               --restart unless-stopped \
@@ -161,22 +193,13 @@ jobs:
               -p 3001:3001 \
               "$NEW_TAG"
 
-            # Health check with retries (3 attempts, 10s apart)
-            HEALTHY=false
-            for i in 1 2 3; do
-              sleep 10
-              if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
-                HEALTHY=true
-                break
-              fi
-              echo "Health check attempt $i failed, retrying..."
-            done
-
-            if [ "$HEALTHY" = true ]; then
-              echo "Health check passed — removing old container"
+            # Verify production port
+            sleep 3
+            if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
+              echo "Production health check passed — removing old container"
               docker rm ums-knowledge-old 2>/dev/null || true
             else
-              echo "ERROR: Health check failed after 3 attempts — rolling back"
+              echo "ERROR: Production health check failed — rolling back"
               docker stop ums-knowledge || true
               docker rm ums-knowledge || true
               docker rename ums-knowledge-old ums-knowledge 2>/dev/null || true

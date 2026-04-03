@@ -180,7 +180,7 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
         logAuditEvent(user.id, user.username, 'login', {
           action: 'mfa_recovery_code_used',
           remainingCodes: user.mfaRecoveryCodes.length,
-        }).catch(() => {});
+        }).catch((err) => { logger.error('Failed to write MFA recovery audit event', { error: String(err) }); });
       }
     }
 

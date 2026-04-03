@@ -559,9 +559,28 @@ export async function resetPasswordWithCodeHandler(req: Request, res: Response):
 /**
  * JWT authentication middleware.
  * Accepts token from httpOnly cookie (preferred) or Authorization header (fallback).
+ * Also supports service-to-service API key via X-API-Key header (for external integrations).
  * Checks token validity, server-side revocation, AND account lockout status.
  */
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
+  // Service-to-service API key auth (for external integrations like CallAnalyzer)
+  const apiKey = req.headers['x-api-key'] as string | undefined;
+  const serviceApiKey = process.env.SERVICE_API_KEY;
+  if (apiKey && serviceApiKey && apiKey.length >= 32) {
+    // Timing-safe comparison to prevent timing attacks
+    const keyBuffer = Buffer.from(apiKey);
+    const expectedBuffer = Buffer.from(serviceApiKey);
+    if (keyBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(keyBuffer, expectedBuffer)) {
+      req.user = {
+        id: 'service-account',
+        username: process.env.SERVICE_API_USERNAME || 'call-analyzer',
+        role: 'user',
+      };
+      next();
+      return;
+    }
+  }
+
   const cookieToken = req.cookies?.[AUTH_COOKIE];
   const authHeader = req.headers.authorization;
   const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);

@@ -145,10 +145,64 @@ export async function ingestDocument(
       throw new Error('Document produced no chunks after processing');
     }
 
-    // Step 4: Generate embeddings
+    // Step 4: Generate embeddings (with content-hash dedup for embedding reuse)
+    // Adapted from Observatory QA: hash each chunk's text, look up existing embeddings
+    // for identical content across documents, and skip redundant Bedrock API calls.
     logger.info('Ingestion: Generating embeddings', { documentId, chunkCount: chunks.length });
     const texts = chunks.map(c => c.text);
-    const embeddings = await generateEmbeddingsBatch(texts);
+    const chunkHashes = texts.map(t => createHash('sha256').update(t).digest('hex'));
+
+    // Check for existing chunks with same content hash — reuse their embeddings
+    let existingEmbeddings = new Map<string, number[]>();
+    try {
+      const { useRds } = await import('../db/index');
+      if (useRds()) {
+        const { pool } = await import('../config/database');
+        const uniqueHashes = [...new Set(chunkHashes)];
+        if (uniqueHashes.length > 0) {
+          const result = await pool.query(
+            `SELECT content_hash, embedding FROM chunks WHERE content_hash = ANY($1) AND embedding IS NOT NULL LIMIT $2`,
+            [uniqueHashes, uniqueHashes.length]
+          );
+          for (const row of result.rows) {
+            if (row.content_hash && row.embedding) {
+              existingEmbeddings.set(row.content_hash, row.embedding);
+            }
+          }
+          if (existingEmbeddings.size > 0) {
+            logger.info('Ingestion: Reusing embeddings for duplicate chunks', {
+              documentId, reused: existingEmbeddings.size, total: chunks.length,
+            });
+          }
+        }
+      }
+    } catch {
+      // Non-fatal — proceed with fresh embeddings for all chunks
+    }
+
+    // Only generate embeddings for chunks without cached embeddings
+    const textsToEmbed: string[] = [];
+    const embedIndexMap: number[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      if (!existingEmbeddings.has(chunkHashes[i])) {
+        embedIndexMap.push(i);
+        textsToEmbed.push(texts[i]);
+      }
+    }
+
+    const freshEmbeddings = textsToEmbed.length > 0 ? await generateEmbeddingsBatch(textsToEmbed) : [];
+
+    // Merge fresh + cached embeddings
+    const embeddings: number[][] = [];
+    let freshIdx = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      const cached = existingEmbeddings.get(chunkHashes[i]);
+      if (cached) {
+        embeddings.push(cached);
+      } else {
+        embeddings.push(freshEmbeddings[freshIdx++]);
+      }
+    }
 
     // Step 5: Store in vector store
     logger.info('Ingestion: Adding to vector store', { documentId });

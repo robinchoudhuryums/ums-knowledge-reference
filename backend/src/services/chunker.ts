@@ -2,18 +2,47 @@ import { DocumentChunk, ExtractedText } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
-// Approximate tokens as ~4 characters per token (conservative estimate for English text)
-const CHARS_PER_TOKEN = 4;
+// Default chars-per-token ratio (conservative estimate for English text).
+// Can be overridden per-document via ChunkOptions for domain-specific text.
+const DEFAULT_CHARS_PER_TOKEN = 4;
 const DEFAULT_CHUNK_SIZE_TOKENS = 500;
 const DEFAULT_OVERLAP_TOKENS = 100;
 
-interface ChunkOptions {
+// Module-level ratio for estimateTokens (set per chunkDocument call)
+let _activeCharsPerToken = DEFAULT_CHARS_PER_TOKEN;
+
+export interface ChunkOptions {
   chunkSizeTokens?: number;
   overlapTokens?: number;
+  /**
+   * Characters-per-token ratio for token estimation.
+   * Medical/clinical text with abbreviations (ICD-10, HCPCS) may use ~3.5.
+   * General English text uses ~4.0 (default).
+   * Adapted from Observatory QA's getCharsPerTokenForIndustry().
+   */
+  charsPerToken?: number;
+}
+
+/**
+ * Get recommended charsPerToken for a document type.
+ * Adapted from Observatory QA's industry-specific token ratios.
+ */
+export function getCharsPerTokenForDocType(docType?: string): number {
+  switch (docType) {
+    case 'medical':
+    case 'clinical':
+    case 'lcd':      // LCD coverage criteria have dense clinical codes
+    case 'hcpcs':    // HCPCS/CPT reference docs
+      return 3.5;
+    case 'form':     // CMN forms, prior auth templates
+      return 3.8;
+    default:
+      return DEFAULT_CHARS_PER_TOKEN;
+  }
 }
 
 function estimateTokens(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
+  return Math.ceil(text.length / _activeCharsPerToken);
 }
 
 /**
@@ -171,9 +200,13 @@ export function chunkDocument(
 ): DocumentChunk[] {
   const chunkSizeTokens = options.chunkSizeTokens || DEFAULT_CHUNK_SIZE_TOKENS;
   const overlapTokens = options.overlapTokens || DEFAULT_OVERLAP_TOKENS;
+  const cpt = options.charsPerToken || DEFAULT_CHARS_PER_TOKEN;
 
-  const chunkSizeChars = chunkSizeTokens * CHARS_PER_TOKEN;
-  const overlapChars = overlapTokens * CHARS_PER_TOKEN;
+  // Set module-level ratio so estimateTokens() uses the correct ratio for this call
+  _activeCharsPerToken = cpt;
+
+  const chunkSizeChars = chunkSizeTokens * cpt;
+  const overlapChars = overlapTokens * cpt;
   const stepChars = chunkSizeChars - overlapChars;
 
   // Allow table chunks to be up to 2x normal size to avoid splitting

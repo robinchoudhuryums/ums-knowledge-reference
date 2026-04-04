@@ -163,7 +163,7 @@ cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v 
 - **System prompt** (`query.ts:70`): Controls tone, conciseness, citation style
 - **Temperature** (`query.ts:267,407`): Currently 0.15 (conservative). Higher = more varied
 - **Max tokens** (`query.ts:264,404`): Currently 4096. Lower = forces shorter answers
-- **topK** (`query.ts:224,359`): Default 6 chunks. Fewer = more focused, more = comprehensive
+- **topK** (`query.ts:224,359`): Default 8 chunks. Fewer = more focused, more = comprehensive
 - **Chunk size/overlap** (`chunker.ts`): Affects retrieval granularity
 
 ## API Cost Optimization
@@ -177,7 +177,51 @@ cd ~/ums-knowledge-reference/backend && env $(cat ~/ums-knowledge.env | grep -v 
 ## Cross-Project Port Tracking
 When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to track which changes are candidates for porting to the multi-tenant [Observatory QA](https://github.com/robinchoudhuryums/observatory-qa) platform. The log tracks porting status (Ported/Pending/N/A) across security, RAG quality, compliance, and observability categories.
 
+## Deployment
+- **Docker**: Multi-stage build, `node:20.19.0-slim`, tini init, non-root user, health check
+- **Blue-green deploy**: `deploy-bluegreen.sh` — starts new container on staging port (3002), health-checks, then swaps to production port (3001). ~2s downtime vs ~30s with standard deploy. Rollback: `docker stop ums-knowledge && docker rename ums-knowledge-old ums-knowledge && docker start ums-knowledge`
+- **CI/CD**: `.github/workflows/ci.yml` — backend lint + type-check + tests + coverage, frontend type-check + build, deploy via SSH with blue-green strategy
+- **Error monitoring**: `.github/workflows/error-monitor.yml` — checks Docker status, HTTP health, error logs, disk, DB connectivity, memory every 4 hours. Auto-creates GitHub Issues.
+
+## Environment Variables (not in .env.example)
+```
+# Service-to-service auth (for CallAnalyzer RAG integration)
+SERVICE_API_KEY                 # Shared secret for X-API-Key auth (min 32 chars)
+SERVICE_API_USERNAME            # Service account identity (default: call-analyzer)
+
+# Error tracking
+SENTRY_DSN                      # Sentry DSN (optional — disabled if not set)
+
+# Database SSL
+DB_SSL_REJECT_UNAUTHORIZED      # "false" for self-signed certs in dev (IGNORED in production — always true)
+
+# Field encryption
+FIELD_ENCRYPTION_KEY            # AES-256-GCM key for sensitive fields (MFA secrets) at rest
+
+# Malware scanning
+MALWARE_SCAN_ENABLED            # "true" to enable ClamAV file scanning
+CLAMAV_HOST                     # ClamAV daemon host (default: localhost)
+CLAMAV_PORT                     # ClamAV daemon port (default: 3310)
+
+# Redis (optional — enables distributed state)
+REDIS_URL                       # Redis connection string
+REDIS_KEY_PREFIX                # Key namespace prefix
+```
+
 ## Recent Changes (reverse chronological)
+- **Codebase audit & cross-repo improvements** (April 2026, 12 commits):
+  - **Bug fixes**: useAuth JSON.parse crash, ChatInterface useEffect dependency, MFA audit logging, duplicate migration 004
+  - **Query pipeline**: Extracted `processPostGeneration()` helper (deduplicates ~56 lines streaming/non-streaming)
+  - **Service-to-service auth**: X-API-Key in auth middleware for CallAnalyzer RAG integration
+  - **WAF middleware** (`middleware/waf.ts`): 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF, anomaly scoring, IP blocklist
+  - **Incident response** (`services/incidentResponse.ts`): HIPAA §164.308, 7-phase lifecycle, escalation contacts
+  - **HMAC audit chain**: SHA-256 → HMAC-SHA256 (attacker with DB access cannot recompute)
+  - **Vulnerability scanner** (`services/vulnerabilityScanner.ts`): daily automated security audits
+  - **Sentry integration** (`utils/sentry.ts`): PHI-safe error tracking (8 scrubbing patterns)
+  - **Image metadata stripping** (`utils/stripMetadata.ts`): EXIF/IPTC/XMP removal before S3 storage
+  - **SSL hardening**: production enforces `rejectUnauthorized: true`
+  - **Error monitoring**: GitHub Actions workflow every 4 hours
+  - **Blue-green Docker deployment**: staging port health check, ~2s downtime
 - **RAG quality improvements** (1 commit):
   - **Adaptive search weighting**: Query type classification (`code_lookup`, `coverage_question`, `general`) with automatic semantic/keyword weight adjustment. HCPCS/ICD-10 code queries use 0.4/0.6 (keyword-heavy); coverage questions use 0.55/0.45 (balanced); general queries use 0.7/0.3 (semantic-heavy). Caller can still override via `semanticWeight`/`keywordWeight` options.
   - **Confidence scoring**: Inverted avgScore/topScore blend from 0.6/0.4 to 0.35/0.65 — a single strong match (0.7) now properly lifts confidence even when average is pulled down by noise. Reconciliation floor raised to 0.30. Thresholds retuned (LOW=0.30, PARTIAL=0.42).

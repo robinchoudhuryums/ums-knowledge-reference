@@ -321,9 +321,26 @@ function sanitizeInput(text: string, maxLength: number = MAX_QUESTION_LENGTH): s
  */
 /** @internal Exported for testing */
 export function detectPromptInjection(text: string): { detected: boolean; reason?: string } {
-  // Normalize Unicode to NFC to prevent bypass via decomposed characters (e.g., Cyrillic 'і' for Latin 'i')
-  // Also replace common look-alike Unicode characters with ASCII equivalents
-  const normalized = text.normalize('NFC')
+  // Truncate input to prevent ReDoS on crafted payloads (adapted from Observatory QA)
+  const truncated = text.slice(0, 10_000);
+
+  // Decode HTML entities before pattern matching (adapted from Observatory QA).
+  // Attackers use &lt;system&gt; to bypass tag detection.
+  const decoded = truncated
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+
+  // Strip HTML/XML comments that could hide injection (adapted from Observatory QA)
+  const decommented = decoded.replace(/<!--[\s\S]*?-->/g, '');
+
+  // NFKD normalization + diacritical mark stripping (adapted from Observatory QA).
+  // Defeats "ìgnórè prëvíóüs ìnstrûctíons" bypasses.
+  const normalized = decommented.normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // Strip combining diacritical marks
     .replace(/[\u0400-\u04FF]/g, ch => {
       // Map common Cyrillic look-alikes to Latin
       const cyrillicMap: Record<string, string> = { 'а': 'a', 'е': 'e', 'і': 'i', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x' };
@@ -344,6 +361,10 @@ export function detectPromptInjection(text: string): { detected: boolean; reason
     { pattern: /\[system\]|\[inst\]|\[\/inst\]|<\|system\|>|<\|user\|>|<\|assistant\|>/i, reason: 'Chat template injection' },
     { pattern: /```\s*(system|instruction|prompt)/i, reason: 'Code block instruction injection' },
     { pattern: /override\s+(the\s+)?(system|safety|content)\s+(prompt|filter|policy)/i, reason: 'Safety override attempt' },
+    // Additional patterns adapted from Observatory QA's ai-guardrails.ts
+    { pattern: /<\/?(instructions|prompt|context|user|assistant|human|tool_result|function_result|knowledge_source)\b/i, reason: 'XML tag injection attempt' },
+    { pattern: /act\s+as\s+if\s+you/i, reason: 'Role manipulation attempt' },
+    { pattern: /do\s+not\s+follow/i, reason: 'Instruction override attempt' },
   ];
 
   for (const { pattern, reason } of injectionPatterns) {

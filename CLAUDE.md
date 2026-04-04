@@ -209,6 +209,10 @@ REDIS_KEY_PREFIX                # Key namespace prefix
 ```
 
 ## Recent Changes (reverse chronological)
+- **Cross-repo improvements from Observatory QA** (April 2026, 1 commit):
+  - **Chunk content dedup with embedding reuse**: During ingestion, SHA-256 hash each chunk's text, look up existing embeddings in pgvector for identical content, skip redundant Bedrock API calls. Reduces embedding costs when documents share common sections (e.g., LCD boilerplate appearing in multiple uploads)
+  - **Enhanced prompt injection detection**: HTML entity decoding (`&lt;system&gt;` bypass), NFKD normalization + diacritical mark stripping (`ìgnórè prëvíóüs` bypass), HTML comment stripping (`<!-- -->` hiding), 10KB input truncation (ReDoS prevention), 3 new patterns (XML tag injection, "act as if you", "do not follow"). 7 new tests
+  - **Configurable charsPerToken ratio**: Chunker accepts `charsPerToken` option (default 4.0). `getCharsPerTokenForDocType()` returns 3.5 for medical/clinical/LCD/HCPCS docs, 3.8 for forms. Improves token estimation for dense clinical text
 - **Codebase audit & cross-repo improvements** (April 2026, 12 commits):
   - **Bug fixes**: useAuth JSON.parse crash, ChatInterface useEffect dependency, MFA audit logging, duplicate migration 004
   - **Query pipeline**: Extracted `processPostGeneration()` helper (deduplicates ~56 lines streaming/non-streaming)

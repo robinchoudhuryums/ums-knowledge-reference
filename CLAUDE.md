@@ -20,7 +20,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `vectorStore.ts` — Hybrid vector store: routes to pgvector (PostgreSQL) when DATABASE_URL is configured, falls back to in-memory S3 JSON. Cosine similarity + IDF-enhanced BM25 keyword boosting + re-ranking. Medical-term-aware tokenizer preserves short tokens (IV, O2, 5mg). NaN guards, dimension validation. Embedding model mismatch detection on init with reindex migration path (`reindexAllEmbeddings`).
   - `s3Storage.ts` — S3 operations for documents, vectors. Size guards (50MB metadata, 500MB vector index).
   - `jobQueue.ts` — Async job queue with S3 persistence (survives restarts), status polling, auto-cleanup
-  - `audit.ts` — HIPAA audit logging with SHA-256 hash chaining, mutex-protected writes, deep PHI redaction (recursive traversal of nested objects/arrays)
+  - `audit.ts` — HIPAA audit logging with HMAC-SHA256 hash chaining (keyed with app secret — attacker with DB access cannot recompute), mutex-protected writes, deep PHI redaction (recursive traversal of nested objects/arrays)
   - `usage.ts` — Per-user daily query limits with rollback on failed queries
   - `queryLog.ts` — Query analytics with CSV export
   - `ragTrace.ts` — Per-query RAG observability tracing (retrieval scores, timing, confidence)
@@ -47,6 +47,16 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `emailService.ts` — Gmail SMTP email sending via nodemailer with email format validation and header injection prevention
   - `insuranceCardReader.ts` — Insurance card OCR: Textract + Claude extracts structured fields, immediate PHI redaction, audit trail, mismatch detection
   - `dataRetention.ts` — HIPAA-compliant automated data retention cleanup with hard-coded minimum floors (audit ≥6yr), NaN-safe parseInt, validated date regex
+  - `incidentResponse.ts` — Formal IRP (HIPAA §164.308): 7-phase lifecycle (detection → triage → containment → eradication → recovery → post-incident → closed), severity classification (P1-P4), escalation contacts, response procedures with time targets, action items
+  - `vulnerabilityScanner.ts` — Automated daily security audits: JWT_SECRET strength, AWS creds, DATABASE_URL, S3_BUCKET, SSL enforcement, npm audit. Admin risk acceptance, scan history capped at 10 reports
+- **Middleware** (`backend/src/middleware/`):
+  - `auth.ts` — JWT authentication (httpOnly cookies), MFA (TOTP), account lockout, password history, service-to-service API key auth (X-API-Key header with timing-safe comparison for CallAnalyzer integration)
+  - `waf.ts` — Application-level WAF: 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF patterns, IP blocklist (permanent + temporary), anomaly scoring with sliding window + auto-block, input truncation (4KB) prevents regex DoS
+- **Utilities** (`backend/src/utils/`):
+  - `sentry.ts` — Sentry error tracking with PHI-safe scrubbing (8 patterns). Strips request bodies, cookies, query strings. No-op when SENTRY_DSN not set
+  - `stripMetadata.ts` — EXIF/IPTC/XMP metadata stripping from image uploads using sharp. Removes GPS, timestamps, device info. Visible content (pixels) preserved for OCR
+  - `logger.ts` — Structured JSON logging with AsyncLocalStorage correlation IDs
+  - `phiRedactor.ts` — PHI redaction (14 HIPAA identifiers) with deep recursive traversal
 - **Routes** (`backend/src/routes/`):
   - `query.ts` — RAG query (non-streaming + streaming SSE), query reformulation for follow-ups, rate-limited (30 req/15min per user)
   - `documents.ts` — Document upload, listing, deletion, clinical extraction, fee schedule fetch, reindex, embedding reindex (migration path for model changes)

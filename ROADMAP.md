@@ -1,6 +1,6 @@
 # UMS Knowledge Base — Development Roadmap
 
-**Last updated:** 2026-03-31
+**Last updated:** 2026-04-04
 **Reference:** See `AUDIT_REPORT.md` for full audit findings and ratings.
 
 ---
@@ -23,13 +23,19 @@
 - [x] Email error message leak prevention
 
 ### Remaining This Sprint
-- [ ] **Extract shared query pipeline** — deduplicate ~200 lines between streaming and non-streaming endpoints in `query.ts`
+- [x] **Extract shared query pipeline** — `processPostGeneration()` deduplicates ~56 lines between streaming/non-streaming endpoints
+- [x] **ReactMarkdown XSS** — `skipHtml={true}` already present on both ChatInterface instances (verified)
 - [ ] **Extract shared mutex utility** — `withMutex()` from repeated patterns in `ingestion.ts`, `audit.ts`, `usage.ts`
 - [ ] **IDF rebuild optimization** — incremental updates instead of O(n) full rebuild on every corpus change
 - [ ] **Audit log retrieval** — batch S3 GETs or use database for audit storage to avoid O(n) sequential reads
 - [ ] **Frontend code duplication** — extract shared `useFocusTrap()` hook, shared auth utilities from `api.ts`/`errorReporting.ts`
-- [ ] **ReactMarkdown XSS** — add `skipHtml={true}` to ChatInterface markdown rendering
 - [ ] **Message list keys** — add `id` field to ConversationTurn, use as React key instead of array index
+
+### Bug Fixes (April 2026 audit)
+- [x] **useAuth.ts JSON.parse crash** — corrupted localStorage crashed the app on mount
+- [x] **ChatInterface useEffect dependency** — `[selectedCollections]` → `[responseStyle]`
+- [x] **auth.ts silent audit failure** — MFA recovery code audit log failure now logged
+- [x] **Duplicate migration 004** — removed conflicting `004_add_foreign_keys.sql`
 
 ---
 
@@ -58,8 +64,19 @@
 
 ## Sprint 3: HIPAA & Security Hardening
 
+### Completed (April 2026 audit — ported from CallAnalyzer)
+- [x] **WAF middleware** — `backend/src/middleware/waf.ts`: 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF patterns, IP blocklist, anomaly scoring
+- [x] **Incident response plan** — `backend/src/services/incidentResponse.ts`: HIPAA §164.308, 7-phase lifecycle, escalation contacts
+- [x] **HMAC audit chain upgrade** — `backend/src/services/audit.ts`: SHA-256 → HMAC-SHA256 (attacker with DB access cannot recompute)
+- [x] **Vulnerability scanner** — `backend/src/services/vulnerabilityScanner.ts`: daily automated security audits
+- [x] **Sentry error tracking** — `backend/src/utils/sentry.ts`: PHI-safe scrubbing, 8 patterns
+- [x] **Image metadata stripping** — `backend/src/utils/stripMetadata.ts`: EXIF/IPTC/XMP removal before S3 storage
+- [x] **SSL hardening** — `backend/src/config/database.ts`: production enforces `rejectUnauthorized: true`
+- [x] **Service-to-service auth** — `backend/src/middleware/auth.ts`: X-API-Key header for CallAnalyzer integration
+- [x] **Error monitoring workflow** — `.github/workflows/error-monitor.yml`: Docker health, DB, disk, memory checks every 4 hours
+- [x] **Blue-green deployment** — `deploy-bluegreen.sh` + CI/CD: staging port health check before swap, ~2s downtime
+
 ### Authentication
-- [ ] **MFA (TOTP-based)** — add multi-factor authentication for HIPAA audit compliance
 - [ ] **Session management upgrade** — migrate token revocation from in-memory Set to Redis
 - [ ] **SSO integration** — SAML/OIDC for enterprise SSO (if needed)
 

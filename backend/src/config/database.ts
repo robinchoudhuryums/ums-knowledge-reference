@@ -22,8 +22,10 @@ function buildPoolConfig(): PoolConfig {
   if (process.env.DATABASE_URL) {
     return {
       connectionString: process.env.DATABASE_URL,
+      // HIPAA: Production always enforces SSL cert validation (prevents MITM).
+      // DB_SSL_REJECT_UNAUTHORIZED override only applies in non-production environments.
       ssl: process.env.DATABASE_URL.includes('sslmode=require') || process.env.DB_SSL !== 'false'
-        ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
+        ? { rejectUnauthorized: process.env.NODE_ENV === 'production' || process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
         : undefined,
       max: parseInt(process.env.DB_POOL_MAX || '10', 10),
       idleTimeoutMillis: 30_000,
@@ -52,7 +54,8 @@ function buildPoolConfig(): PoolConfig {
     database,
     user,
     password,
-    ssl: process.env.DB_SSL !== 'false' ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' } : undefined,
+    // HIPAA: Production always enforces SSL cert validation.
+    ssl: process.env.DB_SSL !== 'false' ? { rejectUnauthorized: process.env.NODE_ENV === 'production' || process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' } : undefined,
     max: parseInt(process.env.DB_POOL_MAX || '10', 10),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,

@@ -5,10 +5,11 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 ## Features
 
 ### Knowledge Base & RAG
-- **Document ingestion** — Upload PDFs, DOCX, XLSX, CSV, TXT, and HTML files. Text extraction uses pdf-parse with conditional Textract OCR (skipped for text-native PDFs), and Claude vision (for images/diagrams). Mutex-protected index updates, chunk rollback on failure, file extension whitelist.
+- **Document ingestion** — Upload PDFs, DOCX, XLSX, CSV, TXT, and HTML files. Text extraction uses pdf-parse with conditional Textract OCR (skipped for text-native PDFs), and Claude vision (for images/diagrams). Mutex-protected index updates, chunk rollback on failure, file extension whitelist. Content-hash dedup with embedding reuse (skips redundant Bedrock calls for identical chunks). Configurable charsPerToken ratio per document type (3.5 for clinical, 4.0 default).
 - **RAG chat** — Ask questions and get cited answers grounded in your documents. Streaming SSE responses with markdown rendering. Auto-enriched with structured HCPCS/ICD-10/coverage data when relevant. Prompt injection detection with XML context framing.
 - **Conversation memory** — Follow-up questions are reformulated into standalone queries. Older turns are summarized automatically.
-- **Hybrid search** — Cosine similarity + dynamically-normalized BM25 keyword scoring (adapts to corpus) with medical-term-aware tokenizer and post-retrieval re-ranking. Embedding dimension validation prevents silent failures on model changes.
+- **Hybrid search** — Cosine similarity + dynamically-normalized BM25 keyword scoring (adapts to corpus) with medical-term-aware tokenizer and post-retrieval re-ranking. Semantic dedup with length-ratio pre-check optimization. Embedding dimension validation prevents silent failures on model changes.
+- **A/B model testing** — Compare Bedrock models (e.g., Haiku vs Sonnet) on RAG answer quality. Same query runs through both models with shared retrieval context. Welch's t-test for statistical significance on aggregate latency/cost. Batch testing (up to 20 questions). Automated recommendation based on cost/latency tradeoffs.
 
 ### DME Reference Data (integrated into RAG)
 - **HCPCS code lookup** — 332 real DME codes across 25 categories (power wheelchairs, oxygen, CPAP supplies, catheters, incontinence, ventilators, bed/wheelchair accessories, respiratory supplies).
@@ -40,7 +41,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 - Audit logging with SHA-256 hash chaining (mutex-protected for concurrent writes, auto-PHI-redacted details)
 - Automated data retention with hard-coded HIPAA minimum floors (audit ≥ 6yr, configurable above that)
 - HTTPS enforcement with HSTS, CSRF protection, SSRF prevention
-- Prompt injection detection (12 patterns) with XML context framing
+- Prompt injection detection (15 patterns) with XML context framing, HTML entity decoding, NFKD normalization + diacritical stripping, 10KB input truncation
 - JWT_SECRET strength enforcement in production (fail-fast on missing/weak secret)
 - Client-side PHI detection warning before query submission
 - HTML escaping on all email template user data (XSS prevention)

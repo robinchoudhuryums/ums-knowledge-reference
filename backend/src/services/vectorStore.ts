@@ -552,6 +552,17 @@ export function deduplicateResults(
       const setA = tokenSets[i];
       const setB = tokenSets[j];
 
+      // Fast length-ratio pre-check (adapted from Observatory QA):
+      // If token set sizes differ by more than the threshold allows,
+      // Jaccard similarity cannot exceed the threshold — skip the O(n)
+      // intersection computation. For threshold 0.80, if minSize/maxSize < 0.80,
+      // Jaccard = |A∩B|/|A∪B| ≤ min(|A|,|B|)/max(|A|,|B|) < 0.80.
+      const minSize = Math.min(setA.size, setB.size);
+      const maxSize = Math.max(setA.size, setB.size);
+      if (maxSize > 0 && minSize / maxSize < DEDUP_JACCARD_THRESHOLD) {
+        continue; // Can't possibly be a duplicate — skip expensive set intersection
+      }
+
       // Jaccard similarity: |intersection| / |union|
       let intersection = 0;
       for (const token of setA) {

@@ -368,6 +368,10 @@ app.use('/api/pap-account', papAccountCreationRoutes);
 // Product images (S3-backed)
 app.use('/api/products', productImageRoutes);
 
+// A/B model testing routes (admin: compare Bedrock models on RAG quality)
+import abTestingRoutes from './routes/abTesting';
+app.use('/api/ab-tests', abTestingRoutes);
+
 // In production, serve the frontend static files from the same server.
 // The built frontend is expected at ../frontend/dist relative to the backend root.
 if (process.env.NODE_ENV === 'production') {

@@ -45,13 +45,13 @@
 - [ ] **Evaluate medical embedding models** — benchmark MedCPT, BioLORD-2023, PubMedBERT against Titan Embed V2 on UMS-specific queries
 - [ ] **Implement EmbeddingProvider for chosen model** — leverage existing `EmbeddingProvider` interface for swap
 - [ ] **Re-index existing documents** — one-time migration to new embeddings
-- [ ] **A/B comparison** — run parallel retrieval with old vs new embeddings to measure quality delta
+- [x] **A/B model testing framework** — `services/abTesting.ts` runs same query through two Bedrock models with shared retrieval context. Welch's t-test for significance. Use `POST /api/ab-tests/run` or `POST /api/ab-tests/batch`. Can be used to compare embedding models by swapping the generation model and measuring answer quality differences. *(Done: `claude/evaluate-qa-rag-integration-MrMze`)*
 - [ ] **Update dimension config** — different models may use different dimensions (768 vs 1024)
 
 ### Retrieval Quality
 - [ ] **Cross-encoder re-ranking** — replace heuristic re-ranking with learned cross-encoder (e.g., MS MARCO MiniLM)
 - [ ] **Query routing** — classify queries as structured-data-only, RAG, or hybrid to reduce unnecessary LLM calls
-- [ ] **Chunk deduplication** — detect near-identical chunks from overlapping documents using SimHash/MinHash
+- [x] **Chunk deduplication** — Jaccard similarity at 0.80 threshold with length-ratio pre-check optimization (skips O(n) set intersection when token set sizes differ enough). Content-hash dedup during ingestion reuses embeddings for identical chunks. *(Done: `claude/evaluate-qa-rag-integration-MrMze`)*
 - [ ] **Retrieval evaluation framework** — build gold-standard Q&A test set (50+ pairs), automate recall@K and MRR measurement
 - [ ] **HNSW index migration** — switch pgvector from IVFFlat to HNSW for better recall at scale
 

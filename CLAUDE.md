@@ -209,6 +209,9 @@ REDIS_KEY_PREFIX                # Key namespace prefix
 ```
 
 ## Recent Changes (reverse chronological)
+- **A/B model testing & search optimization** (April 2026, 1 commit):
+  - **A/B model testing framework** (`services/abTesting.ts`, `routes/abTesting.ts`): Compare Bedrock models on RAG query quality. `runABTest()` runs same query through two models with shared retrieval context (identical chunks). Welch's t-test for statistical significance on aggregate latency. Automated recommendation based on cost/latency tradeoffs. 4 endpoints: `POST /api/ab-tests/run` (single), `POST /api/ab-tests/batch` (up to 20 questions), `GET /api/ab-tests` (list results), `GET /api/ab-tests/stats` (aggregate with significance testing). 6 new tests
+  - **Semantic dedup length-ratio pre-check**: Fast `minSize/maxSize` check before O(n) Jaccard set intersection in `deduplicateResults()`. Skips pairs that can't possibly exceed 0.80 threshold based on token set size difference alone — avoids unnecessary set operations
 - **Cross-repo improvements from Observatory QA** (April 2026, 1 commit):
   - **Chunk content dedup with embedding reuse**: During ingestion, SHA-256 hash each chunk's text, look up existing embeddings in pgvector for identical content, skip redundant Bedrock API calls. Reduces embedding costs when documents share common sections (e.g., LCD boilerplate appearing in multiple uploads)
   - **Enhanced prompt injection detection**: HTML entity decoding (`&lt;system&gt;` bypass), NFKD normalization + diacritical mark stripping (`ìgnórè prëvíóüs` bypass), HTML comment stripping (`<!-- -->` hiding), 10KB input truncation (ReDoS prevention), 3 new patterns (XML tag injection, "act as if you", "do not follow"). 7 new tests
@@ -395,3 +398,7 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/pap-account/submit` | User | Submit PAP Account Creation form |
 | GET | `/api/query-log/audit/:date/verify` | Admin | Verify audit log hash chain integrity |
 | GET | `/api/metrics` | Admin | Server metrics (request counts, latency percentiles, memory) |
+| POST | `/api/ab-tests/run` | Admin | Run single A/B test (same query through baseline + test model) |
+| POST | `/api/ab-tests/batch` | Admin | Batch A/B test (up to 20 questions) |
+| GET | `/api/ab-tests` | Admin | List all A/B test results (last 50) |
+| GET | `/api/ab-tests/stats` | Admin | Aggregate stats with Welch's t-test significance |

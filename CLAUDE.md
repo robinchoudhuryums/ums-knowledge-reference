@@ -404,52 +404,52 @@ The Bedrock IAM policy needs these actions:
 | GET | `/api/ab-tests/stats` | Admin | Aggregate stats with Welch's t-test significance |
 
 
-##Cycle Workflow Config
+# Cycle Workflow Config
 
-Test Command
+## Test Command
 cd backend && npm test
 
-Health Dimensions
+## Health Dimensions
 PHI Protection, Authentication & Authorization Integrity, RAG Retrieval Quality, HIPAA Audit Completeness, Input Validation & Injection Defense, Data Integrity & Concurrency Safety, Document Processing Correctness, Forms & Clinical Data Accuracy, Reference Data Currency, Test Coverage & Quality, Error Handling & Resilience, Frontend Reliability & Accessibility, Observability & Cost Efficiency
 
-Subsystems
+## Subsystems
 RAG Query Pipeline:
 services/vectorStore.ts, services/embeddings.ts, services/embeddingProvider.ts, services/titanEmbeddingProvider.ts, services/cohereEmbeddingProvider.ts, services/chunker.ts, services/referenceEnrichment.ts, services/abTesting.ts, db/vectorStore.ts, routes/query.ts
 
-Document Ingestion & Lifecycle:
+## Document Ingestion & Lifecycle:
 services/ingestion.ts, services/textExtractor.ts, services/visionExtractor.ts, services/ocr.ts, services/s3Storage.ts, services/sourceMonitor.ts, services/feeScheduleFetcher.ts, services/reindexer.ts, services/orphanCleanup.ts, routes/documents.ts, routes/sourceMonitor.ts
 
-Document Extraction & Analysis:
+## Document Extraction & Analysis:
 services/documentExtractor.ts, services/extractionTemplates.ts, services/clinicalNoteExtractor.ts, services/formAnalyzer.ts, services/pdfAnnotator.ts, services/jobQueue.ts, routes/extraction.ts
 
-Auth, Security & Access Control:
+## Auth, Security & Access Control:
 middleware/auth.ts, middleware/authConfig.ts, middleware/tokenService.ts, middleware/waf.ts, services/mfa.ts, services/vulnerabilityScanner.ts, routes/users.ts
 
-HIPAA Compliance & Data Protection:
+## HIPAA Compliance & Data Protection:
 services/audit.ts, services/dataRetention.ts, services/incidentResponse.ts, utils/phiRedactor.ts, utils/stripMetadata.ts, utils/malwareScan.ts, utils/fieldEncryption.ts
 
-Reference Data & Medical Codes:
+## Reference Data & Medical Codes:
 services/hcpcsLookup.ts, services/icd10Mapping.ts, services/coverageChecklists.ts, services/pmdCatalog.ts, config/formRules.ts, routes/hcpcs.ts, routes/icd10.ts, routes/coverage.ts
 
-Forms & Workflows:
+## Forms & Workflows:
 services/ppdQuestionnaire.ts, services/seatingEvaluation.ts, services/ppdQueue.ts, services/accountCreation.ts, services/papAccountCreation.ts, services/insuranceCardReader.ts, services/emailService.ts, services/productImageResolver.ts, utils/htmlEscape.ts, routes/ppd.ts, routes/accountCreation.ts, routes/papAccountCreation.ts, routes/productImages.ts
 
-Observability & Analytics:
+## Observability & Analytics:
 services/ragTrace.ts, services/queryLog.ts, services/faqAnalytics.ts, services/usage.ts, services/feedback.ts, utils/metrics.ts, routes/queryLog.ts, routes/feedback.ts, routes/usage.ts, routes/abTesting.ts, routes/errors.ts
 
-Infrastructure — Data & Storage Layer:
+## Infrastructure — Data & Storage Layer:
 config/aws.ts, config/database.ts, config/migrate.ts, db/index.ts, db/users.ts, db/documents.ts, cache/interfaces.ts, cache/memoryCache.ts, cache/redisCache.ts, cache/index.ts, storage/interfaces.ts, storage/s3DocumentStore.ts, storage/s3MetadataStore.ts, storage/index.ts, types/index.ts, types/declarations.d.ts
 
-Infrastructure — Server & Utilities:
+## Infrastructure — Server & Utilities:
 server.ts, tracing.ts, utils/logger.ts, utils/correlationId.ts, utils/resilience.ts, utils/envValidation.ts, utils/urlValidation.ts, utils/fileValidation.ts, utils/asyncMutex.ts, utils/textractPoller.ts, utils/sentry.ts, utils/traceSpan.ts, scripts/reset-admin.ts, scripts/reembed.ts, scripts/migrateProductImages.ts
 
-Frontend — Core & Shared:
+## Frontend — Core & Shared:
 App.tsx, main.tsx, types/index.ts, hooks/useAuth.ts, hooks/useIdleTimeout.ts, hooks/useUnsavedChanges.ts, services/api.ts, services/errorReporting.ts, components/LoginForm.tsx, components/ChangePasswordForm.tsx, components/ErrorBoundary.tsx, components/Toast.tsx, components/ConfirmDialog.tsx, components/LoadingSkeleton.tsx, components/PopoutButton.tsx
 
-Frontend — Feature UI (split for audit sessions: 12a Chat & Docs / 12b Forms & Admin):
+## Frontend — Feature UI (split for audit sessions: 12a Chat & Docs / 12b Forms & Admin):
 components/ChatInterface.tsx, components/DocumentManager.tsx, components/DocumentSearch.tsx, components/SourceViewer.tsx, components/FeedbackForm.tsx, components/DocumentsTab.tsx, components/DocumentExtractor.tsx, components/AnnotatedPdfViewer.tsx, components/OcrTool.tsx, components/IntakeAutoFill.tsx, components/ToolsTab.tsx, components/FormsTab.tsx, components/PpdQuestionnaire.tsx, components/PpdQueueViewer.tsx, components/AccountCreationForm.tsx, components/PapAccountCreationForm.tsx, components/InsuranceCardUpload.tsx, components/FormWithQueue.tsx, components/UserManagement.tsx, components/ProductImageManager.tsx, components/UsageLimitsManager.tsx, components/FaqDashboard.tsx, components/ObservabilityDashboard.tsx, components/QualityDashboard.tsx, components/QueryLogViewer.tsx
 
-Invariant Library
+## Invariant Library
 INV-01 | Audit log entries must use HMAC-SHA256 hash chain with app secret, never raw SHA-256 | Subsystem: HIPAA Compliance
 INV-02 | PHI redaction must run on all data written to query logs, RAG traces, feedback, and audit details before persistence | Subsystem: HIPAA Compliance
 INV-03 | Authenticate middleware must check account lockout via async IIFE (not .then()) before granting access | Subsystem: Auth & Security
@@ -476,15 +476,15 @@ INV-23 | Conversation history enforces 20-turn and 50K-char budgets | Subsystem:
 INV-24 | S3 object size guards: 50MB metadata, 500MB vector index | Subsystem: Ingestion
 INV-25 | checkAndRecordQuery() is atomic — no TOCTOU race between check and record | Subsystem: Observability
 
-Policy Configuration
+## Policy Configuration
 Policy threshold: 5/10
 Consecutive cycles: 2
 
-OUTPUT 2 — CYCLE ROTATION PLAN
+## OUTPUT 2 — CYCLE ROTATION PLAN
 Recommended First Subsystem to Audit
 Auth, Security & Access Control — This is a HIPAA healthcare application where a security gap has the highest blast radius. Auth is the gatekeeper for everything: any bypass exposes all PHI. It's also a manageable 7 files / ~1,848 lines, making it ideal for establishing audit patterns and calibrating scoring.
 
-Recommended Cycle Order
+## Recommended Cycle Order
 Cycle	Subsystem	Rationale
 1	Auth, Security & Access Control	Highest consequence — auth bypass = total PHI exposure. Establishes security baseline.
 2	HIPAA Compliance & Data Protection	Directly follows auth — validates that even with correct auth, PHI is redacted and audit trail is intact.
@@ -502,7 +502,7 @@ Cycle	Subsystem	Rationale
 Seams Audit Frequency
 Every 3 subsystem cycles — audit seam files (referenceEnrichment, s3Storage, phiRedactor, jobQueue, htmlEscape, formRules, emailService, routes/abTesting) to verify cross-subsystem contracts haven't drifted.
 
-CONFIDENCE ASSESSMENT
+## CONFIDENCE ASSESSMENT
 Subsystem	File List Confidence	Boundary Confidence	Notes
 RAG Query Pipeline	High	High	Clear import chain from embeddings→vectorStore→query
 Document Ingestion & Lifecycle	High	High	Linear pipeline with clear boundaries

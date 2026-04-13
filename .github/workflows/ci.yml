@@ -120,11 +120,25 @@ jobs:
     name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: [backend, frontend]
-    # Only deploy on pushes to main (not PRs, not claude/* branches)
+    # Only deploy on pushes to main when EC2 secrets are configured
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
+      - name: Check deploy secrets
+        id: check-secrets
+        run: |
+          if [ -z "$EC2_HOST" ] || [ -z "$EC2_SSH_KEY" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping deploy — EC2_HOST or EC2_SSH_KEY not configured"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+
       - name: Deploy via SSH (blue-green)
+        if: steps.check-secrets.outputs.skip != 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}

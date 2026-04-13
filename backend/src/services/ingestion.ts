@@ -153,11 +153,12 @@ export async function ingestDocument(
     const chunkHashes = texts.map(t => createHash('sha256').update(t).digest('hex'));
 
     // Check for existing chunks with same content hash — reuse their embeddings
-    let existingEmbeddings = new Map<string, number[]>();
+    const existingEmbeddings = new Map<string, number[]>();
     try {
       const { useRds } = await import('../db/index');
-      if (useRds()) {
-        const { pool } = await import('../config/database');
+      if (await useRds()) {
+        const { getPool } = await import('../config/database');
+        const pool = getPool();
         const uniqueHashes = [...new Set(chunkHashes)];
         if (uniqueHashes.length > 0) {
           const result = await pool.query(

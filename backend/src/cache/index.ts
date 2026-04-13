@@ -28,7 +28,11 @@ function initCache(): { cache: CacheProvider; sets: SetProvider } {
     }
   }
 
-  logger.info('[Cache] Using in-memory backend (set REDIS_URL for multi-instance support)');
+  if (process.env.NODE_ENV === 'production') {
+    logger.warn('[Cache] Using in-memory backend in production — token revocations will be lost on restart. Set REDIS_URL for persistence.');
+  } else {
+    logger.info('[Cache] Using in-memory backend (set REDIS_URL for multi-instance support)');
+  }
   return {
     cache: new MemoryCacheProvider(),
     sets: new MemorySetProvider(),

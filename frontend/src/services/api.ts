@@ -24,6 +24,30 @@ export function getCsrfToken(): string | null {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
+/**
+ * Attempt to refresh the access token using the refresh token cookie.
+ * Returns true if refresh succeeded, false if the refresh token is also expired/revoked.
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+async function attemptTokenRefresh(): Promise<boolean> {
+  // Coalesce concurrent refresh attempts (multiple 401s at once)
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const legacyToken = getLegacyToken();
   const headers: Record<string, string> = {
@@ -57,8 +81,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
-    // If the server rejects our token, clear stale auth and reload to show login
-    if (response.status === 401) {
+    // On 401, attempt a silent token refresh before forcing re-login.
+    // The refresh token is in an httpOnly cookie with a 7-day lifetime,
+    // so short-lived access token expiry doesn't interrupt long sessions.
+    if (response.status === 401 && !path.includes('/auth/refresh')) {
+      const refreshed = await attemptTokenRefresh();
+      if (refreshed) {
+        // Retry the original request with the new access token
+        return request(path, options);
+      }
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('user');
       localStorage.removeItem('token');

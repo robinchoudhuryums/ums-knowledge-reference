@@ -22,6 +22,7 @@ import { validateUrl, MAX_DOWNLOAD_SIZE } from '../utils/urlValidation';
 import { createHash } from 'crypto';
 import https from 'https';
 import http from 'http';
+import { sendOperationalAlert } from './alertService';
 
 // S3 key for the source registry
 const SOURCES_INDEX_KEY = `${S3_PREFIXES.metadata}monitored-sources.json`;
@@ -381,8 +382,16 @@ export async function checkSource(source: MonitoredSource): Promise<{
     await updateSourceCheckResult(source.id, {
       lastCheckedAt: new Date().toISOString(),
       lastError: msg,
-      lastHttpStatus: 200,
+      // Omit lastHttpStatus — the HTTP download succeeded but ingestion failed.
+      // Reporting 200 here would mislead operators into thinking the source is healthy.
     });
+    // Send operational alert (throttled to 1/hour)
+    sendOperationalAlert('ingestion_failed', `Source monitor ingestion failed: ${source.name}`, {
+      sourceId: source.id,
+      sourceName: source.name,
+      url: source.url,
+      error: (error as Error).message,
+    }).catch(() => {});
     return { changed: true, ingested: false, message: msg };
   }
 }

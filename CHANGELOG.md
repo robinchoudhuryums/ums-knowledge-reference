@@ -30,7 +30,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 
 - **Ingestion mutex** — async mutex on document index updates prevents concurrent corruption
 - **Chunk rollback on failure** — deletes orphan chunks if ingestion fails after write
-- **Content-hash deduplication** — rejects identical SHA-256 uploads in same collection
+- **Content-hash deduplication** — rejects identical SHA-256 uploads in same collection; verified inside mutex lock to prevent concurrent duplicate race (F-05)
 - **Document version audit trail** — `document_replaced` action logged
 - **File extension whitelist** — rejects unsupported file types
 - **Conditional OCR** — word-count threshold skips Textract for text-native PDFs
@@ -61,7 +61,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Password history** — prevents reuse of last 5 passwords
 - **MFA (TOTP)** — with recovery codes
 - **JWT jti** — `crypto.randomUUID()` (not predictable values)
-- **Token revocation** — `revokeAllUserTokens()` called on password reset
+- **Token revocation** — `revokeAllUserTokens()` called on all password reset paths (admin reset, self-service reset via code, password change) per INV-12
 - **Service-to-service auth** — X-API-Key with timing-safe comparison for CallAnalyzer
 - **WAF middleware** — 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF patterns, IP blocklist, anomaly scoring
 - **CSRF** — double-submit cookie on all state-changing endpoints
@@ -73,7 +73,8 @@ Consolidated history of improvements, grouped by category. For architectural det
 
 ## HIPAA Compliance & Data Protection
 
-- **Audit log HMAC chain** — HMAC-SHA256 with app secret (not raw SHA-256), mutex-protected writes
+- **Audit log HMAC chain** — HMAC-SHA256 with app secret (not raw SHA-256), mutex-protected writes, S3 write retry with backoff (F-11)
+- **Login audit trail** — successful logins logged via `logAuditEvent` (HIPAA §164.308(a)(5)(ii)(C)) (F-04)
 - **PHI redaction** — 14 HIPAA identifiers, deep recursive traversal, applied to query logs/traces/feedback/audit
 - **Data retention** — automated cleanup (audit 7yr, query logs 1yr, traces 90d), HIPAA floor enforcement via Math.max
 - **JWT_SECRET fail-fast** — production refuses to start with default/weak secret

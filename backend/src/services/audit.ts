@@ -6,6 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
 import { createMutex } from '../utils/asyncMutex';
+import { withRetry } from '../utils/resilience';
+import { sendOperationalAlert } from './alertService';
 
 const GENESIS_HASH = 'GENESIS';
 
@@ -190,18 +192,31 @@ export async function logAuditEvent(
     const key = `${S3_PREFIXES.audit}${date}/${entry.id}.json`;
 
     try {
-      await s3Client.send(new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: key,
-        Body: JSON.stringify(entry),
-        ContentType: 'application/json',
-        ServerSideEncryption: 'AES256',
-      }));
+      await withRetry(
+        () => s3Client.send(new PutObjectCommand({
+          Bucket: S3_BUCKET,
+          Key: key,
+          Body: JSON.stringify(entry),
+          ContentType: 'application/json',
+          ServerSideEncryption: 'AES256',
+        })),
+        { maxRetries: 2, baseDelayMs: 500, label: 'audit-s3-write' }
+      );
 
       lastEntryHash = entry.entryHash!;
       logger.info('Audit event logged', { action, userId, entryId: entry.id });
     } catch (error) {
-      logger.error('Failed to write audit log', { error: String(error), action, entryId: entry.id });
+      // All retries exhausted — audit entry is permanently lost
+      logger.error('Failed to write audit log after retries — entry dropped', {
+        error: String(error), action, entryId: entry.id, userId,
+      });
+      // Send operational alert (throttled to 1/hour)
+      sendOperationalAlert('audit_write_failed', 'Audit log entry dropped after retries', {
+        action,
+        entryId: entry.id,
+        userId,
+        error: String(error),
+      }).catch(() => {}); // Never block audit path
     }
   });
 }

@@ -135,7 +135,9 @@ export async function dbSearchVectorStore(
     const matchedTerms = queryTerms.filter(t => text.includes(t)).length;
     const keywordScore = queryTerms.length > 0 ? matchedTerms / queryTerms.length : 0;
 
-    const combinedScore = semanticWeight * semanticScore + keywordWeight * keywordScore;
+    const rawCombined = semanticWeight * semanticScore + keywordWeight * keywordScore;
+    // Guard against NaN from degenerate inputs (INV-27)
+    const combinedScore = isNaN(rawCombined) ? 0 : rawCombined;
 
     return {
       chunk: {

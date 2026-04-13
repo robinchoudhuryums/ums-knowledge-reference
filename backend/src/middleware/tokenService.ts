@@ -2,7 +2,7 @@
  * JWT token management — creation, revocation, cookie handling.
  *
  * Token revocation uses the cache abstraction layer:
- * - Single instance: in-memory sets (cleared on restart, acceptable for 30min JWTs)
+ * - Single instance: in-memory sets with S3-backed persistence (survives restarts)
  * - Multi-instance: Redis sets (shared across instances via REDIS_URL)
  */
 
@@ -79,12 +79,16 @@ export function verifyToken(token: string): { id: string; username: string; role
 export function revokeToken(jti: string): void {
   getSets().add('revoked-tokens', jti, TOKEN_REVOCATION_TTL_MS)
     .catch(err => logger.warn('Token revocation cache write failed', { error: String(err) }));
+  // Track for S3 persistence (only used when Redis is not configured)
+  revokedTokensList.push({ member: jti, expiresAt: Date.now() + TOKEN_REVOCATION_TTL_MS, ttlMs: TOKEN_REVOCATION_TTL_MS });
 }
 
 export function revokeAllUserTokens(userId: string): void {
   // Use refresh token TTL since user-level revocations must outlast the longest token
   getSets().add('revoked-users', userId, REFRESH_REVOCATION_TTL_MS)
     .catch(err => logger.warn('User revocation cache write failed', { error: String(err) }));
+  // Track for S3 persistence (only used when Redis is not configured)
+  revokedUsersList.push({ member: userId, expiresAt: Date.now() + REFRESH_REVOCATION_TTL_MS, ttlMs: REFRESH_REVOCATION_TTL_MS });
 }
 
 export async function isTokenRevoked(jti: string): Promise<boolean> {
@@ -93,4 +97,90 @@ export async function isTokenRevoked(jti: string): Promise<boolean> {
 
 export async function isUserRevoked(userId: string): Promise<boolean> {
   return getSets().has('revoked-users', userId);
+}
+
+// ─── S3-backed Revocation Persistence ───────────────────────────────────────
+// Tracks revoked tokens/users locally so they can be persisted to S3 on shutdown
+// and restored on startup. This prevents revocations from being lost when running
+// without Redis (in-memory sets are cleared on process restart).
+
+interface RevocationEntry { member: string; expiresAt: number; ttlMs: number }
+const revokedTokensList: RevocationEntry[] = [];
+const revokedUsersList: RevocationEntry[] = [];
+
+/**
+ * Save current revocation state to S3 for crash recovery.
+ * Called during graceful shutdown.
+ */
+export async function persistRevocations(): Promise<void> {
+  if (process.env.REDIS_URL) return; // Redis handles persistence; skip S3
+
+  try {
+    const { saveMetadata } = await import('../services/s3Storage');
+    const now = Date.now();
+    // Only persist entries that haven't expired yet
+    const state = {
+      tokens: revokedTokensList.filter(e => e.expiresAt > now),
+      users: revokedUsersList.filter(e => e.expiresAt > now),
+      savedAt: new Date().toISOString(),
+    };
+    await saveMetadata('revocation-state.json', state);
+    logger.info('Revocation state persisted to S3', {
+      tokens: state.tokens.length,
+      users: state.users.length,
+    });
+  } catch (err) {
+    logger.error('Failed to persist revocation state', { error: String(err) });
+  }
+}
+
+/**
+ * Restore revocation state from S3 on startup.
+ * Re-populates the in-memory sets with non-expired entries.
+ */
+export async function restoreRevocations(): Promise<void> {
+  if (process.env.REDIS_URL) return; // Redis handles persistence; skip S3
+
+  try {
+    const { loadMetadata } = await import('../services/s3Storage');
+    const state = await loadMetadata<{
+      tokens: RevocationEntry[];
+      users: RevocationEntry[];
+      savedAt: string;
+    }>('revocation-state.json');
+
+    if (!state) return;
+
+    const now = Date.now();
+    let restoredTokens = 0;
+    let restoredUsers = 0;
+
+    for (const entry of state.tokens) {
+      if (entry.expiresAt > now) {
+        const remainingTtl = entry.expiresAt - now;
+        await getSets().add('revoked-tokens', entry.member, remainingTtl);
+        revokedTokensList.push(entry);
+        restoredTokens++;
+      }
+    }
+
+    for (const entry of state.users) {
+      if (entry.expiresAt > now) {
+        const remainingTtl = entry.expiresAt - now;
+        await getSets().add('revoked-users', entry.member, remainingTtl);
+        revokedUsersList.push(entry);
+        restoredUsers++;
+      }
+    }
+
+    if (restoredTokens > 0 || restoredUsers > 0) {
+      logger.info('Revocation state restored from S3', {
+        tokens: restoredTokens,
+        users: restoredUsers,
+        savedAt: state.savedAt,
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to restore revocation state from S3', { error: String(err) });
+  }
 }

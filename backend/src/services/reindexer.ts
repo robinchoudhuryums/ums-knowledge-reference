@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import { getDocumentsIndex, saveDocumentsIndex, getDocumentFromS3 } from './s3Storage';
 import { ingestDocument } from './ingestion';
 import { logger } from '../utils/logger';
+import { sendOperationalAlert } from './alertService';
 
 // Check interval: every 6 hours (in ms)
 const REINDEX_INTERVAL = 6 * 60 * 60 * 1000;
@@ -58,6 +59,12 @@ export async function checkForChanges(): Promise<{ checked: number; reindexed: s
       } catch {
         // Best-effort — don't cascade failures from status update
       }
+      // Send operational alert (throttled to 1/hour)
+      sendOperationalAlert('reindex_failed', `Document re-index failed: ${doc.originalName}`, {
+        documentId: doc.id,
+        originalName: doc.originalName,
+        error: String(error),
+      }).catch(() => {});
     }
   }
 

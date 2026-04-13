@@ -444,6 +444,10 @@ async function start() {
     // Initialize auth (create default admin if needed)
     await initializeAuth();
 
+    // Restore token revocation state from S3 (in-memory mode only; skipped when Redis is configured)
+    const { restoreRevocations } = await import('./middleware/tokenService');
+    await restoreRevocations();
+
     // Load vector store index into memory
     await initializeVectorStore();
 
@@ -503,7 +507,8 @@ async function start() {
         const { flushQueryLog } = await import('./services/queryLog');
         const { flushTraces } = await import('./services/ragTrace');
         const { flushUsage } = await import('./services/usage');
-        await Promise.allSettled([flushQueryLog(), flushTraces(), flushUsage(), flushJobs()]);
+        const { persistRevocations } = await import('./middleware/tokenService');
+        await Promise.allSettled([flushQueryLog(), flushTraces(), flushUsage(), flushJobs(), persistRevocations()]);
         logger.info('All in-memory buffers flushed to S3');
 
         // Close database pool if connected

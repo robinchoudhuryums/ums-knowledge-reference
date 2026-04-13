@@ -32,7 +32,9 @@ export {
 
 export {
   AUTH_COOKIE,
+  REFRESH_COOKIE,
   setAuthCookie,
+  setRefreshCookie,
   clearAuthCookie,
   revokeToken,
   revokeAllUserTokens,
@@ -51,9 +53,12 @@ import {
 
 import {
   AUTH_COOKIE,
+  REFRESH_COOKIE,
   setAuthCookie,
+  setRefreshCookie,
   clearAuthCookie,
   createToken,
+  createRefreshToken,
   verifyToken,
   revokeToken,
   revokeAllUserTokens,
@@ -205,6 +210,11 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   const token = createToken({ id: user.id, username: user.username, role: user.role, jti });
   setAuthCookie(res, token);
 
+  // Issue refresh token (7-day lifetime) for long-running sessions
+  const refreshJti = crypto.randomUUID();
+  const refreshToken = createRefreshToken({ id: user.id, username: user.username, role: user.role, jti: refreshJti });
+  setRefreshCookie(res, refreshToken);
+
   // Audit trail for successful login (HIPAA §164.308(a)(5)(ii)(C))
   logAuditEvent(user.id, user.username, 'login', {
     action: 'login_success',
@@ -274,6 +284,66 @@ export async function logoutHandler(req: AuthRequest, res: Response): Promise<vo
   }
   clearAuthCookie(res);
   res.json({ message: 'Logged out' });
+}
+
+/**
+ * Refresh access token using a valid refresh token.
+ * The refresh token is in an httpOnly cookie scoped to /api/auth/refresh.
+ * Issues a new short-lived access token without requiring re-authentication.
+ * Checks revocation and lockout status before issuing.
+ */
+export async function refreshTokenHandler(req: Request, res: Response): Promise<void> {
+  const refreshTokenValue = req.cookies?.[REFRESH_COOKIE];
+  if (!refreshTokenValue) {
+    res.status(401).json({ error: 'No refresh token' });
+    return;
+  }
+
+  let decoded: { id: string; username: string; role: 'admin' | 'user'; jti?: string; type?: string };
+  try {
+    decoded = verifyToken(refreshTokenValue);
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired refresh token' });
+    return;
+  }
+
+  // Verify this is actually a refresh token, not an access token
+  if ((decoded as Record<string, unknown>).type !== 'refresh') {
+    res.status(401).json({ error: 'Invalid token type' });
+    return;
+  }
+
+  // Check revocation (individual token or all tokens for user)
+  if ((decoded.jti && await isTokenRevoked(decoded.jti)) || await isUserRevoked(decoded.id)) {
+    res.status(401).json({ error: 'Token has been revoked' });
+    return;
+  }
+
+  // Check account lockout
+  try {
+    const users = await getUsers();
+    const user = users.find(u => u.id === decoded.id);
+    if (!user) {
+      res.status(401).json({ error: 'User not found' });
+      return;
+    }
+    if (isAccountLocked(user)) {
+      res.status(423).json({ error: 'Account is locked' });
+      return;
+    }
+  } catch {
+    if (isAccountLockedFromCache(decoded.id)) {
+      res.status(423).json({ error: 'Account is locked' });
+      return;
+    }
+  }
+
+  // Issue new access token
+  const jti = crypto.randomUUID();
+  const token = createToken({ id: decoded.id, username: decoded.username, role: decoded.role, jti });
+  setAuthCookie(res, token);
+
+  res.json({ token, user: { id: decoded.id, username: decoded.username, role: decoded.role } });
 }
 
 export async function createUserHandler(req: AuthRequest, res: Response): Promise<void> {

@@ -399,15 +399,16 @@ function buildPpdEmailHtml(
         html += `<span style="font-size:24px;color:#FFD700;line-height:1;">&#9733;</span>`;
       }
 
-      // Image
-      if (rec.imageUrl) {
+      // Image (validate protocol to prevent javascript: injection in email clients)
+      if (rec.imageUrl && /^https?:\/\//i.test(rec.imageUrl)) {
         html += `<img src="${escapeHtml(rec.imageUrl)}" alt="${escapeHtml(rec.hcpcsCode)}" style="width:100px;height:auto;border:1px solid #eee;" />`;
       }
 
       // Content
       html += '<div style="font-size:14px;flex-grow:1;">';
-      const title = rec.brochureUrl
-        ? `<a href="${escapeHtml(rec.brochureUrl)}" target="_blank" style="text-decoration:none;color:#1a73e8;">${escapeHtml(rec.hcpcsCode)}</a>`
+      const safebrochureUrl = rec.brochureUrl && /^https?:\/\//i.test(rec.brochureUrl) ? rec.brochureUrl : '';
+      const title = safebrochureUrl
+        ? `<a href="${escapeHtml(safebrochureUrl)}" target="_blank" style="text-decoration:none;color:#1a73e8;">${escapeHtml(rec.hcpcsCode)}</a>`
         : escapeHtml(rec.hcpcsCode);
 
       let badge = '';

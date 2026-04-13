@@ -72,8 +72,9 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   // Generate fresh embedding
   const embedding = await ensureProvider().generateEmbedding(text);
 
-  // Store in cache (fire-and-forget)
-  getCache().set(cacheKey, embedding, EMBEDDING_CACHE_TTL_MS).catch(() => {});
+  // Store in cache (fire-and-forget, but log failures for cost visibility)
+  getCache().set(cacheKey, embedding, EMBEDDING_CACHE_TTL_MS)
+    .catch(err => logger.warn('Embedding cache write failed — repeated queries will re-call Bedrock', { error: String(err) }));
 
   return embedding;
 }

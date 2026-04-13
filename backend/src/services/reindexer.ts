@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { getDocumentsIndex, getDocumentFromS3 } from './s3Storage';
+import { getDocumentsIndex, saveDocumentsIndex, getDocumentFromS3 } from './s3Storage';
 import { ingestDocument } from './ingestion';
 import { logger } from '../utils/logger';
 
@@ -42,11 +42,22 @@ export async function checkForChanges(): Promise<{ checked: number; reindexed: s
         reindexed.push(doc.originalName);
       }
     } catch (error) {
-      logger.warn('Re-indexing: failed to check document', {
+      logger.warn('Re-indexing: failed to check/re-ingest document', {
         documentId: doc.id,
         originalName: doc.originalName,
         error: String(error),
       });
+      // Mark document as stale so users know the content may be outdated
+      try {
+        const allDocs = await getDocumentsIndex();
+        const idx = allDocs.findIndex(d => d.id === doc.id);
+        if (idx !== -1) {
+          allDocs[idx].errorMessage = `Re-index failed: ${(error as Error).message || String(error)}`;
+          await saveDocumentsIndex(allDocs);
+        }
+      } catch {
+        // Best-effort — don't cascade failures from status update
+      }
     }
   }
 

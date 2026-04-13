@@ -381,7 +381,8 @@ export async function checkSource(source: MonitoredSource): Promise<{
     await updateSourceCheckResult(source.id, {
       lastCheckedAt: new Date().toISOString(),
       lastError: msg,
-      lastHttpStatus: 200,
+      // Omit lastHttpStatus — the HTTP download succeeded but ingestion failed.
+      // Reporting 200 here would mislead operators into thinking the source is healthy.
     });
     return { changed: true, ingested: false, message: msg };
   }

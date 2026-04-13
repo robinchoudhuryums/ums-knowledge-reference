@@ -36,7 +36,7 @@ if (process.env.REDIS_URL) {
 import { runWithCorrelationId } from './utils/correlationId';
 import { recordRequest, getMetricsSnapshot } from './utils/metrics';
 import { validateEnv } from './utils/envValidation';
-import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
+import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, refreshTokenHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
 import { initializeVectorStore, getVectorStoreStats } from './services/vectorStore';
 import { s3Client, S3_BUCKET } from './config/aws';
 import { checkDatabaseConnection } from './config/database';
@@ -120,7 +120,7 @@ const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'x-csrf-token';
 // Unauthenticated endpoints are exempt from CSRF (no session to protect).
 // Health check is exempt since ALB probes don't send cookies.
-const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/forgot-password', '/api/auth/reset-password', '/api/health'];
+const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/forgot-password', '/api/auth/reset-password', '/api/auth/refresh', '/api/health'];
 
 app.use((req, res, next) => {
   // Set/refresh the CSRF cookie on every response
@@ -313,6 +313,7 @@ app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/users', authenticate, requireAdmin, (req, res) => createUserHandler(req as AuthRequest, res));
 app.post('/api/auth/change-password', authenticate, (req, res) => changePasswordHandler(req as AuthRequest, res));
 app.post('/api/auth/logout', authenticate, (req, res) => logoutHandler(req as AuthRequest, res));
+app.post('/api/auth/refresh', refreshTokenHandler);
 
 // Forgot password routes (unauthenticated, rate-limited)
 import { forgotPasswordHandler, resetPasswordWithCodeHandler, mfaSetupHandler, mfaVerifyHandler, mfaDisableHandler } from './middleware/auth';

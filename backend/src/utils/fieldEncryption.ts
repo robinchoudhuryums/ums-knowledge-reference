@@ -42,6 +42,11 @@ function getKey(): Buffer | null {
   }
 }
 
+// Startup warning — alert operators that sensitive fields will be stored in plaintext
+if (!process.env.FIELD_ENCRYPTION_KEY) {
+  logger.warn('[SECURITY] FIELD_ENCRYPTION_KEY not set — sensitive fields (MFA secrets) will be stored in plaintext. Set this in production.');
+}
+
 /**
  * Encrypt a plaintext string. Returns base64-encoded ciphertext.
  * If encryption key is not configured, returns the plaintext unchanged.

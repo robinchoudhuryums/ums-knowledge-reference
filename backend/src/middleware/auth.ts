@@ -56,6 +56,7 @@ import {
   createToken,
   verifyToken,
   revokeToken,
+  revokeAllUserTokens,
   isTokenRevoked,
   isUserRevoked,
 } from './tokenService';
@@ -204,6 +205,12 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
   const token = createToken({ id: user.id, username: user.username, role: user.role, jti });
   setAuthCookie(res, token);
 
+  // Audit trail for successful login (HIPAA §164.308(a)(5)(ii)(C))
+  logAuditEvent(user.id, user.username, 'login', {
+    action: 'login_success',
+    mfaUsed: !!user.mfaEnabled,
+  }).catch(err => logger.warn('Failed to log login audit event', { error: String(err) }));
+
   res.json({
     token,
     user: { id: user.id, username: user.username, role: user.role },
@@ -249,9 +256,9 @@ export async function changePasswordHandler(req: AuthRequest, res: Response): Pr
   user.mustChangePassword = false;
   await saveUsers(users);
 
-  if (req.user?.jti) {
-    revokeToken(req.user.jti);
-  }
+  // Revoke ALL sessions, not just the current one — password change must
+  // invalidate all tokens in case of compromise (INV-12)
+  revokeAllUserTokens(user.id);
 
   const jti = crypto.randomUUID();
   const token = createToken({ id: user.id, username: user.username, role: user.role, jti });
@@ -546,6 +553,9 @@ export async function resetPasswordWithCodeHandler(req: Request, res: Response):
   user.failedLoginAttempts = 0;
   user.lockedUntil = undefined;
   await saveUsers(users);
+
+  // Revoke all existing sessions — password reset must invalidate prior tokens (INV-12)
+  revokeAllUserTokens(user.id);
 
   logAuditEvent(user.id, user.username, 'user_update', { action: 'password_reset_completed' })
     .catch(err => logger.warn('Audit log failed', { error: String(err) }));

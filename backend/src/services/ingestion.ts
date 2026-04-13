@@ -68,8 +68,9 @@ export async function ingestDocument(
     d => d.originalName === originalName && d.collectionId === collectionId && d.status === 'ready'
   );
 
-  // Content deduplication: if a document with identical content already exists in this
-  // collection (regardless of filename), reject the upload to prevent duplicate chunks.
+  // Content deduplication: pre-check outside lock for fast-path rejection.
+  // A verified check runs inside the mutex lock (see Step 6) to prevent
+  // concurrent uploads of identical content from both passing this check.
   const contentHash = createHash('sha256').update(fileBuffer).digest('hex');
   const duplicateByContent = existingDocs.find(
     d => d.contentHash === contentHash && d.collectionId === collectionId && d.status === 'ready' && d.id !== existingDoc?.id
@@ -216,6 +217,18 @@ export async function ingestDocument(
     await withIndexLock(async () => {
       // Re-read index inside the lock to get the latest state
       const freshDocs = await getDocumentsIndex();
+
+      // Verified content-hash dedup inside lock — catches concurrent duplicate uploads
+      // that both passed the pre-check outside the lock (INV-08)
+      const raceDuplicate = freshDocs.find(
+        d => d.contentHash === contentHash && d.collectionId === collectionId && d.status === 'ready' && d.id !== existingDoc?.id
+      );
+      if (raceDuplicate) {
+        throw new Error(
+          `A document with identical content already exists in this collection: "${raceDuplicate.originalName}". ` +
+          `Delete the existing document first if you want to re-upload.`
+        );
+      }
 
       // If re-uploading, remove old document chunks and mark as replaced
       if (existingDoc) {

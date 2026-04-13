@@ -402,3 +402,116 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/ab-tests/batch` | Admin | Batch A/B test (up to 20 questions) |
 | GET | `/api/ab-tests` | Admin | List all A/B test results (last 50) |
 | GET | `/api/ab-tests/stats` | Admin | Aggregate stats with Welch's t-test significance |
+
+
+##Cycle Workflow Config
+Test Command
+cd backend && npm test
+
+Health Dimensions
+PHI Protection, Authentication & Authorization Integrity, RAG Retrieval Quality, HIPAA Audit Completeness, Input Validation & Injection Defense, Data Integrity & Concurrency Safety, Document Processing Correctness, Forms & Clinical Data Accuracy, Reference Data Currency, Test Coverage & Quality, Error Handling & Resilience, Frontend Reliability & Accessibility, Observability & Cost Efficiency
+
+Subsystems
+RAG Query Pipeline:
+services/vectorStore.ts, services/embeddings.ts, services/embeddingProvider.ts, services/titanEmbeddingProvider.ts, services/cohereEmbeddingProvider.ts, services/chunker.ts, services/referenceEnrichment.ts, services/abTesting.ts, db/vectorStore.ts, routes/query.ts
+
+Document Ingestion & Lifecycle:
+services/ingestion.ts, services/textExtractor.ts, services/visionExtractor.ts, services/ocr.ts, services/s3Storage.ts, services/sourceMonitor.ts, services/feeScheduleFetcher.ts, services/reindexer.ts, services/orphanCleanup.ts, routes/documents.ts, routes/sourceMonitor.ts
+
+Document Extraction & Analysis:
+services/documentExtractor.ts, services/extractionTemplates.ts, services/clinicalNoteExtractor.ts, services/formAnalyzer.ts, services/pdfAnnotator.ts, services/jobQueue.ts, routes/extraction.ts
+
+Auth, Security & Access Control:
+middleware/auth.ts, middleware/authConfig.ts, middleware/tokenService.ts, middleware/waf.ts, services/mfa.ts, services/vulnerabilityScanner.ts, routes/users.ts
+
+HIPAA Compliance & Data Protection:
+services/audit.ts, services/dataRetention.ts, services/incidentResponse.ts, utils/phiRedactor.ts, utils/stripMetadata.ts, utils/malwareScan.ts, utils/fieldEncryption.ts
+
+Reference Data & Medical Codes:
+services/hcpcsLookup.ts, services/icd10Mapping.ts, services/coverageChecklists.ts, services/pmdCatalog.ts, config/formRules.ts, routes/hcpcs.ts, routes/icd10.ts, routes/coverage.ts
+
+Forms & Workflows:
+services/ppdQuestionnaire.ts, services/seatingEvaluation.ts, services/ppdQueue.ts, services/accountCreation.ts, services/papAccountCreation.ts, services/insuranceCardReader.ts, services/emailService.ts, services/productImageResolver.ts, utils/htmlEscape.ts, routes/ppd.ts, routes/accountCreation.ts, routes/papAccountCreation.ts, routes/productImages.ts
+
+Observability & Analytics:
+services/ragTrace.ts, services/queryLog.ts, services/faqAnalytics.ts, services/usage.ts, services/feedback.ts, utils/metrics.ts, routes/queryLog.ts, routes/feedback.ts, routes/usage.ts, routes/abTesting.ts, routes/errors.ts
+
+Infrastructure — Data & Storage Layer:
+config/aws.ts, config/database.ts, config/migrate.ts, db/index.ts, db/users.ts, db/documents.ts, cache/interfaces.ts, cache/memoryCache.ts, cache/redisCache.ts, cache/index.ts, storage/interfaces.ts, storage/s3DocumentStore.ts, storage/s3MetadataStore.ts, storage/index.ts, types/index.ts, types/declarations.d.ts
+
+Infrastructure — Server & Utilities:
+server.ts, tracing.ts, utils/logger.ts, utils/correlationId.ts, utils/resilience.ts, utils/envValidation.ts, utils/urlValidation.ts, utils/fileValidation.ts, utils/asyncMutex.ts, utils/textractPoller.ts, utils/sentry.ts, utils/traceSpan.ts, scripts/reset-admin.ts, scripts/reembed.ts, scripts/migrateProductImages.ts
+
+Frontend — Core & Shared:
+App.tsx, main.tsx, types/index.ts, hooks/useAuth.ts, hooks/useIdleTimeout.ts, hooks/useUnsavedChanges.ts, services/api.ts, services/errorReporting.ts, components/LoginForm.tsx, components/ChangePasswordForm.tsx, components/ErrorBoundary.tsx, components/Toast.tsx, components/ConfirmDialog.tsx, components/LoadingSkeleton.tsx, components/PopoutButton.tsx
+
+Frontend — Feature UI (split for audit sessions: 12a Chat & Docs / 12b Forms & Admin):
+components/ChatInterface.tsx, components/DocumentManager.tsx, components/DocumentSearch.tsx, components/SourceViewer.tsx, components/FeedbackForm.tsx, components/DocumentsTab.tsx, components/DocumentExtractor.tsx, components/AnnotatedPdfViewer.tsx, components/OcrTool.tsx, components/IntakeAutoFill.tsx, components/ToolsTab.tsx, components/FormsTab.tsx, components/PpdQuestionnaire.tsx, components/PpdQueueViewer.tsx, components/AccountCreationForm.tsx, components/PapAccountCreationForm.tsx, components/InsuranceCardUpload.tsx, components/FormWithQueue.tsx, components/UserManagement.tsx, components/ProductImageManager.tsx, components/UsageLimitsManager.tsx, components/FaqDashboard.tsx, components/ObservabilityDashboard.tsx, components/QualityDashboard.tsx, components/QueryLogViewer.tsx
+
+Invariant Library
+INV-01 | Audit log entries must use HMAC-SHA256 hash chain with app secret, never raw SHA-256 | Subsystem: HIPAA Compliance
+INV-02 | PHI redaction must run on all data written to query logs, RAG traces, feedback, and audit details before persistence | Subsystem: HIPAA Compliance
+INV-03 | Authenticate middleware must check account lockout via async IIFE (not .then()) before granting access | Subsystem: Auth & Security
+INV-04 | JWT tokens stored in httpOnly cookies only; localStorage isLoggedIn flag must never contain token | Subsystem: Auth & Security
+INV-05 | All Bedrock InvokeModel calls must include cache_control ephemeral on system prompt blocks | Subsystem: RAG Pipeline
+INV-06 | Vector store index updates must be protected by async mutex | Subsystem: RAG Pipeline
+INV-07 | On ingestion failure after chunks written, chunks must be rolled back (deleted) | Subsystem: Ingestion
+INV-08 | Content-hash deduplication must reject identical SHA-256 uploads in same collection | Subsystem: Ingestion
+INV-09 | HIPAA retention floors enforced via Math.max (audit >= 6yr) even if env vars set lower | Subsystem: HIPAA Compliance
+INV-10 | All URL downloads must validate via SSRF prevention (block private IPs, localhost, metadata) | Subsystem: Server & Utilities
+INV-11 | CSRF double-submit cookie enforced on all POST/PUT/DELETE except login and health | Subsystem: Server & Utilities
+INV-12 | revokeAllUserTokens() must be called on password reset to invalidate existing sessions | Subsystem: Auth & Security
+INV-13 | JWT jti claims must use crypto.randomUUID(), never predictable values | Subsystem: Auth & Security
+INV-14 | Extraction route error messages must not expose internal AWS/Bedrock details | Subsystem: Extraction
+INV-15 | Embedding dimension validated on addChunksToStore — reject wrong-dimension vectors | Subsystem: RAG Pipeline
+INV-16 | WAF middleware must run after body parsing but before CSRF and routes | Subsystem: Server & Utilities
+INV-17 | Seating eval armStrength uses numeric comparison with NaN guard | Subsystem: Forms & Workflows
+INV-18 | Spasticity detection uses negation check + clinical context, not bare keyword match | Subsystem: Forms & Workflows
+INV-19 | SSL rejectUnauthorized=true enforced in production regardless of env var | Subsystem: Infrastructure
+INV-20 | JWT_SECRET fail-fast in production if default/weak | Subsystem: Server & Utilities
+INV-21 | Prompt injection detection includes NFKD normalization + HTML entity decode | Subsystem: RAG Pipeline
+INV-22 | Output guardrails detect system prompt leakage in generated responses | Subsystem: RAG Pipeline
+INV-23 | Conversation history enforces 20-turn and 50K-char budgets | Subsystem: RAG Pipeline
+INV-24 | S3 object size guards: 50MB metadata, 500MB vector index | Subsystem: Ingestion
+INV-25 | checkAndRecordQuery() is atomic — no TOCTOU race between check and record | Subsystem: Observability
+
+Policy Configuration
+Policy threshold: 5/10
+Consecutive cycles: 2
+
+OUTPUT 2 — CYCLE ROTATION PLAN
+Recommended First Subsystem to Audit
+Auth, Security & Access Control — This is a HIPAA healthcare application where a security gap has the highest blast radius. Auth is the gatekeeper for everything: any bypass exposes all PHI. It's also a manageable 7 files / ~1,848 lines, making it ideal for establishing audit patterns and calibrating scoring.
+
+Recommended Cycle Order
+Cycle	Subsystem	Rationale
+1	Auth, Security & Access Control	Highest consequence — auth bypass = total PHI exposure. Establishes security baseline.
+2	HIPAA Compliance & Data Protection	Directly follows auth — validates that even with correct auth, PHI is redacted and audit trail is intact.
+3	RAG Query Pipeline	Core product value — search quality directly impacts user trust and medical decision support.
+4	Document Ingestion & Lifecycle	Feeds the RAG pipeline — garbage in = garbage out. Concurrency bugs here corrupt the entire index.
+5	Infrastructure — Server & Utilities	Cross-cutting concerns (CSRF, rate limiting, SSRF) affect all subsystems. Best audited after understanding the features they protect.
+6	Infrastructure — Data & Storage Layer	Database/S3 fallback logic, connection pools, migrations. Foundation for everything above.
+7	Document Extraction & Analysis	Clinical data accuracy — extraction errors cascade into wrong form fills and potentially wrong treatments.
+8	Forms & Workflows	Domain-critical — PPD/seating eval mapping errors affect real patient equipment orders.
+9	Reference Data & Medical Codes	Static data correctness — HCPCS/ICD-10/LCD accuracy directly affects claim approvals.
+10	Observability & Analytics	Supports all other subsystems but lower blast radius. PHI-in-logs is the main risk (covered by invariants).
+11	Frontend — Core & Shared	Auth state, XSS prevention, SSE handling. Client-side security surface.
+12a	Frontend — Feature UI: Chat & Docs	Primary user interface — streaming, document management, PDF viewer.
+12b	Frontend — Feature UI: Forms & Admin	Form accuracy, admin controls, dashboard correctness.
+Seams Audit Frequency
+Every 3 subsystem cycles — audit seam files (referenceEnrichment, s3Storage, phiRedactor, jobQueue, htmlEscape, formRules, emailService, routes/abTesting) to verify cross-subsystem contracts haven't drifted.
+
+CONFIDENCE ASSESSMENT
+Subsystem	File List Confidence	Boundary Confidence	Notes
+RAG Query Pipeline	High	High	Clear import chain from embeddings→vectorStore→query
+Document Ingestion & Lifecycle	High	High	Linear pipeline with clear boundaries
+Document Extraction & Analysis	High	High	Self-contained with jobQueue as only shared concern
+Auth, Security & Access Control	High	High	Middleware directory provides natural boundary
+HIPAA Compliance & Data Protection	High	Medium	phiRedactor is a seam file (consumed by Observability too)
+Reference Data & Medical Codes	High	High	Static data services with 1:1 route mapping
+Forms & Workflows	High	Medium	emailService is a seam (also used by auth password reset)
+Observability & Analytics	High	Medium	routes/abTesting is a seam (could be in RAG Pipeline)
+Infrastructure — Data & Storage	High	High	Directory-aligned, clear interface boundaries
+Infrastructure — Server & Utilities	High	High	Entry point + cross-cutting utils, natural grouping
+Frontend — Core & Shared	High	High	App shell + shared primitives, clear boundary
+Frontend — Feature UI	High	Medium	Large subsystem; split into 12a/12b for audit sessions; component independence means boundary is flexible

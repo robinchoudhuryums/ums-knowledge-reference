@@ -1,57 +1,31 @@
 # UMS Knowledge Base — Development Roadmap
 
-**Last updated:** 2026-04-04
-**Reference:** See `AUDIT_REPORT.md` for full audit findings and ratings.
+**Last updated:** 2026-04-13
+**Reference:** See `AUDIT_REPORT.md` for full audit findings. See `CHANGELOG.md` for completed work.
 
 ---
 
-## Sprint 1: Code Quality & Performance (Current)
+## Sprint 1: Code Quality & Performance (Remaining)
 
-### Completed
-- [x] SPA fallback returns JSON 404 for unmatched API routes
-- [x] Document selection resets on collection change
-- [x] Medical synonym self-reference removed
-- [x] Health check uses top-level imports (perf)
-- [x] ConversationTurn.isError type safety
-- [x] PopoutButton aria-label, ChangePasswordForm CSS variables
-- [x] Source monitor SSRF prevention on redirects
-- [x] Data retention date rollover fix
-- [x] HTML entity Unicode decoding fix (fromCodePoint)
-- [x] Collection ACL on 5 document endpoints
-- [x] topK nullish coalescing fix
-- [x] reset-admin.ts SSL validation
-- [x] Email error message leak prevention
-
-### Remaining This Sprint
-- [x] **Extract shared query pipeline** — `processPostGeneration()` deduplicates ~56 lines between streaming/non-streaming endpoints
-- [x] **ReactMarkdown XSS** — `skipHtml={true}` already present on both ChatInterface instances (verified)
 - [ ] **Extract shared mutex utility** — `withMutex()` from repeated patterns in `ingestion.ts`, `audit.ts`, `usage.ts`
 - [ ] **IDF rebuild optimization** — incremental updates instead of O(n) full rebuild on every corpus change
 - [ ] **Audit log retrieval** — batch S3 GETs or use database for audit storage to avoid O(n) sequential reads
 - [ ] **Frontend code duplication** — extract shared `useFocusTrap()` hook, shared auth utilities from `api.ts`/`errorReporting.ts`
 - [ ] **Message list keys** — add `id` field to ConversationTurn, use as React key instead of array index
 
-### Bug Fixes (April 2026 audit)
-- [x] **useAuth.ts JSON.parse crash** — corrupted localStorage crashed the app on mount
-- [x] **ChatInterface useEffect dependency** — `[selectedCollections]` → `[responseStyle]`
-- [x] **auth.ts silent audit failure** — MFA recovery code audit log failure now logged
-- [x] **Duplicate migration 004** — removed conflicting `004_add_foreign_keys.sql`
-
 ---
 
 ## Sprint 2: RAG Quality Improvements
 
 ### Medical Domain Embeddings
-- [ ] **Evaluate medical embedding models** — benchmark MedCPT, BioLORD-2023, PubMedBERT against Titan Embed V2 on UMS-specific queries
-- [ ] **Implement EmbeddingProvider for chosen model** — leverage existing `EmbeddingProvider` interface for swap
+- [ ] **Evaluate medical embedding models** — benchmark MedCPT, BioLORD-2023, PubMedBERT against Titan Embed V2
+- [ ] **Implement EmbeddingProvider for chosen model** — leverage existing `EmbeddingProvider` interface
 - [ ] **Re-index existing documents** — one-time migration to new embeddings
-- [x] **A/B model testing framework** — `services/abTesting.ts` runs same query through two Bedrock models with shared retrieval context. Welch's t-test for significance. Use `POST /api/ab-tests/run` or `POST /api/ab-tests/batch`. Can be used to compare embedding models by swapping the generation model and measuring answer quality differences. *(Done: `claude/evaluate-qa-rag-integration-MrMze`)*
 - [ ] **Update dimension config** — different models may use different dimensions (768 vs 1024)
 
 ### Retrieval Quality
 - [ ] **Cross-encoder re-ranking** — replace heuristic re-ranking with learned cross-encoder (e.g., MS MARCO MiniLM)
 - [ ] **Query routing** — classify queries as structured-data-only, RAG, or hybrid to reduce unnecessary LLM calls
-- [x] **Chunk deduplication** — Jaccard similarity at 0.80 threshold with length-ratio pre-check optimization (skips O(n) set intersection when token set sizes differ enough). Content-hash dedup during ingestion reuses embeddings for identical chunks. *(Done: `claude/evaluate-qa-rag-integration-MrMze`)*
 - [ ] **Retrieval evaluation framework** — build gold-standard Q&A test set (50+ pairs), automate recall@K and MRR measurement
 - [ ] **HNSW index migration** — switch pgvector from IVFFlat to HNSW for better recall at scale
 
@@ -63,18 +37,6 @@
 ---
 
 ## Sprint 3: HIPAA & Security Hardening
-
-### Completed (April 2026 audit — ported from CallAnalyzer)
-- [x] **WAF middleware** — `backend/src/middleware/waf.ts`: 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF patterns, IP blocklist, anomaly scoring
-- [x] **Incident response plan** — `backend/src/services/incidentResponse.ts`: HIPAA §164.308, 7-phase lifecycle, escalation contacts
-- [x] **HMAC audit chain upgrade** — `backend/src/services/audit.ts`: SHA-256 → HMAC-SHA256 (attacker with DB access cannot recompute)
-- [x] **Vulnerability scanner** — `backend/src/services/vulnerabilityScanner.ts`: daily automated security audits
-- [x] **Sentry error tracking** — `backend/src/utils/sentry.ts`: PHI-safe scrubbing, 8 patterns
-- [x] **Image metadata stripping** — `backend/src/utils/stripMetadata.ts`: EXIF/IPTC/XMP removal before S3 storage
-- [x] **SSL hardening** — `backend/src/config/database.ts`: production enforces `rejectUnauthorized: true`
-- [x] **Service-to-service auth** — `backend/src/middleware/auth.ts`: X-API-Key header for CallAnalyzer integration
-- [x] **Error monitoring workflow** — `.github/workflows/error-monitor.yml`: Docker health, DB, disk, memory checks every 4 hours
-- [x] **Blue-green deployment** — `deploy-bluegreen.sh` + CI/CD: staging port health check before swap, ~2s downtime
 
 ### Authentication
 - [ ] **Session management upgrade** — migrate token revocation from in-memory Set to Redis
@@ -102,7 +64,6 @@
 - [ ] **Redis for job queue** — replace in-memory job queue with Bull/BullMQ
 
 ### Database
-- [ ] **Add missing FK constraints** — migration 004 with cascading deletes
 - [ ] **Transaction isolation** — use SERIALIZABLE for critical user operations
 - [ ] **Connection pool metrics** — expose pool utilization to /api/metrics
 - [ ] **Read/write timeout split** — 10s for reads, 20s for writes (currently 30s for all)

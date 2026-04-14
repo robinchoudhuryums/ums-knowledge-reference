@@ -1,0 +1,44 @@
+-- ============================================================================
+-- UMS Knowledge Base — HNSW Index Migration (MANUAL — DO NOT AUTO-APPLY)
+-- ============================================================================
+-- Replaces the IVFFlat index on chunks.embedding with an HNSW index.
+-- HNSW provides better recall than IVFFlat (especially at scale) without
+-- requiring periodic REINDEX after bulk inserts.
+--
+-- ** IMPORTANT — This is a manual migration, NOT auto-applied on startup. **
+-- The `.sql.manual` extension excludes it from `runMigrations()` in
+-- `src/config/migrate.ts` (which filters on `.endsWith('.sql')`).
+--
+-- Why manual?
+--   CREATE INDEX on a populated chunks table takes minutes. If run during
+--   app startup (as auto-migrations do), the blue-green deploy health check
+--   times out at 30 seconds and the deploy rolls back. The non-concurrent
+--   CREATE INDEX also acquires a SHARE lock, blocking all writes to chunks.
+--
+-- How to run:
+--
+--   1. SSH into the production host
+--   2. Connect to the RDS instance:
+--      psql "$DATABASE_URL"
+--   3. Run each statement below manually, outside any transaction.
+--      CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
+--
+-- Parameters:
+--   m = 16              (max connections per node — default)
+--   ef_construction = 64 (build-time beam width — default)
+-- ============================================================================
+
+-- Step 1: Drop the old IVFFlat index (fast, even on large tables)
+DROP INDEX IF EXISTS idx_chunks_embedding;
+
+-- Step 2: Create HNSW index CONCURRENTLY (no table lock, can take minutes).
+-- NOTE: Run this OUTSIDE any transaction. In psql, this means not inside
+-- BEGIN/COMMIT and not via `\i` from a transaction-wrapped session.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chunks_embedding
+  ON chunks USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
+
+-- Step 3: Record that the migration was applied, so future automation skips it
+INSERT INTO schema_migrations (version, name)
+VALUES (9, '009_hnsw_index')
+ON CONFLICT (version) DO NOTHING;

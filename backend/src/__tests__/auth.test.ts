@@ -58,7 +58,10 @@ vi.mock('../services/audit', () => ({
 
 // Must import after mocks are set up
 import bcrypt from 'bcryptjs';
-import { initializeAuth, loginHandler, changePasswordHandler, authenticate, createUserHandler, AuthRequest } from '../middleware/auth';
+import { initializeAuth, loginHandler, changePasswordHandler, authenticate, createUserHandler, refreshTokenHandler, resetPasswordWithCodeHandler, AuthRequest } from '../middleware/auth';
+import { isUserRevoked } from '../middleware/tokenService';
+import { logAuditEvent } from '../services/audit';
+import { getCache, getSets } from '../cache';
 import * as s3Mock from '../services/s3Storage';
 const { __resetStore, __getStore } = s3Mock as any;
 
@@ -92,8 +95,11 @@ function mockReq(body: Record<string, unknown> = {}, headers: Record<string, str
 }
 
 describe('Auth Flow', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     __resetStore();
+    // Clear token revocation state between tests (admin-001 is reused across tests)
+    await getSets().remove('revoked-tokens', 'admin-001');
+    await getSets().remove('revoked-users', 'admin-001');
   });
 
   it('initializes default admin user on first run', async () => {
@@ -292,5 +298,147 @@ describe('Auth Flow', () => {
         user: expect.objectContaining({ username: 'agent1', role: 'user' }),
       })
     );
+  });
+
+  // =========================================================================
+  // Login Audit Trail (F-04 / INV-26)
+  // =========================================================================
+  it('successful login calls logAuditEvent with action login', async () => {
+    await initAuthWithKnownPassword('Admin1234!');
+    const req = mockReq({ username: 'admin', password: 'Admin1234!' });
+    const res = mockRes();
+    await loginHandler(req, res);
+    expect(res.json).toHaveBeenCalled();
+    // logAuditEvent should have been called with 'login' action
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.any(String),       // userId
+      'admin',                  // username
+      'login',                  // action
+      expect.objectContaining({ action: 'login_success' })
+    );
+  });
+
+  // =========================================================================
+  // Login sets refresh token cookie
+  // =========================================================================
+  it('successful login sets both auth and refresh cookies', async () => {
+    await initAuthWithKnownPassword('Admin1234!');
+    const req = mockReq({ username: 'admin', password: 'Admin1234!' });
+    const res = mockRes();
+    await loginHandler(req, res);
+    // Should set at least 2 cookies: ums_auth_token and ums_refresh_token
+    const cookieCalls = (res.cookie as ReturnType<typeof vi.fn>).mock.calls;
+    const cookieNames = cookieCalls.map((c: unknown[]) => c[0]);
+    expect(cookieNames).toContain('ums_auth_token');
+    expect(cookieNames).toContain('ums_refresh_token');
+  });
+
+  // =========================================================================
+  // Refresh Token Handler
+  // =========================================================================
+  it('refresh handler issues new access token from valid refresh token', async () => {
+    await initAuthWithKnownPassword('Admin1234!');
+    // Login to get tokens
+    const loginReq = mockReq({ username: 'admin', password: 'Admin1234!' });
+    const loginRes = mockRes();
+    await loginHandler(loginReq, loginRes);
+
+    // Extract refresh token from cookie calls
+    const cookieCalls = (loginRes.cookie as ReturnType<typeof vi.fn>).mock.calls;
+    const refreshCall = cookieCalls.find((c: unknown[]) => c[0] === 'ums_refresh_token');
+    expect(refreshCall).toBeDefined();
+    const refreshToken = refreshCall![1] as string;
+
+    // Call refresh handler with refresh token in cookie
+    const refreshReq = { body: {}, headers: {}, cookies: { ums_refresh_token: refreshToken } } as unknown as Request;
+    const refreshRes = mockRes();
+    await refreshTokenHandler(refreshReq, refreshRes);
+
+    // Should issue a new access token
+    expect(refreshRes.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: expect.any(String),
+        user: expect.objectContaining({ username: 'admin' }),
+      })
+    );
+    // New auth cookie should be set
+    expect(refreshRes.cookie).toHaveBeenCalled();
+  });
+
+  it('refresh handler rejects missing refresh token', async () => {
+    const req = { body: {}, headers: {}, cookies: {} } as unknown as Request;
+    const res = mockRes();
+    await refreshTokenHandler(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('refresh handler rejects access token used as refresh token', async () => {
+    await initAuthWithKnownPassword('Admin1234!');
+    const loginReq = mockReq({ username: 'admin', password: 'Admin1234!' });
+    const loginRes = mockRes();
+    await loginHandler(loginReq, loginRes);
+
+    // Extract the ACCESS token (not refresh) and try to use it as a refresh token
+    const accessToken = (loginRes.json as ReturnType<typeof vi.fn>).mock.calls[0][0].token;
+    const req = { body: {}, headers: {}, cookies: { ums_refresh_token: accessToken } } as unknown as Request;
+    const res = mockRes();
+    await refreshTokenHandler(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid token type' });
+  });
+
+  // =========================================================================
+  // Password Reset via Code — Token Revocation (F-01 / INV-12)
+  // =========================================================================
+  it('password reset via code revokes all user tokens (INV-12)', async () => {
+    await initAuthWithKnownPassword('Admin1234!');
+    // Get the admin user's ID
+    const store = __getStore();
+    const users = store['users.json'] as any[];
+    const userId = users[0].id;
+
+    // Inject a reset code into cache
+    await getCache().set('reset-code:999999', { userId }, 600_000);
+
+    const req = mockReq({ username: 'admin', code: '999999', newPassword: 'NewStr0ng!' });
+    const res = mockRes();
+    await resetPasswordWithCodeHandler(req, res);
+
+    // Should succeed
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('reset') })
+    );
+
+    // User should be revoked (all existing tokens invalidated)
+    const revoked = await isUserRevoked(userId);
+    expect(revoked).toBe(true);
+  });
+
+  // =========================================================================
+  // Password Change — All Sessions Revoked (F-02 / INV-12)
+  // =========================================================================
+  it('password change revokes all user tokens, not just current (INV-12)', async () => {
+    await initAuthWithKnownPassword('Admin1234!');
+    const store = __getStore();
+    const users = store['users.json'] as any[];
+    const userId = users[0].id;
+
+    const req = {
+      body: { currentPassword: 'Admin1234!', newPassword: 'Changed1!' },
+      user: { id: userId, username: 'admin', role: 'admin', jti: 'test-jti-123' },
+      headers: {},
+      cookies: {},
+    } as unknown as AuthRequest;
+    const res = mockRes();
+    await changePasswordHandler(req, res);
+
+    // Should succeed
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ token: expect.any(String) })
+    );
+
+    // User-level revocation should be active (covers all sessions)
+    const revoked = await isUserRevoked(userId);
+    expect(revoked).toBe(true);
   });
 });

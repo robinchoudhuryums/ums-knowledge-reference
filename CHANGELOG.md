@@ -138,7 +138,9 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Race condition fixes** — vector store init lock, day-boundary double-check pattern, atomic usage tracking
 - **Docker** — multi-stage build, tini init, non-root user (UID 1000), health check
 - **Blue-green deployment** — staging port health check, ~2s downtime, automatic rollback on failure
-- **CI/CD** — GitHub Actions: TruffleHog secret scanning, lint + type-check + tests + coverage + deploy, Dependabot weekly updates
+- **CI/CD** — GitHub Actions: TruffleHog secret scanning, axe-core WCAG 2.0 A+AA accessibility audit, lint + type-check + tests + coverage + deploy, Dependabot weekly updates
+- **Shared mutex consolidation** — queryLog, ragTrace, usage services migrated from inline `ensurePromise` pattern to `createOnceLock()` from asyncMutex.ts
+- **Embedding model evaluation script** — `scripts/evalEmbeddings.ts`: side-by-side Titan vs Cohere comparison with recall@K, MRR, keyword coverage report
 - **Error monitoring** — GitHub Actions workflow every 4 hours (Docker, HTTP, logs, disk, DB, memory)
 - **OpenAPI spec** — 50+ endpoints, 11 tags, reusable schemas
 - **HNSW index migration** — `009_hnsw_index.sql` replaces IVFFlat with HNSW for better recall without periodic REINDEX (m=16, ef_construction=64)

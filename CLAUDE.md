@@ -87,7 +87,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
 - **Tests** (`backend/src/__tests__/`): 930 total tests across 58 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
-- **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`
+- **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`. `reembed.ts` — Re-embed all chunks with the current embedding model (migration path for model changes). `evalEmbeddings.ts` — Embedding model comparison script (Titan vs Cohere): runs gold-standard Q&A pairs, computes recall@K/MRR/keyword coverage, produces side-by-side report.
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
@@ -186,7 +186,7 @@ When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to t
 ## Deployment
 - **Docker**: Multi-stage build, `node:20.19.0-slim`, tini init, non-root user, health check
 - **Blue-green deploy**: `deploy-bluegreen.sh` — starts new container on staging port (3002), health-checks, then swaps to production port (3001). ~2s downtime vs ~30s with standard deploy. Rollback: `docker stop ums-knowledge && docker rename ums-knowledge-old ums-knowledge && docker start ums-knowledge`
-- **CI/CD**: `.github/workflows/ci.yml` — TruffleHog secret scanning, backend lint + type-check + tests + coverage, frontend type-check + build, deploy via SSH with blue-green strategy
+- **CI/CD**: `.github/workflows/ci.yml` — TruffleHog secret scanning, backend lint + type-check + tests + coverage, frontend type-check + build + axe-core WCAG 2.0 A+AA accessibility audit, deploy via SSH with blue-green strategy
 - **Error monitoring**: `.github/workflows/error-monitor.yml` — checks Docker status, HTTP health, error logs, disk, DB connectivity, memory every 4 hours. Auto-creates GitHub Issues.
 
 ## Environment Variables (not in .env.example)

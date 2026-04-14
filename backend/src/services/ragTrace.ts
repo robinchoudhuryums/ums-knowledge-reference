@@ -9,6 +9,7 @@ import { loadMetadata, saveMetadata } from './s3Storage';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
 import { v4 as uuidv4 } from 'uuid';
+import { createOnceLock } from '../utils/asyncMutex';
 
 const TRACE_PREFIX = 'rag-traces/';
 
@@ -56,8 +57,8 @@ let todayDate = '';
 let lastPersist = 0;
 const PERSIST_INTERVAL_MS = 15_000;
 
-// Lock to prevent concurrent day-boundary transitions from racing
-let ensurePromise: Promise<void> | null = null;
+// Coalesce concurrent day-boundary transitions (shared utility)
+const withEnsureLock = createOnceLock();
 
 function getTodayKey(): string {
   return new Date().toISOString().split('T')[0];
@@ -67,13 +68,7 @@ async function ensureToday(): Promise<void> {
   const today = getTodayKey();
   if (todayDate === today) return;
 
-  // If another call is already transitioning, wait for it
-  if (ensurePromise) {
-    await ensurePromise;
-    return;
-  }
-
-  ensurePromise = (async () => {
+  await withEnsureLock(async () => {
     // Double-check after acquiring lock
     if (todayDate === today) return;
 
@@ -90,13 +85,7 @@ async function ensureToday(): Promise<void> {
     todayTraces = traces || [];
     todayFeedback = feedback || [];
     todayDate = today;
-  })();
-
-  try {
-    await ensurePromise;
-  } finally {
-    ensurePromise = null;
-  }
+  });
 }
 
 async function persistIfNeeded(): Promise<void> {

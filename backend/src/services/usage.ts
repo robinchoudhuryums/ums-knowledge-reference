@@ -1,6 +1,7 @@
 import { UsageRecord, UsageLimits } from '../types';
 import { loadMetadata, saveMetadata } from './s3Storage';
 import { logger } from '../utils/logger';
+import { createOnceLock } from '../utils/asyncMutex';
 
 const USAGE_PREFIX = 'usage/';
 const LIMITS_KEY = 'usage-limits.json';
@@ -18,8 +19,8 @@ let cachedLimits: UsageLimits | null = null;
 let lastPersist = 0;
 const PERSIST_INTERVAL_MS = 30_000; // persist every 30s at most
 
-// Lock to prevent concurrent day-boundary transitions from racing
-let ensurePromise: Promise<UsageRecord> | null = null;
+// Coalesce concurrent day-boundary transitions (shared utility)
+const withEnsureLock = createOnceLock();
 
 function getTodayKey(): string {
   return new Date().toISOString().split('T')[0];
@@ -29,23 +30,14 @@ async function ensureTodayRecord(): Promise<UsageRecord> {
   const today = getTodayKey();
   if (todayRecord && todayRecord.date === today) return todayRecord;
 
-  // If another call is already loading, wait for it
-  if (ensurePromise) return ensurePromise;
-
-  ensurePromise = (async () => {
+  return withEnsureLock(async () => {
     // Double-check after acquiring lock
     if (todayRecord && todayRecord.date === today) return todayRecord;
 
     const loaded = await loadMetadata<UsageRecord>(`${USAGE_PREFIX}${today}.json`);
     todayRecord = loaded || { date: today, users: {}, totalQueries: 0 };
     return todayRecord;
-  })();
-
-  try {
-    return await ensurePromise;
-  } finally {
-    ensurePromise = null;
-  }
+  });
 }
 
 async function persistRecord(): Promise<void> {

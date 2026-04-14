@@ -11,6 +11,12 @@ import { sendOperationalAlert } from './alertService';
 
 const GENESIS_HASH = 'GENESIS';
 
+// S3 Object Lock: when AUDIT_OBJECT_LOCK=true and the S3 bucket has Object Lock enabled,
+// audit entries are written with COMPLIANCE mode retention (immutable — cannot be deleted
+// even by root until retention expires). Retention period defaults to HIPAA minimum (6 years).
+const AUDIT_OBJECT_LOCK = process.env.AUDIT_OBJECT_LOCK === 'true';
+const AUDIT_RETENTION_YEARS = Math.max(6, parseInt(process.env.AUDIT_RETENTION_YEARS || '6', 10) || 6);
+
 // HMAC secret for audit log integrity chain.
 // Using HMAC (vs plain SHA-256) ensures an attacker with DB access cannot
 // recompute the chain — they'd need the application secret.
@@ -192,14 +198,26 @@ export async function logAuditEvent(
     const key = `${S3_PREFIXES.audit}${date}/${entry.id}.json`;
 
     try {
+      const putParams: Record<string, unknown> = {
+        Bucket: S3_BUCKET,
+        Key: key,
+        Body: JSON.stringify(entry),
+        ContentType: 'application/json',
+        ServerSideEncryption: 'AES256',
+      };
+
+      // When Object Lock is enabled, set COMPLIANCE retention so audit entries
+      // cannot be deleted or overwritten until the retention period expires.
+      // Requires: S3 bucket created with Object Lock enabled (one-time setup).
+      if (AUDIT_OBJECT_LOCK) {
+        const retainUntil = new Date();
+        retainUntil.setFullYear(retainUntil.getFullYear() + AUDIT_RETENTION_YEARS);
+        putParams.ObjectLockMode = 'COMPLIANCE';
+        putParams.ObjectLockRetainUntilDate = retainUntil;
+      }
+
       await withRetry(
-        () => s3Client.send(new PutObjectCommand({
-          Bucket: S3_BUCKET,
-          Key: key,
-          Body: JSON.stringify(entry),
-          ContentType: 'application/json',
-          ServerSideEncryption: 'AES256',
-        })),
+        () => s3Client.send(new PutObjectCommand(putParams as any)),
         { maxRetries: 2, baseDelayMs: 500, label: 'audit-s3-write' }
       );
 

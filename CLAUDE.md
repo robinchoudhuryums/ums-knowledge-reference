@@ -122,7 +122,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Hooks**: `frontend/src/hooks/useAuth.ts` (login/logout with stream cancellation), `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout with full-viewport interaction blocker)
 - **API client**: `frontend/src/services/api.ts` (AbortController-based stream cancellation, 2MB SSE buffer cap, silent token refresh on 401)
 - **Types**: `frontend/src/types/index.ts`
-- **Styling**: CSS variables design system (`index.css`) with 60+ tokens for light/dark themes including semantic status colors (success/error/warning/info with light/border/text variants) and confidence colors (high/partial/low with background/border variants). Tailwind CSS v4 for utility classes. Healthcare blue palette with hexagonal/molecular background pattern. Dark mode via `class="dark"` on `<html>` with localStorage persistence and system preference detection.
+- **Styling**: CSS variables design system (`index.css`) with 60+ tokens for light/dark themes including semantic status colors (success/error/warning/info with light/border/text variants) and confidence colors (high/partial/low with background/border variants). Tailwind CSS v4 for utility classes. Healthcare blue palette with hexagonal/molecular background pattern. Dark mode via `class="dark"` on `<html>` with localStorage persistence and system preference detection. Responsive breakpoints at 900px (tablet: icon-only tabs, compact header) and 640px (mobile: stacked header, wrapped tabs).
 - **Icons**: Heroicons (`@heroicons/react/24/outline`) for standard UI, Lucide React (`lucide-react`) for medical icons (Brain logo, Stethoscope for clinical tab)
 
 ### AWS Services Used

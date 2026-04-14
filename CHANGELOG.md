@@ -140,6 +140,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Blue-green deployment** — staging port health check, ~2s downtime, automatic rollback on failure
 - **CI/CD** — GitHub Actions: TruffleHog secret scanning, axe-core WCAG 2.0 A+AA accessibility audit, lint + type-check + tests + coverage + deploy, Dependabot weekly updates
 - **Shared mutex consolidation** — queryLog, ragTrace, usage services migrated from inline `ensurePromise` pattern to `createOnceLock()` from asyncMutex.ts
+- **OpenTelemetry span instrumentation** — custom spans for `rag.generation.stream` (query.ts), `ingestion.extract_text`, `ingestion.embed`, `ingestion.store_chunks` (ingestion.ts). Combined with auto-instrumentation (HTTP/Express) for full distributed tracing when `OTEL_ENABLED=true`
 - **Embedding model evaluation script** — `scripts/evalEmbeddings.ts`: side-by-side Titan vs Cohere comparison with recall@K, MRR, keyword coverage report
 - **Error monitoring** — GitHub Actions workflow every 4 hours (Docker, HTTP, logs, disk, DB, memory)
 - **OpenAPI spec** — 50+ endpoints, 11 tags, reusable schemas
@@ -149,6 +150,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 
 - **Streaming SSE** — ref-based pattern (not nested setState), 2MB buffer cap, 120s timeout, AbortController cancellation
 - **CSS variables design system** — 60+ tokens, light/dark themes, semantic status/confidence colors
+- **Responsive layout** — tablet breakpoint (900px): icon-only tabs, compact header, hidden user badge name/role. Mobile breakpoint (640px): stacked header, full-width sections, wrapped tabs with labels
 - **Accessibility** — ARIA labels, focus traps in modals, `role="dialog"`, `aria-pressed` on feedback
 - **Error boundaries** — wraps all tab content and LoginForm
 - **Idle timeout** — 15-min auto-logout with full-viewport interaction blocker

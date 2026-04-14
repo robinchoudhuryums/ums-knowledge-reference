@@ -230,6 +230,10 @@ ALERT_EMAIL                     # Recipient for operational alerts (defaults to 
 # Audit log immutability (optional — requires S3 bucket with Object Lock enabled)
 AUDIT_OBJECT_LOCK               # "true" to enable COMPLIANCE mode retention on audit entries
 AUDIT_RETENTION_YEARS           # Retention period in years (default: 6, HIPAA minimum enforced)
+
+# Cross-encoder re-ranking (optional — adds ~200-500ms latency per query)
+CROSS_ENCODER_RERANK            # "true" to enable LLM-based re-ranking after retrieval
+CROSS_ENCODER_TOP_N             # Number of candidates to re-score (default: 8, max: 20)
 ```
 
 ## Recent Changes
@@ -326,7 +330,7 @@ PHI Protection, Authentication & Authorization Integrity, RAG Retrieval Quality,
 
 ## Subsystems
 RAG Query Pipeline:
-services/vectorStore.ts, services/embeddings.ts, services/embeddingProvider.ts, services/titanEmbeddingProvider.ts, services/cohereEmbeddingProvider.ts, services/chunker.ts, services/referenceEnrichment.ts, services/abTesting.ts, services/ragMetrics.ts, db/vectorStore.ts, routes/query.ts
+services/vectorStore.ts, services/embeddings.ts, services/embeddingProvider.ts, services/titanEmbeddingProvider.ts, services/cohereEmbeddingProvider.ts, services/chunker.ts, services/referenceEnrichment.ts, services/abTesting.ts, services/ragMetrics.ts, services/crossEncoderRerank.ts, db/vectorStore.ts, routes/query.ts
 
 ## Document Ingestion & Lifecycle:
 services/ingestion.ts, services/textExtractor.ts, services/visionExtractor.ts, services/ocr.ts, services/s3Storage.ts, services/sourceMonitor.ts, services/feeScheduleFetcher.ts, services/reindexer.ts, services/orphanCleanup.ts, routes/documents.ts, routes/sourceMonitor.ts

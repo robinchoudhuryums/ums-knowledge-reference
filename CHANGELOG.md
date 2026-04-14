@@ -9,7 +9,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **A/B model testing framework** — `services/abTesting.ts`, `routes/abTesting.ts`: compare Bedrock models on same query, Welch's t-test for significance
 - **Adaptive search weighting** — query type classification (code_lookup, coverage_question, general) with auto-adjusted semantic/keyword weights
 - **IDF-enhanced BM25** — proper IDF weighting with corpus-wide term frequency stats, dynamic normalization (replaces hardcoded /10)
-- **Re-ranking pipeline** — header boost, noise penalty, token-overlap deduplication (>70% overlap penalized)
+- **Re-ranking pipeline** — header boost, noise penalty, token-overlap deduplication (>70% overlap penalized). Optional cross-encoder re-ranking via Claude Haiku (`CROSS_ENCODER_RERANK=true`): LLM scores query-chunk relevance, 60/40 blend with retrieval score, falls back on failure
 - **Confidence scoring** — blended avg+top score (0.35/0.65), tuned thresholds (LOW=0.30, PARTIAL=0.42), reconciliation floor 0.30
 - **Semantic dedup length-ratio pre-check** — fast `minSize/maxSize` check before O(n) Jaccard intersection
 - **Medical-term-aware tokenizer** — preserves hyphenated terms, short tokens (IV, O2, 5mg)

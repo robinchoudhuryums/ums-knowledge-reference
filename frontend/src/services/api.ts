@@ -402,7 +402,17 @@ export async function queryKnowledgeBaseStream(
   });
 
   if (!response.ok) {
+    // On 401, attempt silent token refresh before forcing re-login
     if (response.status === 401) {
+      const refreshed = await attemptTokenRefresh();
+      if (refreshed) {
+        // Retry the stream with the new access token
+        return queryKnowledgeBaseStream(
+          question, collectionIds, conversationHistory,
+          onText, onSources, onConfidence, onDone, onError,
+          onTraceId, onProductImages, responseStyle,
+        );
+      }
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.reload();

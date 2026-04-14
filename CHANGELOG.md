@@ -79,6 +79,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 ## HIPAA Compliance & Data Protection
 
 - **Audit log HMAC chain** — HMAC-SHA256 with app secret (not raw SHA-256), mutex-protected writes, S3 write retry with backoff (F-11)
+- **Audit log immutability** — optional S3 Object Lock COMPLIANCE mode (`AUDIT_OBJECT_LOCK=true`), 6-year HIPAA minimum retention floor enforced via `Math.max`
 - **Login audit trail** — successful logins logged via `logAuditEvent` (HIPAA §164.308(a)(5)(ii)(C)) (F-04)
 - **PHI redaction** — 14 HIPAA identifiers, deep recursive traversal, applied to query logs/traces/feedback/audit
 - **Data retention** — automated cleanup (audit 7yr, query logs 1yr, traces 90d), HIPAA floor enforcement via Math.max
@@ -140,6 +141,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **CI/CD** — GitHub Actions: TruffleHog secret scanning, lint + type-check + tests + coverage + deploy, Dependabot weekly updates
 - **Error monitoring** — GitHub Actions workflow every 4 hours (Docker, HTTP, logs, disk, DB, memory)
 - **OpenAPI spec** — 50+ endpoints, 11 tags, reusable schemas
+- **HNSW index migration** — `009_hnsw_index.sql` replaces IVFFlat with HNSW for better recall without periodic REINDEX (m=16, ef_construction=64)
 
 ## Frontend
 
@@ -160,4 +162,4 @@ Consolidated history of improvements, grouped by category. For architectural det
 
 ## Test Coverage
 
-725 tests across 49 files (vitest). Key coverage areas: vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion, audit, embeddings, dimension validation, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests (documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, s3Storage). CI thresholds: 50% lines, 40% branches.
+930 tests across 58 files (vitest). Key coverage areas: vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion, audit, embeddings, dimension validation, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, RAG evaluation metrics, E2E auth (supertest: login/cookies/CSRF/refresh/revocation/logout), and route-level tests (documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, s3Storage). CI thresholds: 50% lines, 40% branches.

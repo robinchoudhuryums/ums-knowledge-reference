@@ -7,6 +7,19 @@ on:
     branches: [main]
 
 jobs:
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Full history for scanning all commits
+
+      - name: TruffleHog secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified --fail
+
   backend:
     name: Backend – Lint, Type-check, Test
     runs-on: ubuntu-latest
@@ -115,6 +128,17 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Accessibility audit (axe-core)
+        run: |
+          npx -y serve -s dist -l 5173 &
+          SERVER_PID=$!
+          sleep 2
+          # Run axe-core against the built SPA login page (no auth required)
+          npx -y @axe-core/cli http://localhost:5173 --exit --tags wcag2a,wcag2aa 2>&1 || {
+            echo "::warning::Accessibility issues found (non-blocking) — review output above"
+          }
+          kill $SERVER_PID 2>/dev/null || true
 
   deploy:
     name: Deploy to EC2

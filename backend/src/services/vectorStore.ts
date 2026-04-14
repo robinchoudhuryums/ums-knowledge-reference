@@ -3,6 +3,7 @@ import { saveVectorIndex, loadVectorIndex, getDocumentsIndex } from './s3Storage
 import { getEmbeddingProvider } from './embeddings';
 import { useRds, dbAddChunks, dbRemoveDocumentChunks, dbSearchVectorStore, dbSearchChunksByKeyword, dbGetVectorStoreStats } from '../db';
 import { logger } from '../utils/logger';
+import { crossEncoderRerank, isCrossEncoderEnabled } from './crossEncoderRerank';
 
 // In-memory cache of the vector index for fast search
 let cachedIndex: VectorStoreIndex | null = null;
@@ -870,7 +871,15 @@ export async function searchVectorStore(
   // Sort by score, take 2x topK for re-ranking pool
   scored.sort((a, b) => b.score - a.score);
   const reRankPool = scored.slice(0, topK * 2);
-  const reRanked = reRankResults(reRankPool, queryText);
+  let reRanked = reRankResults(reRankPool, queryText);
+
+  // Optional cross-encoder re-ranking: uses Claude to score query-chunk relevance.
+  // Significantly improves precision on nuanced queries at the cost of ~200-500ms latency.
+  // Enable with CROSS_ENCODER_RERANK=true
+  if (isCrossEncoderEnabled()) {
+    reRanked = await crossEncoderRerank(queryText, reRanked);
+  }
+
   reRanked.sort((a, b) => b.score - a.score);
 
   // Apply minimum score threshold — discard results with negligible relevance.

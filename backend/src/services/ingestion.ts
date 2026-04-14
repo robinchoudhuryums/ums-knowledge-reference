@@ -16,6 +16,7 @@ import { logAuditEvent } from './audit';
 import { logger } from '../utils/logger';
 import { createMutex } from '../utils/asyncMutex';
 import { stripImageMetadata } from '../utils/stripMetadata';
+import { withSpan } from '../utils/traceSpan';
 
 // Allowed file extensions for uploaded documents
 const ALLOWED_EXTENSIONS = new Set([
@@ -123,7 +124,9 @@ export async function ingestDocument(
 
     // Step 2: Extract text
     logger.info('Ingestion: Extracting text', { documentId });
-    const extracted = await extractText(fileBuffer, mimeType, originalName);
+    const extracted = await withSpan('ingestion.extract_text', { documentId, mimeType }, async () => {
+      return extractText(fileBuffer, mimeType, originalName);
+    });
 
     if (!extracted.text.trim()) {
       throw new Error('No text could be extracted from the document');
@@ -192,7 +195,11 @@ export async function ingestDocument(
       }
     }
 
-    const freshEmbeddings = textsToEmbed.length > 0 ? await generateEmbeddingsBatch(textsToEmbed) : [];
+    const freshEmbeddings = textsToEmbed.length > 0
+      ? await withSpan('ingestion.embed', { documentId, chunks: textsToEmbed.length }, async () => {
+          return generateEmbeddingsBatch(textsToEmbed);
+        })
+      : [];
 
     // Merge fresh + cached embeddings
     const embeddings: number[][] = [];
@@ -208,7 +215,9 @@ export async function ingestDocument(
 
     // Step 5: Store in vector store
     logger.info('Ingestion: Adding to vector store', { documentId });
-    await addChunksToStore(chunks, embeddings);
+    await withSpan('ingestion.store_chunks', { documentId, chunkCount: chunks.length }, async () => {
+      await addChunksToStore(chunks, embeddings);
+    });
     chunksAddedToStore = true;
 
     // Step 6 & 7: Update document index atomically under mutex lock

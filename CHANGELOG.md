@@ -9,7 +9,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **A/B model testing framework** — `services/abTesting.ts`, `routes/abTesting.ts`: compare Bedrock models on same query, Welch's t-test for significance
 - **Adaptive search weighting** — query type classification (code_lookup, coverage_question, general) with auto-adjusted semantic/keyword weights
 - **IDF-enhanced BM25** — proper IDF weighting with corpus-wide term frequency stats, dynamic normalization (replaces hardcoded /10)
-- **Re-ranking pipeline** — header boost, noise penalty, token-overlap deduplication (>70% overlap penalized)
+- **Re-ranking pipeline** — header boost, noise penalty, token-overlap deduplication (>70% overlap penalized). Optional cross-encoder re-ranking via Claude Haiku (`CROSS_ENCODER_RERANK=true`): LLM scores query-chunk relevance, 60/40 blend with retrieval score, falls back on failure
 - **Confidence scoring** — blended avg+top score (0.35/0.65), tuned thresholds (LOW=0.30, PARTIAL=0.42), reconciliation floor 0.30
 - **Semantic dedup length-ratio pre-check** — fast `minSize/maxSize` check before O(n) Jaccard intersection
 - **Medical-term-aware tokenizer** — preserves hyphenated terms, short tokens (IV, O2, 5mg)
@@ -22,7 +22,9 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Prompt caching** — `cache_control: ephemeral` on all Bedrock system prompt blocks (90% cached token savings)
 - **Embedding model abstraction** — `EmbeddingProvider` interface, swappable providers, dimension tracking in index
 - **Embedding dimension validation** — mismatch detection on init, `reindexAllEmbeddings()` migration path
-- **NaN guards** on combined retrieval scores, MIN_SCORE_THRESHOLD 0.15, default topK raised to 8
+- **NaN guards** on combined retrieval scores in both S3 and pgvector paths (INV-27), MIN_SCORE_THRESHOLD 0.15, default topK raised to 8
+- **Retrieval evaluation metrics** — `ragMetrics.ts`: recall@K, MRR, keyword coverage, formatted report output. 25 gold-standard Q&A pairs in `ragEvaluation.test.ts`
+- **Embedding cache write logging** — `.catch(() => {})` replaced with `logger.warn` for cost visibility
 - **Chunk content dedup with embedding reuse** — SHA-256 hash per chunk, reuses existing pgvector embeddings
 - **Configurable charsPerToken ratio** — 3.5 for medical docs, 3.8 for forms, 4.0 default
 
@@ -35,7 +37,8 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **File extension whitelist** — rejects unsupported file types
 - **Conditional OCR** — word-count threshold skips Textract for text-native PDFs
 - **Vision-based image description** — Bedrock Converse API + Haiku 4.5 for PDF images
-- **Source monitor** — automated URL monitoring for external document changes (SHA-256 hash comparison, hourly scheduler)
+- **Source monitor** — automated URL monitoring for external document changes (SHA-256 hash comparison, hourly scheduler). Omits misleading HTTP 200 on ingestion-only failures
+- **Reindexer failure marking** — sets `errorMessage` on document when re-index fails so users see stale content warnings
 - **LCD source monitor seeding** — one-call endpoint seeds 8 CMS LCD sources
 - **Fee schedule fetcher** — auto-fetches CMS DME fee schedules
 - **Document reindexer** — change detection and re-ingestion service
@@ -62,6 +65,8 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **MFA (TOTP)** — with recovery codes
 - **JWT jti** — `crypto.randomUUID()` (not predictable values)
 - **Token revocation** — `revokeAllUserTokens()` called on all password reset paths (admin reset, self-service reset via code, password change) per INV-12
+- **Refresh tokens** — 7-day httpOnly refresh cookie (`ums_refresh_token`, scoped to `/api/auth/refresh`), silent 401 retry on frontend (both request() and SSE streaming), `POST /api/auth/refresh` endpoint
+- **Revocation persistence** — S3-backed save/restore of revocation state on graceful shutdown/startup (skipped when Redis configured). User-level revocation TTL extended to 7 days for refresh token coverage
 - **Service-to-service auth** — X-API-Key with timing-safe comparison for CallAnalyzer
 - **WAF middleware** — 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF patterns, IP blocklist, anomaly scoring
 - **CSRF** — double-submit cookie on all state-changing endpoints
@@ -74,6 +79,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 ## HIPAA Compliance & Data Protection
 
 - **Audit log HMAC chain** — HMAC-SHA256 with app secret (not raw SHA-256), mutex-protected writes, S3 write retry with backoff (F-11)
+- **Audit log immutability** — optional S3 Object Lock COMPLIANCE mode (`AUDIT_OBJECT_LOCK=true`), 6-year HIPAA minimum retention floor enforced via `Math.max`
 - **Login audit trail** — successful logins logged via `logAuditEvent` (HIPAA §164.308(a)(5)(ii)(C)) (F-04)
 - **PHI redaction** — 14 HIPAA identifiers, deep recursive traversal, applied to query logs/traces/feedback/audit
 - **Data retention** — automated cleanup (audit 7yr, query logs 1yr, traces 90d), HIPAA floor enforcement via Math.max
@@ -84,10 +90,12 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Sentry integration** — PHI-safe error tracking (8 scrubbing patterns)
 - **Insurance card OCR audit trail** — immediate rawText redaction after extraction
 - **Frontend idle timeout** — 15-min auto-logout with 2-min warning, full-viewport overlay
+- **Field encryption startup warning** — `logger.warn` when `FIELD_ENCRYPTION_KEY` is not set, alerting operators that MFA secrets are stored in plaintext
+- **Operational alerting** — `alertService.ts`: email alerts for audit write drops, reindex failures, ingestion errors. 1-hour throttle per category. Configurable via `ALERT_EMAIL`
 
 ## Reference Data & Medical Codes
 
-- **HCPCS lookup** — 332 real DME codes across 25 categories
+- **HCPCS lookup** — 334 real DME codes across 25 categories
 - **ICD-10 to HCPCS crosswalk** — 66 diagnosis codes, 116+ mappings, forward/reverse lookup
 - **LCD coverage checklists** — 8 CMS LCDs with per-item required/optional flags and validation
 - **PMD product catalog** — 22 products with images, brochures, weight capacities, seat types
@@ -106,6 +114,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Seating eval guards** — numeric armStrength comparison with NaN guard, word-boundary MRADL classification
 - **Weight range validation** — 70-700 lbs with NaN guards
 - **Forms tab** — sub-navigation housing PPD, PMD Account, PAP Account, PPD Queue
+- **Email URL protocol validation** — product imageUrl/brochureUrl require `http://` or `https://` before rendering in email HTML templates
 
 ## Observability & Analytics
 
@@ -129,18 +138,24 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Race condition fixes** — vector store init lock, day-boundary double-check pattern, atomic usage tracking
 - **Docker** — multi-stage build, tini init, non-root user (UID 1000), health check
 - **Blue-green deployment** — staging port health check, ~2s downtime, automatic rollback on failure
-- **CI/CD** — GitHub Actions: lint + type-check + tests + coverage + deploy, Dependabot weekly updates
+- **CI/CD** — GitHub Actions: TruffleHog secret scanning, axe-core WCAG 2.0 A+AA accessibility audit, lint + type-check + tests + coverage + deploy, Dependabot weekly updates
+- **Shared mutex consolidation** — queryLog, ragTrace, usage services migrated from inline `ensurePromise` pattern to `createOnceLock()` from asyncMutex.ts
+- **OpenTelemetry span instrumentation** — custom spans for `rag.generation.stream` (query.ts), `ingestion.extract_text`, `ingestion.embed`, `ingestion.store_chunks` (ingestion.ts). Combined with auto-instrumentation (HTTP/Express) for full distributed tracing when `OTEL_ENABLED=true`
+- **Embedding model evaluation script** — `scripts/evalEmbeddings.ts`: side-by-side Titan vs Cohere comparison with recall@K, MRR, keyword coverage report
 - **Error monitoring** — GitHub Actions workflow every 4 hours (Docker, HTTP, logs, disk, DB, memory)
 - **OpenAPI spec** — 50+ endpoints, 11 tags, reusable schemas
+- **HNSW index migration** — `009_hnsw_index.sql` replaces IVFFlat with HNSW for better recall without periodic REINDEX (m=16, ef_construction=64)
 
 ## Frontend
 
 - **Streaming SSE** — ref-based pattern (not nested setState), 2MB buffer cap, 120s timeout, AbortController cancellation
 - **CSS variables design system** — 60+ tokens, light/dark themes, semantic status/confidence colors
+- **Responsive layout** — tablet breakpoint (900px): icon-only tabs, compact header, hidden user badge name/role. Mobile breakpoint (640px): stacked header, full-width sections, wrapped tabs with labels
 - **Accessibility** — ARIA labels, focus traps in modals, `role="dialog"`, `aria-pressed` on feedback
 - **Error boundaries** — wraps all tab content and LoginForm
 - **Idle timeout** — 15-min auto-logout with full-viewport interaction blocker
-- **Auto-logout** on 401 responses, SSE stream cancellation on logout
+- **Silent token refresh** — 401 responses trigger automatic refresh token exchange before login redirect (both request() and SSE streaming paths), with coalesced concurrent attempts
+- **Auto-logout** on 401 responses (after refresh failure), SSE stream cancellation on logout
 - **Healthcare blue palette** — hexagonal/molecular background pattern
 - **Loading skeletons** — shimmer animation, search hints, empty states
 - **Toast notifications** — Heroicons with semantic CSS variable theming
@@ -151,4 +166,4 @@ Consolidated history of improvements, grouped by category. For architectural det
 
 ## Test Coverage
 
-725 tests across 49 files (vitest). Key coverage areas: vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion, audit, embeddings, dimension validation, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests (documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, s3Storage). CI thresholds: 50% lines, 40% branches.
+930 tests across 58 files (vitest). Key coverage areas: vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion, audit, embeddings, dimension validation, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, RAG evaluation metrics, E2E auth (supertest: login/cookies/CSRF/refresh/revocation/logout), and route-level tests (documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, s3Storage). CI thresholds: 50% lines, 40% branches.

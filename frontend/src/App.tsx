@@ -179,7 +179,7 @@ export default function App() {
                     style={activeTab === t.key ? styles.tabActive : styles.tab}
                   >
                     <Icon className="w-4 h-4" />
-                    {t.label}
+                    <span>{t.label}</span>
                   </button>
                 );
               })}
@@ -198,8 +198,8 @@ export default function App() {
           </button>
           <div style={styles.userBadge}>
             <div style={styles.avatar}>{auth.user?.username?.charAt(0).toUpperCase()}</div>
-            <span style={styles.user}>{auth.user?.username}</span>
-            <span style={styles.roleBadge}>{auth.user?.role}</span>
+            <span style={styles.user} className="user-badge-name">{auth.user?.username}</span>
+            <span style={styles.roleBadge} className="user-badge-role">{auth.user?.role}</span>
           </div>
           <button onClick={logout} style={styles.logoutButton} title="Sign out">
             <ArrowRightStartOnRectangleIcon className="w-4 h-4 inline-block mr-1 -mt-0.5" />

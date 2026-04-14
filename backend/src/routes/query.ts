@@ -920,7 +920,9 @@ router.post('/stream', authenticate, queryLimiter, async (req: AuthRequest, res:
       }),
     });
 
-    const bedrockResponse = await bedrockCircuitBreaker.execute(() => bedrockClient.send(command));
+    const bedrockResponse = await withSpan('rag.generation.stream', { model: BEDROCK_GENERATION_MODEL }, async () => {
+      return bedrockCircuitBreaker.execute(() => bedrockClient.send(command));
+    });
 
     let fullAnswer = '';
     let streamInputTokens: number | undefined;

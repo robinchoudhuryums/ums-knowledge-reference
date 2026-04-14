@@ -9,7 +9,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Runtime**: Node.js + Express + TypeScript
 - **Entry**: `backend/src/server.ts`
 - **Key services** (`backend/src/services/`):
-  - `ingestion.ts` — Full pipeline: upload to S3 → extract text → vision describe images → chunk → embed → store in vector store. Mutex-protected index updates, chunk rollback on failure, content-hash deduplication, file extension whitelist.
+  - `ingestion.ts` — Full pipeline: upload to S3 → extract text → vision describe images → chunk → embed → store in vector store. Mutex-protected index updates, chunk rollback on failure, content-hash deduplication (race-safe verified check inside mutex), file extension whitelist.
   - `textExtractor.ts` — Extracts text from PDFs (pdf-parse + conditional Textract OCR based on word count), DOCX, XLSX, CSV, HTML
   - `visionExtractor.ts` — Sends PDFs to Haiku 4.5 via Bedrock Converse API to describe images/diagrams
   - `ocr.ts` — AWS Textract OCR (sync for images, async for multi-page PDFs). 5-minute hard timeout, transient error retry (3 attempts), 100ms pagination delay.
@@ -24,6 +24,8 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `usage.ts` — Per-user daily query limits with rollback on failed queries
   - `queryLog.ts` — Query analytics with CSV export
   - `ragTrace.ts` — Per-query RAG observability tracing (retrieval scores, timing, confidence)
+  - `ragMetrics.ts` — Retrieval evaluation metrics: recall@K, MRR, keyword coverage, formatted report output
+  - `alertService.ts` — Operational email alerts for critical failures (audit write drops, reindex failures, ingestion errors). Throttled to 1 alert/hour per category. Configurable via ALERT_EMAIL.
   - `faqAnalytics.ts` — FAQ pattern detection from query logs
   - `feedback.ts` — User feedback/flagging service
   - `formAnalyzer.ts` — CMN form analysis with blank detection and confidence scoring
@@ -50,7 +52,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `incidentResponse.ts` — Formal IRP (HIPAA §164.308): 7-phase lifecycle (detection → triage → containment → eradication → recovery → post-incident → closed), severity classification (P1-P4), escalation contacts, response procedures with time targets, action items
   - `vulnerabilityScanner.ts` — Automated daily security audits: JWT_SECRET strength, AWS creds, DATABASE_URL, S3_BUCKET, SSL enforcement, npm audit. Admin risk acceptance, scan history capped at 10 reports
 - **Middleware** (`backend/src/middleware/`):
-  - `auth.ts` — JWT authentication (httpOnly cookies), MFA (TOTP), account lockout (async IIFE check + lockout cache for S3 outage resilience), password history, revokeAllUserTokens on all password reset/change paths, service-to-service API key auth (X-API-Key header with timing-safe comparison for CallAnalyzer integration)
+  - `auth.ts` — JWT authentication (httpOnly cookies), MFA (TOTP), account lockout (async IIFE check + lockout cache for S3 outage resilience), password history, revokeAllUserTokens on all password reset/change paths, refresh tokens (7-day httpOnly cookie with S3-backed revocation persistence), service-to-service API key auth (X-API-Key header with timing-safe comparison for CallAnalyzer integration)
   - `waf.ts` — Application-level WAF: 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF patterns, IP blocklist (permanent + temporary), anomaly scoring with sliding window + auto-block, input truncation (4KB) prevents regex DoS
 - **Utilities** (`backend/src/utils/`):
   - `sentry.ts` — Sentry error tracking with PHI-safe scrubbing (8 patterns). Strips request bodies, cookies, query strings. No-op when SENTRY_DSN not set
@@ -84,7 +86,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index), `003_add_fk_indexes.sql` (indexes on FK columns: usage_records, audit_logs, query_logs, feedback, jobs by user_id + partial index on documents where status='ready'), `004_add_foreign_keys.sql` (FK constraints on 12 columns across 9 tables: RESTRICT on audit/log tables for HIPAA preservation, CASCADE on chunks/usage/jobs), `005_fix_user_id_default.sql` (replaces predictable timestamp-based user ID default with `gen_random_uuid()`)
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): 894 total tests across 56 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
+- **Tests** (`backend/src/__tests__/`): 911 total tests across 57 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
 - **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`
 
 ### Frontend (`frontend/`)
@@ -118,7 +120,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `Toast.tsx` — Toast notification system with Heroicon status icons and semantic CSS variable theming
   - `ConfirmDialog.tsx` — Modal confirmation dialog with danger variant, Escape key dismiss, auto-focus management
 - **Hooks**: `frontend/src/hooks/useAuth.ts` (login/logout with stream cancellation), `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout with full-viewport interaction blocker)
-- **API client**: `frontend/src/services/api.ts` (AbortController-based stream cancellation, 2MB SSE buffer cap)
+- **API client**: `frontend/src/services/api.ts` (AbortController-based stream cancellation, 2MB SSE buffer cap, silent token refresh on 401)
 - **Types**: `frontend/src/types/index.ts`
 - **Styling**: CSS variables design system (`index.css`) with 60+ tokens for light/dark themes including semantic status colors (success/error/warning/info with light/border/text variants) and confidence colors (high/partial/low with background/border variants). Tailwind CSS v4 for utility classes. Healthcare blue palette with hexagonal/molecular background pattern. Dark mode via `class="dark"` on `<html>` with localStorage persistence and system preference detection.
 - **Icons**: Heroicons (`@heroicons/react/24/outline`) for standard UI, Lucide React (`lucide-react`) for medical icons (Brain logo, Stethoscope for clinical tab)
@@ -184,7 +186,7 @@ When making improvements to this codebase, update `OBSERVATORY_PORT_LOG.md` to t
 ## Deployment
 - **Docker**: Multi-stage build, `node:20.19.0-slim`, tini init, non-root user, health check
 - **Blue-green deploy**: `deploy-bluegreen.sh` — starts new container on staging port (3002), health-checks, then swaps to production port (3001). ~2s downtime vs ~30s with standard deploy. Rollback: `docker stop ums-knowledge && docker rename ums-knowledge-old ums-knowledge && docker start ums-knowledge`
-- **CI/CD**: `.github/workflows/ci.yml` — backend lint + type-check + tests + coverage, frontend type-check + build, deploy via SSH with blue-green strategy
+- **CI/CD**: `.github/workflows/ci.yml` — TruffleHog secret scanning, backend lint + type-check + tests + coverage, frontend type-check + build, deploy via SSH with blue-green strategy
 - **Error monitoring**: `.github/workflows/error-monitor.yml` — checks Docker status, HTTP health, error logs, disk, DB connectivity, memory every 4 hours. Auto-creates GitHub Issues.
 
 ## Environment Variables (not in .env.example)
@@ -221,6 +223,9 @@ OTEL_EXPORTER_OTLP_ENDPOINT    # OTLP collector URL
 PPD_BCC_EMAIL                   # BCC on PPD form emails
 PMD_BCC_EMAIL                   # BCC on PMD Account Creation emails (falls back to PPD_BCC_EMAIL)
 PAP_BCC_EMAIL                   # BCC on PAP Account Creation emails (falls back to PPD_BCC_EMAIL)
+
+# Operational alerting (optional)
+ALERT_EMAIL                     # Recipient for operational alerts (defaults to SMTP_FROM/SMTP_USER)
 ```
 
 ## Recent Changes
@@ -244,6 +249,7 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/auth/users` | Admin | Create user |
 | POST | `/api/auth/forgot-password` | None | Request password reset code (rate-limited) |
 | POST | `/api/auth/reset-password` | None | Reset password with code (rate-limited) |
+| POST | `/api/auth/refresh` | None | Refresh access token using refresh cookie |
 | POST | `/api/auth/mfa/setup` | User | Initialize MFA TOTP setup |
 | POST | `/api/auth/mfa/verify` | User | Verify MFA code and enable |
 | POST | `/api/auth/mfa/disable` | User | Disable MFA |
@@ -316,7 +322,7 @@ PHI Protection, Authentication & Authorization Integrity, RAG Retrieval Quality,
 
 ## Subsystems
 RAG Query Pipeline:
-services/vectorStore.ts, services/embeddings.ts, services/embeddingProvider.ts, services/titanEmbeddingProvider.ts, services/cohereEmbeddingProvider.ts, services/chunker.ts, services/referenceEnrichment.ts, services/abTesting.ts, db/vectorStore.ts, routes/query.ts
+services/vectorStore.ts, services/embeddings.ts, services/embeddingProvider.ts, services/titanEmbeddingProvider.ts, services/cohereEmbeddingProvider.ts, services/chunker.ts, services/referenceEnrichment.ts, services/abTesting.ts, services/ragMetrics.ts, db/vectorStore.ts, routes/query.ts
 
 ## Document Ingestion & Lifecycle:
 services/ingestion.ts, services/textExtractor.ts, services/visionExtractor.ts, services/ocr.ts, services/s3Storage.ts, services/sourceMonitor.ts, services/feeScheduleFetcher.ts, services/reindexer.ts, services/orphanCleanup.ts, routes/documents.ts, routes/sourceMonitor.ts
@@ -337,7 +343,7 @@ services/hcpcsLookup.ts, services/icd10Mapping.ts, services/coverageChecklists.t
 services/ppdQuestionnaire.ts, services/seatingEvaluation.ts, services/ppdQueue.ts, services/accountCreation.ts, services/papAccountCreation.ts, services/insuranceCardReader.ts, services/emailService.ts, services/productImageResolver.ts, utils/htmlEscape.ts, routes/ppd.ts, routes/accountCreation.ts, routes/papAccountCreation.ts, routes/productImages.ts
 
 ## Observability & Analytics:
-services/ragTrace.ts, services/queryLog.ts, services/faqAnalytics.ts, services/usage.ts, services/feedback.ts, utils/metrics.ts, routes/queryLog.ts, routes/feedback.ts, routes/usage.ts, routes/abTesting.ts, routes/errors.ts
+services/ragTrace.ts, services/queryLog.ts, services/faqAnalytics.ts, services/usage.ts, services/feedback.ts, services/alertService.ts, utils/metrics.ts, routes/queryLog.ts, routes/feedback.ts, routes/usage.ts, routes/abTesting.ts, routes/errors.ts
 
 ## Infrastructure — Data & Storage Layer:
 config/aws.ts, config/database.ts, config/migrate.ts, db/index.ts, db/users.ts, db/documents.ts, cache/interfaces.ts, cache/memoryCache.ts, cache/redisCache.ts, cache/index.ts, storage/interfaces.ts, storage/s3DocumentStore.ts, storage/s3MetadataStore.ts, storage/index.ts, types/index.ts, types/declarations.d.ts
@@ -362,7 +368,7 @@ INV-07 | On ingestion failure after chunks written, chunks must be rolled back (
 INV-08 | Content-hash deduplication must reject identical SHA-256 uploads in same collection | Subsystem: Ingestion
 INV-09 | HIPAA retention floors enforced via Math.max (audit >= 6yr) even if env vars set lower | Subsystem: HIPAA Compliance
 INV-10 | All URL downloads must validate via SSRF prevention (block private IPs, localhost, metadata) | Subsystem: Server & Utilities
-INV-11 | CSRF double-submit cookie enforced on all POST/PUT/DELETE except login and health | Subsystem: Server & Utilities
+INV-11 | CSRF double-submit cookie enforced on all POST/PUT/DELETE except login, forgot-password, reset-password, refresh, and health | Subsystem: Server & Utilities
 INV-12 | revokeAllUserTokens() must be called on password reset to invalidate existing sessions | Subsystem: Auth & Security
 INV-13 | JWT jti claims must use crypto.randomUUID(), never predictable values | Subsystem: Auth & Security
 INV-14 | Extraction route error messages must not expose internal AWS/Bedrock details | Subsystem: Extraction

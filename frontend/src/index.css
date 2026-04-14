@@ -370,32 +370,45 @@ tr:hover td {
     padding: 16px !important;
   }
   /* Header: hide tab labels on tablet, show icons only */
-  header nav button span:not(.sr-only) {
+  header nav button span {
     display: none;
   }
   header nav button {
     padding: 6px 10px !important;
+    min-width: 36px;
+    justify-content: center;
   }
-  /* Compact user badge */
+  /* Compact user badge — hide name and role, keep avatar */
   .user-badge-name,
   .user-badge-role {
     display: none;
+  }
+  /* Compact header spacing */
+  header > div:first-child {
+    gap: 12px !important;
   }
 }
 
 /* Responsive: mobile */
 @media (max-width: 640px) {
-  /* Header: wrap nav tabs, stack logo above nav */
+  /* Header: stack vertically */
   header {
     flex-wrap: wrap;
     height: auto !important;
     padding: 8px 12px !important;
     gap: 6px;
   }
-  /* Let left/right sections wrap to full width */
-  header > div {
-    flex-wrap: wrap;
+  /* Let left/right sections take full width */
+  header > div:first-child {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px !important;
   }
+  header > div:last-child {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  /* Nav tabs wrap into a second row */
   header nav {
     flex-wrap: wrap;
     gap: 2px;
@@ -403,13 +416,14 @@ tr:hover td {
     width: 100%;
     justify-content: center;
   }
+  /* Show compact tab labels on mobile (they fit when wrapped) */
+  header nav button span {
+    display: inline;
+  }
   header nav button {
     font-size: 11px !important;
     padding: 4px 8px !important;
-  }
-  /* Show tab labels on mobile since there's room when wrapped */
-  header nav button span:not(.sr-only) {
-    display: inline;
+    min-width: unset;
   }
   /* Admin dashboard */
   .admin-grid {

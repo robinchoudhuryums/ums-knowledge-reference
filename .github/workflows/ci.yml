@@ -200,6 +200,12 @@ jobs:
             STAGING_NAME="ums-knowledge-staging"
             docker rm -f "$STAGING_NAME" 2>/dev/null || true
 
+            # Pre-flight diagnostics
+            echo "=== Pre-deploy diagnostics ==="
+            df -h / | tail -1
+            docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | head -10
+            echo "==="
+
             docker run -d \
               --name "$STAGING_NAME" \
               --restart no \
@@ -208,20 +214,36 @@ jobs:
               -p 3002:3001 \
               "$NEW_TAG"
 
-            # Health check staging container (up to 30s)
+            # Health check staging container (up to 60s — covers cold-start with
+            # migrations, vector store load, and DB connection retries)
             HEALTHY=false
-            for i in $(seq 1 30); do
+            for i in $(seq 1 60); do
               if curl -sf http://localhost:3002/api/health > /dev/null 2>&1; then
                 HEALTHY=true
                 echo "Staging healthy after ${i}s"
                 break
               fi
+              # At 15s, dump partial logs to help diagnose slow-start issues
+              if [ "$i" = "15" ]; then
+                echo "=== Staging still not healthy at 15s — partial logs: ==="
+                docker logs --tail 40 "$STAGING_NAME" 2>&1 || true
+                echo "=== Container status: ==="
+                docker ps -a --filter "name=$STAGING_NAME" --format 'table {{.Names}}\t{{.Status}}'
+                echo "==="
+              fi
               sleep 1
             done
 
             if [ "$HEALTHY" != "true" ]; then
-              echo "ERROR: Staging health check failed — old container still serving"
-              docker logs --tail 30 "$STAGING_NAME" 2>/dev/null || true
+              echo "::error::ERROR: Staging health check failed after 60s — old container still serving"
+              echo "=== Full staging container logs (last 200 lines) ==="
+              docker logs --tail 200 "$STAGING_NAME" 2>&1 || true
+              echo "=== Container inspect (exit code, status) ==="
+              docker inspect "$STAGING_NAME" --format 'Status: {{.State.Status}} | ExitCode: {{.State.ExitCode}} | OOM: {{.State.OOMKilled}} | Error: {{.State.Error}}' 2>&1 || true
+              echo "=== Disk space ==="
+              df -h /
+              echo "=== Docker images (for image-size debugging) ==="
+              docker images --format 'table {{.Repository}}:{{.Tag}}\t{{.Size}}' | head -10
               docker rm -f "$STAGING_NAME" 2>/dev/null || true
               exit 1
             fi

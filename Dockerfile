@@ -4,14 +4,18 @@
 FROM node:20.19.0-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# --legacy-peer-deps: use npm 6's lenient peer-dependency resolver.
+# The bundled npm 10.8.2 in node:20.19.0-slim is stricter about ERESOLVE
+# than the npm shipped with actions/setup-node@v6 in CI, which caused
+# `npm ci` to succeed in CI but fail during Docker build with ERESOLVE.
+RUN npm ci --legacy-peer-deps
 COPY frontend/ ./
 RUN npm run build
 
 FROM node:20.19.0-slim AS backend-build
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
 RUN npm run build
@@ -26,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tini curl \
 
 # Copy backend build + production dependencies
 COPY backend/package.json backend/package-lock.json ./backend/
-RUN cd backend && npm ci --omit=dev
+RUN cd backend && npm ci --omit=dev --legacy-peer-deps
 
 COPY --from=backend-build /app/backend/dist ./backend/dist
 

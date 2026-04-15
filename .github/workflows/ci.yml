@@ -183,14 +183,46 @@ jobs:
             git checkout main
             git pull origin main
 
+            # --- Pre-build cleanup: free disk space from previous failed deploys ---
+            # Accumulation from failed deploys (where the success-path prune never ran)
+            # can fill the disk and cause `npm ci` to fail during build.
+            echo "=== Pre-build disk and cleanup ==="
+            df -h / | tail -1
+            # Remove ALL ums-knowledge tagged images EXCEPT :latest (current prod container
+            # uses :latest as fallback; the new build will re-tag as both :latest and :SHA).
+            docker images --format '{{.Repository}}:{{.Tag}}' | grep '^ums-knowledge:' | grep -v ':latest$' | xargs -r docker rmi -f 2>&1 | tail -5 || true
+            # Remove dangling images (intermediate build layers no longer referenced)
+            docker image prune -f 2>&1 | tail -3 || true
+            # Remove stopped containers (staging containers from failed deploys)
+            docker container prune -f 2>&1 | tail -3 || true
+            # Remove unused volumes (build caches, test volumes)
+            docker volume prune -f 2>&1 | tail -3 || true
+            # Remove unused networks
+            docker network prune -f 2>&1 | tail -3 || true
+            df -h / | tail -1
+
+            # Fail fast if disk is still critically low after cleanup
+            AVAIL_KB=$(df -k / | tail -1 | awk '{print $4}')
+            if [ "$AVAIL_KB" -lt 2097152 ]; then
+              echo "::error::Less than 2GB free disk space after cleanup — manual intervention needed"
+              df -h /
+              docker images --format 'table {{.Repository}}:{{.Tag}}\t{{.Size}}' | head -20
+              exit 1
+            fi
+            echo "==="
+
             # Build new image with a unique tag for rollback support
             NEW_TAG="ums-knowledge:$(git rev-parse --short HEAD)"
             docker build -t "$NEW_TAG" -t ums-knowledge:latest .
 
             # Guard: fail if image exceeds 500MB (catches accidental bloat)
-            SIZE=$(docker image inspect "$NEW_TAG" --format='{{.Size}}')
+            SIZE=$(docker image inspect "$NEW_TAG" --format='{{.Size}}' 2>/dev/null || echo 0)
             SIZE_MB=$((SIZE / 1048576))
             echo "Image size: ${SIZE_MB}MB"
+            if [ "$SIZE" = "0" ]; then
+              echo "::error::Docker build failed — no image produced"
+              exit 1
+            fi
             if [ "$SIZE" -gt 524288000 ]; then
               echo "::error::Docker image is ${SIZE_MB}MB (>500MB) — check for unnecessary files"
               exit 1

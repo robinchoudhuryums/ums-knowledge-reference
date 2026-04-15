@@ -19,11 +19,12 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Conversation history validation** — 20-turn and 50K-char budgets
 - **Conversation memory with summarization** — older turns summarized, recent 4 kept verbatim
 - **Structured reference enrichment** — auto-detects HCPCS/ICD-10 codes and coverage keywords, injects structured data into RAG context
-- **Prompt caching** — `cache_control: ephemeral` on all Bedrock system prompt blocks (90% cached token savings)
+- **Prompt caching** — `cache_control: ephemeral` on all Bedrock generation InvokeModel calls *and* Converse `cachePoint` on vision extractor (90% cached token savings). Coverage extended in a follow-up to include `abTesting.ts`, `crossEncoderRerank.ts`, and `visionExtractor.ts` — closes a prior INV-05 gap where only `query.ts`, `documentExtractor.ts`, `clinicalNoteExtractor.ts`, and `insuranceCardReader.ts` had the directive. Embedding models (Titan/Cohere) are exempt — they do not support prompt caching.
 - **Embedding model abstraction** — `EmbeddingProvider` interface, swappable providers, dimension tracking in index
 - **Embedding dimension validation** — mismatch detection on init, `reindexAllEmbeddings()` migration path
 - **NaN guards** on combined retrieval scores in both S3 and pgvector paths (INV-27), MIN_SCORE_THRESHOLD 0.15, default topK raised to 8
-- **Retrieval evaluation metrics** — `ragMetrics.ts`: recall@K, MRR, keyword coverage, formatted report output. 25 gold-standard Q&A pairs in `ragEvaluation.test.ts`
+- **Retrieval evaluation metrics** — `ragMetrics.ts`: recall@K, MRR, keyword coverage, formatted report output
+- **Gold-standard RAG eval harness** — 51 Q&A pairs in `evalData/goldStandardRag.json` (validating loader at `evalData/loader.ts`), shape tests in `__tests__/goldStandardEval.test.ts`, CI-runnable harness `scripts/evalRag.ts` emits `eval-output/junit.xml` + `results.json` and exits non-zero when average recall@10 or MRR falls below configurable thresholds (RAG_EVAL_RECALL_THRESHOLD / RAG_EVAL_MRR_THRESHOLD)
 - **Embedding cache write logging** — `.catch(() => {})` replaced with `logger.warn` for cost visibility
 - **Chunk content dedup with embedding reuse** — SHA-256 hash per chunk, reuses existing pgvector embeddings
 - **Configurable charsPerToken ratio** — 3.5 for medical docs, 3.8 for forms, 4.0 default
@@ -63,6 +64,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Lockout cache** — prevents fail-open on S3 outage
 - **Password history** — prevents reuse of last 5 passwords
 - **MFA (TOTP)** — with recovery codes
+- **MFA recovery code TOCTOU fix** — per-username login mutex in `auth.ts` serializes read-modify-save of the users list during login; two concurrent login attempts can no longer both consume the same recovery code (regression test in `__tests__/mfaRecoveryTocTou.test.ts`). In-process only — multi-instance deploys would need Redis (INV-28)
 - **JWT jti** — `crypto.randomUUID()` (not predictable values)
 - **Token revocation** — `revokeAllUserTokens()` called on all password reset paths (admin reset, self-service reset via code, password change) per INV-12
 - **Refresh tokens** — 7-day httpOnly refresh cookie (`ums_refresh_token`, scoped to `/api/auth/refresh`), silent 401 retry on frontend (both request() and SSE streaming), `POST /api/auth/refresh` endpoint
@@ -72,6 +74,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **CSRF** — double-submit cookie on all state-changing endpoints
 - **SSRF prevention** — `urlValidation.ts` blocks private IPs, localhost, cloud metadata
 - **Rate limiting** — per-endpoint limits (query 30/15min, forms 10/15min, email 5/15min)
+- **Session-expired event (no-reload logout)** — frontend 401 handler dispatches a `SESSION_EXPIRED_EVENT` instead of calling `window.location.reload()`; `useAuth` listens and transitions to LoginForm without losing React state or in-memory form drafts (H7)
 - **Vulnerability scanner** — daily automated security audits
 - **Incident response plan** — HIPAA 164.308, 7-phase lifecycle, escalation contacts
 - **User management** — admin CRUD, role updates, force password reset, lastLogin tracking
@@ -91,7 +94,11 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Insurance card OCR audit trail** — immediate rawText redaction after extraction
 - **Frontend idle timeout** — 15-min auto-logout with 2-min warning, full-viewport overlay
 - **Field encryption startup warning** — `logger.warn` when `FIELD_ENCRYPTION_KEY` is not set, alerting operators that MFA secrets are stored in plaintext
-- **Operational alerting** — `alertService.ts`: email alerts for audit write drops, reindex failures, ingestion errors. 1-hour throttle per category. Configurable via `ALERT_EMAIL`
+- **Operational alerting** — `alertService.ts`: email alerts for audit write drops, reindex failures, ingestion errors, source staleness, malware scanner unavailability. 1-hour throttle per category. Configurable via `ALERT_EMAIL`
+- **Malware scan fail-closed** — `utils/malwareScan.ts` now throws `MalwareScanUnavailableError` when `MALWARE_SCAN_ENABLED=true` and the ClamAV daemon is unreachable; the documents route returns 503 so uploads cannot silently bypass scanning. Availability check is time-boxed to 60s (was cached indefinitely) so a recovered daemon rejoins automatically. Opt-out via `MALWARE_SCAN_FAIL_CLOSED=false` (dev only). Operational alert fired via `alertService` (INV-29, H5)
+- **Source staleness audit** — `services/sourceMonitor.ts` `auditStaleSources()` runs daily and flags sources that haven't produced fresh content in longer than their configured `expectedUpdateCadenceDays`. Sends a `source_stale` operational alert with a per-source 24h throttle. Admin endpoints `GET /api/sources/staleness` (read-only) and `POST /api/sources/audit-staleness` (triggers alerts)
+- **Human-in-the-loop extraction correction** — `services/extractionFeedback.ts` stores reviewer per-field corrections + overall quality rating as an append-only S3 audit record. Admin endpoint `GET /api/extraction/corrections-stats` exposes aggregate accuracy + LLM overconfidence rate
+- **Server-side form drafts** — `services/formDrafts.ts` + `/api/form-drafts/*` endpoints provide cross-device partial save/resume for PPD, PMD Account, and PAP Account forms. 2MB payload guard, user-scoped ACL on load, debounced 2s auto-save on the frontend via `useFormDraft` hook
 
 ## Reference Data & Medical Codes
 
@@ -166,4 +173,4 @@ Consolidated history of improvements, grouped by category. For architectural det
 
 ## Test Coverage
 
-930 tests across 58 files (vitest). Key coverage areas: vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion, audit, embeddings, dimension validation, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, RAG evaluation metrics, E2E auth (supertest: login/cookies/CSRF/refresh/revocation/logout), and route-level tests (documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, s3Storage). CI thresholds: 50% lines, 40% branches.
+979 tests across 66 files (vitest). Recent additions: malware fail-closed (`malwareScan.test.ts`), token revocation + INV-12 integration (`tokenRevocation.test.ts`), MFA recovery code TOCTOU regression (`mfaRecoveryTocTou.test.ts`), real-chunker ingestion lifecycle with dedup + rollback (`ingestionLifecycle.test.ts`), extraction feedback store (`extractionFeedback.test.ts`), form drafts service (`formDrafts.test.ts`), source staleness audit + alerting (`sourceStaleness.test.ts`), gold-standard eval dataset shape + scoring (`goldStandardEval.test.ts`). Ongoing coverage: vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion, audit, embeddings, dimension validation, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, RAG evaluation metrics, E2E auth (supertest: login/cookies/CSRF/refresh/revocation/logout), and route-level tests (documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, s3Storage). CI thresholds: 50% lines, 40% branches.

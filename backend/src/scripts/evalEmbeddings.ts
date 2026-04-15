@@ -25,71 +25,12 @@ import { EmbeddingProvider } from '../services/embeddingProvider';
 import { searchVectorStore } from '../services/vectorStore';
 import { recallAtK, meanReciprocalRank, keywordCoverage, formatEvalReport } from '../services/ragMetrics';
 import { enrichQueryWithStructuredData } from '../services/referenceEnrichment';
+import { loadGoldStandard } from '../evalData/loader';
 import { logger } from '../utils/logger';
 
-// Gold-standard Q&A pairs (subset focused on retrieval, not static data lookups)
-const EVAL_PAIRS = [
-  {
-    question: 'What are the coverage criteria for home oxygen?',
-    category: 'coverage',
-    expectedKeywords: ['blood gas', 'SpO2', 'PaO2', 'CMN', 'face-to-face'],
-    expectedCodes: ['E0424', 'E1390'],
-  },
-  {
-    question: 'What documentation is required for CPAP approval?',
-    category: 'coverage',
-    expectedKeywords: ['sleep study', 'AHI', 'compliance', 'face-to-face'],
-    expectedCodes: ['E0601'],
-  },
-  {
-    question: 'What are the requirements for a hospital bed?',
-    category: 'coverage',
-    expectedKeywords: ['positioning', 'physician order', 'face-to-face'],
-    expectedCodes: ['E0260'],
-  },
-  {
-    question: 'What documentation do I need for a power mobility device?',
-    category: 'coverage',
-    expectedKeywords: ['face-to-face', 'mobility exam', '7-element order'],
-    expectedCodes: ['K0813'],
-  },
-  {
-    question: 'What SpO2 level qualifies a patient for home oxygen?',
-    category: 'clinical',
-    expectedKeywords: ['88', 'SpO2', 'pulse oximetry'],
-    expectedCodes: ['E0424'],
-  },
-  {
-    question: 'What AHI score is needed for CPAP coverage?',
-    category: 'clinical',
-    expectedKeywords: ['15', 'AHI', 'sleep study'],
-    expectedCodes: ['E0601'],
-  },
-  {
-    question: 'Which hospital bed for a 450-pound patient?',
-    category: 'equipment',
-    expectedKeywords: ['heavy duty', 'bariatric'],
-    expectedCodes: ['E0301', 'E0303'],
-  },
-  {
-    question: 'What is the difference between group 1 and group 2 power wheelchairs?',
-    category: 'equipment',
-    expectedKeywords: ['group 1', 'group 2'],
-    expectedCodes: ['K0813', 'K0820'],
-  },
-  {
-    question: 'What is a CMN and when is it required?',
-    category: 'billing',
-    expectedKeywords: ['certificate of medical necessity', 'physician'],
-    expectedCodes: [],
-  },
-  {
-    question: 'What are the LCD requirements for support surfaces?',
-    category: 'coverage',
-    expectedKeywords: ['pressure ulcer', 'wound'],
-    expectedCodes: ['E0277'],
-  },
-];
+// Gold-standard Q&A pairs loaded from evalData/goldStandardRag.json so the eval
+// harness, unit tests, and documentation stay in sync.
+const EVAL_PAIRS = loadGoldStandard().pairs;
 
 interface ModelResult {
   modelId: string;

@@ -8,6 +8,7 @@ import {
   removeMonitoredSource,
   forceCheckSource,
   checkAllDueSources,
+  auditStaleSources,
 } from '../services/sourceMonitor';
 import { logAuditEvent } from '../services/audit';
 import { logger } from '../utils/logger';
@@ -39,7 +40,7 @@ router.get('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respon
 // Add a new monitored source
 router.post('/', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
   try {
-    const { name, url, collectionId, checkIntervalHours, fileType, category } = req.body;
+    const { name, url, collectionId, checkIntervalHours, fileType, category, expectedUpdateCadenceDays } = req.body;
 
     if (!name || !url || !collectionId) {
       res.status(400).json({ error: 'name, url, and collectionId are required' });
@@ -62,6 +63,7 @@ router.post('/', authenticate, requireAdmin, adminWriteLimiter, async (req: Auth
       fileType,
       category,
       createdBy: req.user!.username,
+      expectedUpdateCadenceDays,
     });
 
     await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
@@ -85,7 +87,7 @@ router.post('/', authenticate, requireAdmin, adminWriteLimiter, async (req: Auth
 // Update a monitored source
 router.put('/:id', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
   try {
-    const { name, url, collectionId, checkIntervalHours, fileType, enabled, category } = req.body;
+    const { name, url, collectionId, checkIntervalHours, fileType, enabled, category, expectedUpdateCadenceDays } = req.body;
 
     const source = await updateMonitoredSource(req.params.id, {
       name,
@@ -95,6 +97,7 @@ router.put('/:id', authenticate, requireAdmin, adminWriteLimiter, async (req: Au
       fileType,
       enabled,
       category,
+      expectedUpdateCadenceDays,
     });
 
     await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
@@ -155,6 +158,60 @@ router.post('/:id/check', authenticate, requireAdmin, adminWriteLimiter, async (
     }
     logger.error('Force check failed', { error: String(error) });
     res.status(500).json({ error: 'Source check failed' });
+  }
+});
+
+// Audit sources for staleness (content older than expected update cadence).
+// Also triggers alerts via alertService, throttled per-source.
+router.post('/audit-staleness', authenticate, requireAdmin, adminWriteLimiter, async (req: AuthRequest, res: Response) => {
+  try {
+    const stale = await auditStaleSources();
+
+    await logAuditEvent(req.user!.id, req.user!.username, 'upload', {
+      action: 'source_staleness_audit',
+      staleCount: stale.length,
+      alerted: stale.filter(s => s.alertedNow).length,
+    });
+
+    res.json({ stale, total: stale.length });
+  } catch (error) {
+    logger.error('Staleness audit failed', { error: String(error) });
+    res.status(500).json({ error: 'Staleness audit failed' });
+  }
+});
+
+// Read-only staleness view — non-mutating, for dashboards.
+// Does NOT trigger alerts. Use POST /audit-staleness for that.
+router.get('/staleness', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const sources = await getMonitoredSources();
+    const now = Date.now();
+    const stale = sources
+      .filter(s => s.enabled && s.expectedUpdateCadenceDays && s.expectedUpdateCadenceDays > 0)
+      .map(s => {
+        const anchor = s.lastContentChangeAt || s.createdAt;
+        const ageMs = now - new Date(anchor).getTime();
+        const days = Number.isFinite(ageMs) ? Math.floor(ageMs / 86_400_000) : Infinity;
+        return {
+          sourceId: s.id,
+          name: s.name,
+          url: s.url,
+          expectedCadenceDays: s.expectedUpdateCadenceDays!,
+          daysSinceLastChange: days,
+          lastContentChangeAt: s.lastContentChangeAt,
+          lastCheckedAt: s.lastCheckedAt,
+          lastStalenessAlertAt: s.lastStalenessAlertAt,
+          isStale: days > s.expectedUpdateCadenceDays!,
+        };
+      });
+
+    res.json({
+      sources: stale,
+      staleCount: stale.filter(s => s.isStale).length,
+    });
+  } catch (error) {
+    logger.error('Staleness view failed', { error: String(error) });
+    res.status(500).json({ error: 'Staleness view failed' });
   }
 });
 
@@ -240,6 +297,9 @@ router.post('/seed-lcds', authenticate, requireAdmin, adminWriteLimiter, async (
           fileType: 'html',
           category: 'LCD',
           createdBy: req.user!.username,
+          // CMS updates LCDs quarterly on average; alert if 120 days pass
+          // without any content change — usually indicates a broken source URL.
+          expectedUpdateCadenceDays: 120,
         });
         added.push(lcd.name);
       } catch (err: unknown) {

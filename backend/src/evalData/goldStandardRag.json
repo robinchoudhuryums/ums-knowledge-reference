@@ -1,0 +1,319 @@
+{
+  "version": "1.0.0",
+  "description": "Gold-standard Q&A pairs for UMS RAG retrieval evaluation. Used by scripts/evalEmbeddings.ts and the CI RAG eval harness. Covers coverage criteria, clinical thresholds, equipment selection, billing, and safety — the categories operators actually query.",
+  "lastUpdated": "2026-04-15",
+  "pairs": [
+    {
+      "question": "What are the coverage criteria for home oxygen?",
+      "category": "coverage",
+      "expectedKeywords": ["blood gas", "SpO2", "PaO2", "CMN", "face-to-face"],
+      "expectedCodes": ["E0424", "E1390"]
+    },
+    {
+      "question": "What documentation is required for CPAP approval?",
+      "category": "coverage",
+      "expectedKeywords": ["sleep study", "AHI", "compliance", "face-to-face"],
+      "expectedCodes": ["E0601"]
+    },
+    {
+      "question": "What are the requirements for a hospital bed?",
+      "category": "coverage",
+      "expectedKeywords": ["positioning", "physician order", "face-to-face"],
+      "expectedCodes": ["E0260"]
+    },
+    {
+      "question": "What documentation do I need for a power mobility device?",
+      "category": "coverage",
+      "expectedKeywords": ["face-to-face", "mobility exam", "7-element order"],
+      "expectedCodes": ["K0813"]
+    },
+    {
+      "question": "What SpO2 level qualifies a patient for home oxygen?",
+      "category": "clinical",
+      "expectedKeywords": ["88", "SpO2", "pulse oximetry"],
+      "expectedCodes": ["E0424"]
+    },
+    {
+      "question": "What AHI score is needed for CPAP coverage?",
+      "category": "clinical",
+      "expectedKeywords": ["15", "AHI", "sleep study"],
+      "expectedCodes": ["E0601"]
+    },
+    {
+      "question": "Which hospital bed for a 450-pound patient?",
+      "category": "equipment",
+      "expectedKeywords": ["heavy duty", "bariatric"],
+      "expectedCodes": ["E0301", "E0303"]
+    },
+    {
+      "question": "What is the difference between group 1 and group 2 power wheelchairs?",
+      "category": "equipment",
+      "expectedKeywords": ["group 1", "group 2"],
+      "expectedCodes": ["K0813", "K0820"]
+    },
+    {
+      "question": "What is a CMN and when is it required?",
+      "category": "billing",
+      "expectedKeywords": ["certificate of medical necessity", "physician"],
+      "expectedCodes": []
+    },
+    {
+      "question": "What are the LCD requirements for support surfaces?",
+      "category": "coverage",
+      "expectedKeywords": ["pressure ulcer", "wound"],
+      "expectedCodes": ["E0277"]
+    },
+    {
+      "question": "What ICD-10 codes justify home oxygen equipment?",
+      "category": "coverage",
+      "expectedKeywords": ["hypoxemia", "COPD", "J44"],
+      "expectedCodes": ["E0424", "E1390"]
+    },
+    {
+      "question": "What documentation supports a claim for enteral nutrition?",
+      "category": "coverage",
+      "expectedKeywords": ["physician order", "nutritional assessment", "permanent"],
+      "expectedCodes": ["B4150", "B4153"]
+    },
+    {
+      "question": "What are the coverage requirements for pneumatic compression devices?",
+      "category": "coverage",
+      "expectedKeywords": ["lymphedema", "conservative therapy"],
+      "expectedCodes": ["E0650", "E0651"]
+    },
+    {
+      "question": "Which HCPCS code is used for a portable oxygen concentrator?",
+      "category": "billing",
+      "expectedKeywords": ["portable", "oxygen", "concentrator"],
+      "expectedCodes": ["E1392", "E1390"]
+    },
+    {
+      "question": "When is a BiPAP covered instead of a CPAP?",
+      "category": "clinical",
+      "expectedKeywords": ["BiPAP", "CPAP", "intolerance"],
+      "expectedCodes": ["E0470", "E0601"]
+    },
+    {
+      "question": "What are the face-to-face requirements for DME orders?",
+      "category": "coverage",
+      "expectedKeywords": ["face-to-face", "6 months", "physician"],
+      "expectedCodes": []
+    },
+    {
+      "question": "What is the difference between K0823 and K0813?",
+      "category": "equipment",
+      "expectedKeywords": ["K0823", "K0813", "group 2", "group 1"],
+      "expectedCodes": ["K0813", "K0823"]
+    },
+    {
+      "question": "What weight capacity is required for a bariatric wheelchair?",
+      "category": "equipment",
+      "expectedKeywords": ["bariatric", "weight capacity", "pound"],
+      "expectedCodes": ["K0006", "K0007"]
+    },
+    {
+      "question": "What are the documentation requirements for a walker or rollator?",
+      "category": "coverage",
+      "expectedKeywords": ["mobility", "physician", "gait"],
+      "expectedCodes": ["E0143", "E0147"]
+    },
+    {
+      "question": "When does Medicare cover a manual wheelchair?",
+      "category": "coverage",
+      "expectedKeywords": ["mobility", "home", "MRADL"],
+      "expectedCodes": ["K0001", "K0003"]
+    },
+    {
+      "question": "What respiratory tests are required for home oxygen qualification?",
+      "category": "clinical",
+      "expectedKeywords": ["arterial blood gas", "pulse oximetry", "PaO2"],
+      "expectedCodes": ["E0424"]
+    },
+    {
+      "question": "What is the coverage criterion for a nebulizer?",
+      "category": "coverage",
+      "expectedKeywords": ["nebulizer", "respiratory", "medication"],
+      "expectedCodes": ["E0570", "E0580"]
+    },
+    {
+      "question": "Which HCPCS code covers a tilt-in-space wheelchair?",
+      "category": "equipment",
+      "expectedKeywords": ["tilt", "positioning"],
+      "expectedCodes": ["E1161", "E1231"]
+    },
+    {
+      "question": "What are the requirements for a patient lift?",
+      "category": "coverage",
+      "expectedKeywords": ["transfer", "caregiver", "non-ambulatory"],
+      "expectedCodes": ["E0630", "E0635"]
+    },
+    {
+      "question": "When is a power wheelchair covered versus a scooter?",
+      "category": "equipment",
+      "expectedKeywords": ["scooter", "power wheelchair", "transfer"],
+      "expectedCodes": ["K0800", "K0813"]
+    },
+    {
+      "question": "What documentation is needed for a custom seat cushion?",
+      "category": "coverage",
+      "expectedKeywords": ["pressure", "skin integrity", "evaluation"],
+      "expectedCodes": ["E2601", "E2607"]
+    },
+    {
+      "question": "What ICD-10 codes support a CPAP claim?",
+      "category": "billing",
+      "expectedKeywords": ["G47.33", "obstructive sleep apnea"],
+      "expectedCodes": ["E0601"]
+    },
+    {
+      "question": "What is the compliance requirement for continued CPAP coverage?",
+      "category": "clinical",
+      "expectedKeywords": ["4 hours", "30 days", "compliance"],
+      "expectedCodes": ["E0601"]
+    },
+    {
+      "question": "Which HCPCS codes are needed for CPAP supplies?",
+      "category": "billing",
+      "expectedKeywords": ["mask", "tubing", "filter"],
+      "expectedCodes": ["A7030", "A7037", "A7038"]
+    },
+    {
+      "question": "When can a patient qualify for a second oxygen tank for portability?",
+      "category": "clinical",
+      "expectedKeywords": ["portability", "mobility", "outside home"],
+      "expectedCodes": ["E0431", "E1392"]
+    },
+    {
+      "question": "What are the LCD requirements for a group 3 power wheelchair?",
+      "category": "coverage",
+      "expectedKeywords": ["group 3", "neurological", "severe"],
+      "expectedCodes": ["K0835", "K0836"]
+    },
+    {
+      "question": "What is required to document medical necessity for a hospital bed with rails?",
+      "category": "coverage",
+      "expectedKeywords": ["safety", "positioning", "rails"],
+      "expectedCodes": ["E0271", "E0305"]
+    },
+    {
+      "question": "What are the PPD intake questions for power mobility assessment?",
+      "category": "forms",
+      "expectedKeywords": ["MRADL", "transfer", "weight", "home environment"],
+      "expectedCodes": []
+    },
+    {
+      "question": "When is a seat elevation system covered?",
+      "category": "equipment",
+      "expectedKeywords": ["seat elevation", "transfer", "reach"],
+      "expectedCodes": ["E2300"]
+    },
+    {
+      "question": "Which LCD governs respiratory assist devices?",
+      "category": "coverage",
+      "expectedKeywords": ["LCD", "respiratory assist", "L33800"],
+      "expectedCodes": ["E0470", "E0471"]
+    },
+    {
+      "question": "What is the coverage policy for a cough assist device?",
+      "category": "coverage",
+      "expectedKeywords": ["neuromuscular", "cough assist", "mechanical"],
+      "expectedCodes": ["E0482"]
+    },
+    {
+      "question": "What ICD-10 codes justify a manual wheelchair claim?",
+      "category": "billing",
+      "expectedKeywords": ["mobility", "impairment"],
+      "expectedCodes": ["K0001"]
+    },
+    {
+      "question": "What are the Medicare replacement rules for DME?",
+      "category": "billing",
+      "expectedKeywords": ["reasonable useful lifetime", "5 years", "replacement"],
+      "expectedCodes": []
+    },
+    {
+      "question": "How often should a CPAP mask be replaced?",
+      "category": "billing",
+      "expectedKeywords": ["90 days", "mask", "replacement"],
+      "expectedCodes": ["A7030", "A7034"]
+    },
+    {
+      "question": "What is a detailed written order and when is it required?",
+      "category": "billing",
+      "expectedKeywords": ["detailed written order", "DWO", "physician"],
+      "expectedCodes": []
+    },
+    {
+      "question": "What qualifies a patient for a group 2 single-power option wheelchair?",
+      "category": "equipment",
+      "expectedKeywords": ["group 2", "tilt or recline"],
+      "expectedCodes": ["K0835", "K0836"]
+    },
+    {
+      "question": "When does Medicare cover a high-flow oxygen system?",
+      "category": "coverage",
+      "expectedKeywords": ["high-flow", "severe hypoxemia"],
+      "expectedCodes": ["E1405", "E1406"]
+    },
+    {
+      "question": "What are the wound care documentation requirements?",
+      "category": "coverage",
+      "expectedKeywords": ["wound", "stage", "pressure ulcer"],
+      "expectedCodes": ["E0277"]
+    },
+    {
+      "question": "Which HCPCS code is used for a continuous glucose monitor receiver?",
+      "category": "billing",
+      "expectedKeywords": ["continuous glucose", "CGM"],
+      "expectedCodes": ["E2102", "K0554"]
+    },
+    {
+      "question": "What are the requirements for a negative pressure wound therapy pump?",
+      "category": "coverage",
+      "expectedKeywords": ["wound", "negative pressure", "stage"],
+      "expectedCodes": ["E2402"]
+    },
+    {
+      "question": "When is home enteral nutrition covered as permanent?",
+      "category": "coverage",
+      "expectedKeywords": ["90 days", "permanent", "enteral"],
+      "expectedCodes": ["B4150", "B4152"]
+    },
+    {
+      "question": "What is the difference between E0470 and E0471?",
+      "category": "equipment",
+      "expectedKeywords": ["E0470", "E0471", "backup rate"],
+      "expectedCodes": ["E0470", "E0471"]
+    },
+    {
+      "question": "What supplies are covered monthly for a ventilator patient?",
+      "category": "billing",
+      "expectedKeywords": ["ventilator", "tubing", "filter"],
+      "expectedCodes": ["E0465", "E0466"]
+    },
+    {
+      "question": "When is a power-operated vehicle (scooter) covered?",
+      "category": "coverage",
+      "expectedKeywords": ["scooter", "transfer", "mobility exam"],
+      "expectedCodes": ["K0800", "K0801"]
+    },
+    {
+      "question": "What ICD-10 codes justify a diabetic shoe claim?",
+      "category": "billing",
+      "expectedKeywords": ["diabetes", "diabetic foot"],
+      "expectedCodes": ["A5500"]
+    },
+    {
+      "question": "What is the documentation requirement for TENS unit coverage?",
+      "category": "coverage",
+      "expectedKeywords": ["chronic pain", "physician", "TENS"],
+      "expectedCodes": ["E0720", "E0730"]
+    },
+    {
+      "question": "When are manual wheelchair accessories covered?",
+      "category": "billing",
+      "expectedKeywords": ["accessory", "medically necessary"],
+      "expectedCodes": ["E2201", "E0973"]
+    }
+  ]
+}

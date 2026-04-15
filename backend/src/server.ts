@@ -62,6 +62,7 @@ import ppdRoutes from './routes/ppd';
 import accountCreationRoutes from './routes/accountCreation';
 import papAccountCreationRoutes from './routes/papAccountCreation';
 import productImageRoutes from './routes/productImages';
+import formDraftsRoutes from './routes/formDrafts';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -365,6 +366,9 @@ app.use('/api/account-creation', accountCreationRoutes);
 
 // PAP Account Creation routes
 app.use('/api/pap-account', papAccountCreationRoutes);
+
+// Form drafts — partial save/resume for PPD, PMD Account, PAP Account
+app.use('/api/form-drafts', formDraftsRoutes);
 
 // Product images (S3-backed)
 app.use('/api/products', productImageRoutes);

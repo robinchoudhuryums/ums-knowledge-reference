@@ -51,7 +51,21 @@ vi.mock('../middleware/auth', () => ({
     req.user = { id: 'user-1', username: 'testuser', role: 'user' };
     next();
   },
+  requireAdmin: (req: any, res: any, next: any) => {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+  },
   AuthRequest: {},
+}));
+
+// Mock extractionFeedback service — new HITL correction endpoints added to router
+vi.mock('../services/extractionFeedback', () => ({
+  submitExtractionCorrection: vi.fn(),
+  listExtractionCorrections: vi.fn(),
+  getExtractionCorrection: vi.fn(),
+  getExtractionQualityStats: vi.fn(),
 }));
 
 // Mock express-rate-limit to be a passthrough

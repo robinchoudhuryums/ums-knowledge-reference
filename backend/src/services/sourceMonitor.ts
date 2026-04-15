@@ -71,6 +71,7 @@ export async function addMonitoredSource(input: {
   fileType?: MonitoredSource['fileType'];
   category?: string;
   createdBy: string;
+  expectedUpdateCadenceDays?: number;
 }): Promise<MonitoredSource> {
   const sources = await getMonitoredSources();
 
@@ -85,6 +86,13 @@ export async function addMonitoredSource(input: {
     throw new Error('A source with this URL is already being monitored');
   }
 
+  if (
+    input.expectedUpdateCadenceDays !== undefined &&
+    (input.expectedUpdateCadenceDays <= 0 || !Number.isFinite(input.expectedUpdateCadenceDays))
+  ) {
+    throw new Error('expectedUpdateCadenceDays must be a positive number');
+  }
+
   const source: MonitoredSource = {
     id: uuidv4(),
     name: input.name,
@@ -96,6 +104,7 @@ export async function addMonitoredSource(input: {
     category: input.category || 'general',
     createdBy: input.createdBy,
     createdAt: new Date().toISOString(),
+    expectedUpdateCadenceDays: input.expectedUpdateCadenceDays,
   };
 
   sources.push(source);
@@ -107,7 +116,7 @@ export async function addMonitoredSource(input: {
 
 export async function updateMonitoredSource(
   id: string,
-  updates: Partial<Pick<MonitoredSource, 'name' | 'url' | 'collectionId' | 'checkIntervalHours' | 'fileType' | 'enabled' | 'category'>>
+  updates: Partial<Pick<MonitoredSource, 'name' | 'url' | 'collectionId' | 'checkIntervalHours' | 'fileType' | 'enabled' | 'category' | 'expectedUpdateCadenceDays'>>
 ): Promise<MonitoredSource> {
   const sources = await getMonitoredSources();
   const idx = sources.findIndex(s => s.id === id);
@@ -122,6 +131,14 @@ export async function updateMonitoredSource(
     if (sources.find(s => s.url === updates.url && s.id !== id)) {
       throw new Error('A source with this URL is already being monitored');
     }
+  }
+
+  if (
+    updates.expectedUpdateCadenceDays !== undefined &&
+    updates.expectedUpdateCadenceDays !== null &&
+    (updates.expectedUpdateCadenceDays <= 0 || !Number.isFinite(updates.expectedUpdateCadenceDays))
+  ) {
+    throw new Error('expectedUpdateCadenceDays must be a positive number');
   }
 
   Object.assign(sources[idx], updates);
@@ -356,10 +373,14 @@ export async function checkSource(source: MonitoredSource): Promise<{
     );
 
     // Update source metadata
+    const nowIso = new Date().toISOString();
     await updateSourceCheckResult(source.id, {
-      lastCheckedAt: new Date().toISOString(),
+      lastCheckedAt: nowIso,
       lastContentHash: contentHash,
-      lastIngestedAt: new Date().toISOString(),
+      lastIngestedAt: nowIso,
+      lastContentChangeAt: nowIso,
+      // Clear any prior staleness alert state — we have fresh content
+      lastStalenessAlertAt: undefined,
       lastDocumentId: result.document.id,
       lastError: undefined,
       lastHttpStatus: 200,
@@ -506,11 +527,128 @@ function extractHttpStatus(errorMessage: string): number | undefined {
   return match ? parseInt(match[1], 10) : undefined;
 }
 
+// ─── Staleness Audit ──────────────────────────────────────────────────
+//
+// Distinguishes "we fetched this OK and it was unchanged" from "this URL
+// hasn't produced fresh content for too long" — the latter almost always
+// means an upstream breakage (URL moved, page restructured, credentials
+// expired) that silent-success monitoring would miss.
+//
+// A source is considered stale when ALL of:
+//   - It's enabled and has expectedUpdateCadenceDays configured
+//   - Its last content change (or creation, if never changed) is older than
+//     expectedUpdateCadenceDays
+// Alerts are throttled per-source via lastStalenessAlertAt (min 24h between
+// alerts for the same source) and per-category via alertService (1/hr).
+
+const STALENESS_ALERT_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+export interface StalenessReport {
+  sourceId: string;
+  name: string;
+  url: string;
+  expectedCadenceDays: number;
+  daysSinceLastChange: number;
+  lastContentChangeAt?: string;
+  lastCheckedAt?: string;
+  alertedNow: boolean;
+}
+
+/**
+ * Compute days between two ISO timestamps. Returns Infinity if `from` is missing.
+ */
+function daysSince(fromIso: string | undefined, nowMs: number): number {
+  if (!fromIso) return Infinity;
+  const t = new Date(fromIso).getTime();
+  if (!Number.isFinite(t)) return Infinity;
+  return (nowMs - t) / (24 * 60 * 60 * 1000);
+}
+
+/**
+ * Audit all monitored sources for staleness. For any source that has exceeded
+ * its configured cadence, send an operational alert (rate-limited per source)
+ * and stamp lastStalenessAlertAt. Returns a report of all stale sources,
+ * whether or not they were alerted this run.
+ */
+export async function auditStaleSources(): Promise<StalenessReport[]> {
+  const sources = await getMonitoredSources();
+  const now = Date.now();
+  const reports: StalenessReport[] = [];
+
+  for (const s of sources) {
+    if (!s.enabled) continue;
+    if (!s.expectedUpdateCadenceDays || s.expectedUpdateCadenceDays <= 0) continue;
+
+    // Use lastContentChangeAt if we've ever observed a change; otherwise
+    // fall back to createdAt — freshly-added sources shouldn't alert
+    // immediately, so createdAt gives the source a grace period equal to
+    // its cadence before first alert.
+    const anchor = s.lastContentChangeAt || s.createdAt;
+    const ageDays = daysSince(anchor, now);
+    if (ageDays <= s.expectedUpdateCadenceDays) continue;
+
+    // Throttle: don't alert the same source more than once per 24h
+    const recentlyAlerted =
+      s.lastStalenessAlertAt &&
+      now - new Date(s.lastStalenessAlertAt).getTime() < STALENESS_ALERT_MIN_INTERVAL_MS;
+
+    let alertedNow = false;
+    if (!recentlyAlerted) {
+      try {
+        await sendOperationalAlert(
+          'source_stale',
+          `Source stale: ${s.name} hasn't changed in ${Math.floor(ageDays)} days (expected every ${s.expectedUpdateCadenceDays})`,
+          {
+            sourceId: s.id,
+            sourceName: s.name,
+            url: s.url,
+            daysSinceLastChange: Math.floor(ageDays),
+            expectedCadenceDays: s.expectedUpdateCadenceDays,
+            lastContentChangeAt: s.lastContentChangeAt || '(never changed)',
+            lastCheckedAt: s.lastCheckedAt || '(never checked)',
+          },
+        );
+        await updateSourceCheckResult(s.id, {
+          lastStalenessAlertAt: new Date().toISOString(),
+        });
+        alertedNow = true;
+      } catch (err) {
+        logger.error('Failed to record staleness alert', { sourceId: s.id, error: String(err) });
+      }
+    }
+
+    reports.push({
+      sourceId: s.id,
+      name: s.name,
+      url: s.url,
+      expectedCadenceDays: s.expectedUpdateCadenceDays,
+      daysSinceLastChange: Math.floor(ageDays),
+      lastContentChangeAt: s.lastContentChangeAt,
+      lastCheckedAt: s.lastCheckedAt,
+      alertedNow,
+    });
+  }
+
+  if (reports.length > 0) {
+    logger.info('Source staleness audit complete', {
+      stale: reports.length,
+      alerted: reports.filter(r => r.alertedNow).length,
+    });
+  }
+  return reports;
+}
+
 // ─── Background Scheduler ──────────────────────────────────────────────
+
+// Staleness audit runs every 24 hours on its own cadence — checking more
+// often wastes cycles since alerts are throttled to once per 24h per source.
+const STALENESS_TICK_MS = 24 * 60 * 60 * 1000;
+let stalenessInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startSourceMonitor(): void {
   logger.info('Starting document source monitor', {
     tickIntervalMinutes: SCHEDULER_TICK_MS / 60000,
+    stalenessTickHours: STALENESS_TICK_MS / 3600000,
   });
 
   // Initial check after 10 minutes (let server warm up, after fee schedule fetcher)
@@ -526,12 +664,29 @@ export function startSourceMonitor(): void {
       logger.error('Source monitor periodic check failed', { error: String(err) });
     });
   }, SCHEDULER_TICK_MS);
+
+  // Staleness audit: initial run 30 min after boot, then daily
+  setTimeout(() => {
+    auditStaleSources().catch(err => {
+      logger.error('Initial staleness audit failed', { error: String(err) });
+    });
+  }, 30 * 60 * 1000);
+
+  stalenessInterval = setInterval(() => {
+    auditStaleSources().catch(err => {
+      logger.error('Periodic staleness audit failed', { error: String(err) });
+    });
+  }, STALENESS_TICK_MS);
 }
 
 export function stopSourceMonitor(): void {
   if (schedulerInterval) {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
-    logger.info('Document source monitor stopped');
   }
+  if (stalenessInterval) {
+    clearInterval(stalenessInterval);
+    stalenessInterval = null;
+  }
+  logger.info('Document source monitor stopped');
 }

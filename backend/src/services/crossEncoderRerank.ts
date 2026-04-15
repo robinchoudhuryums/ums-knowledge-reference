@@ -54,10 +54,10 @@ export async function crossEncoderRerank<T extends { chunk: { text: string }; sc
         `[${i + 1}] ${c.chunk.text.slice(0, 300)}`
       ).join('\n\n');
 
-      const prompt = `Rate the relevance of each passage to the query on a scale of 0-10.
-Return ONLY a JSON array of numbers in the same order, e.g. [8, 3, 7, ...]
-
-Query: ${query.slice(0, 200)}
+      // Query + passages change per call, but the instruction preamble is constant
+      // across calls — move it to a system block with cache_control so Bedrock
+      // caches those tokens per INV-05.
+      const userContent = `Query: ${query.slice(0, 200)}
 
 Passages:
 ${passages}`;
@@ -70,7 +70,12 @@ ${passages}`;
           anthropic_version: 'bedrock-2023-05-31',
           max_tokens: 100,
           temperature: 0,
-          messages: [{ role: 'user', content: prompt }],
+          system: [{
+            type: 'text',
+            text: 'Rate the relevance of each passage to the query on a scale of 0-10. Return ONLY a JSON array of numbers in the same order, e.g. [8, 3, 7, ...]',
+            cache_control: { type: 'ephemeral' },
+          }],
+          messages: [{ role: 'user', content: userContent }],
         }),
       });
 

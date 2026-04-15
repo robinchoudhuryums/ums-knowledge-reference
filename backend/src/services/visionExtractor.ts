@@ -59,6 +59,11 @@ async function analyzeChunk(pdfBuffer: Buffer, docName: string): Promise<string>
       {
         text: 'You are a document analysis assistant. Your job is to describe visual elements in documents accurately and concisely.',
       },
+      // Bedrock Converse API prompt caching: a cachePoint block marks the
+      // preceding system content as cacheable. Cast needed because older
+      // @aws-sdk/client-bedrock-runtime versions don't include cachePoint
+      // in SystemContentBlock. Satisfies INV-05.
+      ({ cachePoint: { type: 'default' } } as unknown as { text: string }),
     ],
     inferenceConfig: {
       maxTokens: 4096,

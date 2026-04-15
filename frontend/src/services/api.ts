@@ -25,6 +25,29 @@ export function getCsrfToken(): string | null {
 }
 
 /**
+ * Custom event name dispatched when the user's session has definitively
+ * expired (refresh failed). `useAuth` listens for this and transitions
+ * back to the LoginForm without a full-page reload — preserving React
+ * state, unsaved form drafts, and any in-flight work.
+ *
+ * Previously these code paths called window.location.reload(), which
+ * discarded a clinician's in-progress 45-question PPD interview and
+ * forced Redux-like state to be rebuilt from scratch. See H7.
+ */
+export const SESSION_EXPIRED_EVENT = 'ums:session-expired';
+
+function dispatchSessionExpired(): void {
+  try {
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+  } catch { /* localStorage may be disabled — ignore */ }
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+  }
+}
+
+/**
  * Attempt to refresh the access token using the refresh token cookie.
  * Returns true if refresh succeeded, false if the refresh token is also expired/revoked.
  */
@@ -90,10 +113,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         // Retry the original request with the new access token
         return request(path, options);
       }
-      localStorage.removeItem('isLoggedIn');
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      window.location.reload();
+      dispatchSessionExpired();
       throw new Error('Session expired. Please log in again.');
     }
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
@@ -413,9 +433,8 @@ export async function queryKnowledgeBaseStream(
           onTraceId, onProductImages, responseStyle,
         );
       }
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+      dispatchSessionExpired();
+      onError('Session expired. Please log in again.');
       return;
     }
     const err = await response.json().catch(() => ({ error: 'Request failed' }));
@@ -675,9 +694,7 @@ export async function downloadAnnotatedPdf(file: File): Promise<Blob> {
 
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+      dispatchSessionExpired();
       throw new Error('Session expired');
     }
     const err = await response.json().catch(() => ({ error: 'Download failed' }));
@@ -705,9 +722,7 @@ export async function downloadOriginalPdf(file: File): Promise<Blob> {
 
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+      dispatchSessionExpired();
       throw new Error('Session expired');
     }
     const err = await response.json().catch(() => ({ error: 'Download failed' }));
@@ -737,9 +752,7 @@ export async function reviewFormBatch(files: File[]): Promise<BatchFormReviewRes
 
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+      dispatchSessionExpired();
       throw new Error('Session expired');
     }
     const err = await response.json().catch(() => ({ error: 'Batch review failed' }));

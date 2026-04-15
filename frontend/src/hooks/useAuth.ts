@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AuthState } from '../types';
-import { login as apiLogin, logoutServer, cancelActiveStream } from '../services/api';
+import { login as apiLogin, logoutServer, cancelActiveStream, SESSION_EXPIRED_EVENT } from '../services/api';
 
 export function useAuth() {
   const [auth, setAuth] = useState<AuthState>(() => {
@@ -60,6 +60,23 @@ export function useAuth() {
     localStorage.setItem('user', JSON.stringify(user));
     setAuth({ token: 'httponly', user });
     setMustChangePassword(false);
+  }, []);
+
+  // H7: when the API client dispatches SESSION_EXPIRED_EVENT (silent refresh
+  // failed), drop back to LoginForm without a full-page reload. Unlike
+  // window.location.reload() this preserves React subtree state elsewhere
+  // in the app — critically, unsaved form drafts stay in memory until the
+  // user logs back in and can be inspected via the FormDraftBanner.
+  useEffect(() => {
+    const onExpired = () => {
+      cancelActiveStream();
+      setAuth({ token: null, user: null });
+      setMustChangePassword(false);
+      setMfaRequired(false);
+      setMfaCredentials(null);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => { window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired); };
   }, []);
 
   const isAuthenticated = !!auth.token;

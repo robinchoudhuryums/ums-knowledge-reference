@@ -46,6 +46,8 @@ import { startSourceMonitor } from './services/sourceMonitor';
 import { startJobCleanup, loadPersistedJobs, flushJobs } from './services/jobQueue';
 import { startOrphanCleanup } from './services/orphanCleanup';
 import { startRetentionScheduler } from './services/dataRetention';
+import { setMalwareScanAlertHandler } from './utils/malwareScan';
+import { sendOperationalAlert } from './services/alertService';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
@@ -479,6 +481,11 @@ async function start() {
 
     // Start data retention cleanup scheduler (HIPAA-compliant expiration at ~3 AM daily)
     startRetentionScheduler();
+
+    // Route malware-scanner unavailability to operational alerting (throttled to 1/hr per category).
+    setMalwareScanAlertHandler((subject, details) => {
+      void sendOperationalAlert('malware_scan_unavailable', subject, details);
+    });
 
     const server = app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

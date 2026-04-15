@@ -21,7 +21,7 @@ import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { validateFileContent } from '../utils/fileValidation';
-import { scanFileForMalware } from '../utils/malwareScan';
+import { scanFileForMalware, MalwareScanUnavailableError } from '../utils/malwareScan';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -83,8 +83,18 @@ router.post(
         return;
       }
 
-      // Malware scan (skipped gracefully if ClamAV is not available)
-      const scanResult = await scanFileForMalware(req.file.buffer, req.file.originalname);
+      // Malware scan. Fail-closed by default: if ClamAV is unreachable
+      // the scan layer throws and we reject the upload with 503.
+      let scanResult;
+      try {
+        scanResult = await scanFileForMalware(req.file.buffer, req.file.originalname);
+      } catch (err) {
+        if (err instanceof MalwareScanUnavailableError) {
+          res.status(503).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
       if (scanResult.scanned && !scanResult.clean) {
         logger.error('Upload rejected: malware detected', {
           filename: req.file.originalname,

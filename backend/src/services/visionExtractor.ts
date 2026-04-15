@@ -2,9 +2,25 @@ import { ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { PDFDocument } from 'pdf-lib';
 import { bedrockClient, BEDROCK_GENERATION_MODEL } from '../config/aws';
 import { logger } from '../utils/logger';
+import { redactPhi } from '../utils/phiRedactor';
 
 /** Max document size for Bedrock Converse API (bytes) */
 const MAX_CONVERSE_DOC_SIZE = 4.5 * 1024 * 1024;
+
+/**
+ * M2: Filenames uploaded by users commonly embed PHI — e.g.
+ * "john-doe-mri-scan.pdf" or "patient_jane_123456_demographics.pdf".
+ * Redact before any structured log so the filename can't leak into
+ * CloudWatch or other log aggregators as free-text PHI.
+ *
+ * Image descriptions themselves are NEVER logged here; they're returned
+ * to the ingestion pipeline where they become vector-store chunks.
+ * If a future maintainer adds a `logger.info('description', { text })`
+ * call, that text must also go through redactPhi first.
+ */
+function safeFilename(name: string): string {
+  return redactPhi(name).text;
+}
 
 const VISION_PROMPT = `Examine this document and describe ONLY the visual elements — images, photos, diagrams, charts, graphs, tables shown as images, logos, and illustrations. For each visual element:
 - Describe what it shows in detail (subject, labels, data, layout)
@@ -126,7 +142,7 @@ async function splitPdfIntoChunks(
         const singleBytes = await singleDoc.save();
         if (singleBytes.length > MAX_CONVERSE_DOC_SIZE) {
           logger.warn('Vision extraction: single page too large, skipping', {
-            filename,
+            filename: safeFilename(filename),
             page: startPage + 1,
             sizeBytes: singleBytes.length,
           });
@@ -160,7 +176,7 @@ export async function extractImageDescriptions(
 ): Promise<string> {
   try {
     logger.info('Vision extraction: analyzing PDF for visual elements', {
-      filename,
+      filename: safeFilename(filename),
       sizeBytes: pdfBuffer.length,
     });
 
@@ -170,11 +186,11 @@ export async function extractImageDescriptions(
     if (pdfBuffer.length <= MAX_CONVERSE_DOC_SIZE) {
       const result = await analyzeChunk(pdfBuffer, docName);
       if (!result) {
-        logger.info('Vision extraction: no visual elements found', { filename });
+        logger.info('Vision extraction: no visual elements found', { filename: safeFilename(filename) });
         return '';
       }
       logger.info('Vision extraction: described visual elements', {
-        filename,
+        filename: safeFilename(filename),
         descriptionLength: result.length,
       });
       return `\n\n--- Image and Visual Element Descriptions ---\n${result}\n--- End Visual Descriptions ---\n`;
@@ -182,18 +198,18 @@ export async function extractImageDescriptions(
 
     // Large PDF — split into chunks and process each
     logger.info('Vision extraction: PDF exceeds size limit, splitting into page chunks', {
-      filename,
+      filename: safeFilename(filename),
       sizeBytes: pdfBuffer.length,
     });
 
     const chunks = await splitPdfIntoChunks(pdfBuffer, filename);
     if (chunks.length === 0) {
-      logger.warn('Vision extraction: could not produce any chunks under size limit', { filename });
+      logger.warn('Vision extraction: could not produce any chunks under size limit', { filename: safeFilename(filename) });
       return '';
     }
 
     logger.info('Vision extraction: processing page chunks', {
-      filename,
+      filename: safeFilename(filename),
       chunkCount: chunks.length,
       chunkLabels: chunks.map(c => c.label),
     });
@@ -208,7 +224,7 @@ export async function extractImageDescriptions(
         }
       } catch (chunkError) {
         logger.warn('Vision extraction: chunk failed, continuing with remaining', {
-          filename,
+          filename: safeFilename(filename),
           chunk: chunk.label,
           error: String(chunkError),
         });
@@ -216,13 +232,13 @@ export async function extractImageDescriptions(
     }
 
     if (descriptions.length === 0) {
-      logger.info('Vision extraction: no visual elements found in any chunk', { filename });
+      logger.info('Vision extraction: no visual elements found in any chunk', { filename: safeFilename(filename) });
       return '';
     }
 
     const combined = descriptions.join('\n\n');
     logger.info('Vision extraction: described visual elements across chunks', {
-      filename,
+      filename: safeFilename(filename),
       descriptionLength: combined.length,
       chunksWithVisuals: descriptions.length,
     });
@@ -231,7 +247,7 @@ export async function extractImageDescriptions(
   } catch (error) {
     // Vision extraction is optional — log and continue without it
     logger.warn('Vision extraction failed, continuing without image descriptions', {
-      filename,
+      filename: safeFilename(filename),
       error: String(error),
     });
     return '';

@@ -68,15 +68,20 @@ vi.mock('../utils/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('../utils/stripMetadata', () => ({
-  stripImageMetadata: vi.fn(async (buffer: Buffer) => ({
+vi.mock('../utils/stripMetadata', () => {
+  const passThrough = vi.fn(async (buffer: Buffer) => ({
     buffer,
     stripped: false,
     metadataFound: false,
     originalSize: buffer.length,
     strippedSize: buffer.length,
-  })),
-}));
+  }));
+  return {
+    stripImageMetadata: passThrough,
+    stripPdfMetadata: passThrough,
+    stripDocumentMetadata: passThrough,
+  };
+});
 
 vi.mock('../utils/traceSpan', () => ({
   withSpan: vi.fn(async <T>(_name: string, _attrs: unknown, fn: () => Promise<T>) => fn()),

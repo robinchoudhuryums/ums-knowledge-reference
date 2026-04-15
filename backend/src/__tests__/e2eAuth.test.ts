@@ -124,7 +124,7 @@ function buildApp() {
       maxAge: 24 * 60 * 60 * 1000,
     });
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-      if (!CSRF_EXEMPT_PATHS.some(p => req.path === p || req.path.startsWith(p))) {
+      if (!CSRF_EXEMPT_PATHS.includes(req.path)) {
         const headerToken = req.headers[CSRF_HEADER] as string | undefined;
         if (!headerToken || headerToken !== csrfToken) {
           res.status(403).json({ error: 'CSRF token missing or invalid' });

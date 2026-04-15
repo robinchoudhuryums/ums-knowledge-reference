@@ -93,6 +93,26 @@ export async function loadPersistedJobs(): Promise<void> {
 }
 
 /**
+ * Persist immediately, bypassing the debounce timer. Used for state
+ * transitions where losing the record would be user-visible (job creation
+ * and terminal states). M7 — a 30-second debounce means a crash between
+ * creation and persist silently loses the client's record of their upload.
+ */
+function persistNow(): void {
+  dirty = false;
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  // Fire-and-forget; the caller has already returned the job. If the S3
+  // write fails, schedulePersist's next tick will retry.
+  persistJobs().catch(err => {
+    dirty = true; // ensure the next debounced tick retries
+    logger.warn('Immediate job persist failed; will retry on next tick', { error: String(err) });
+  });
+}
+
+/**
  * Create a new job and return it.
  */
 export function createJob(type: Job['type'], userId: string, input: Record<string, unknown>): Job {
@@ -106,7 +126,9 @@ export function createJob(type: Job['type'], userId: string, input: Record<strin
     progress: 0,
   };
   jobs.set(job.id, job);
-  schedulePersist();
+  // M7: persist immediately on create so a crash in the 30s debounce
+  // window cannot silently lose a job the caller thinks is queued.
+  persistNow();
   logger.info('Job created', { jobId: job.id, type, userId });
   return job;
 }
@@ -127,9 +149,19 @@ export function updateJob(id: string, updates: Partial<Job>): void {
     logger.warn('Attempted to update non-existent job', { jobId: id });
     return;
   }
+  const prevStatus = job.status;
   Object.assign(job, updates);
   jobs.set(id, job);
-  schedulePersist();
+
+  // M7: persist immediately on every status transition — especially
+  // transitions into terminal states (completed/failed). Progress-only
+  // updates still use the debounced path to avoid excess S3 traffic.
+  const statusChanged = updates.status && updates.status !== prevStatus;
+  if (statusChanged) {
+    persistNow();
+  } else {
+    schedulePersist();
+  }
 }
 
 /**

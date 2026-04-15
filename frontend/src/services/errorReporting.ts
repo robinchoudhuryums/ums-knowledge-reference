@@ -4,6 +4,19 @@ const API_BASE = (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL
 const recentReports = new Map<string, number>();
 const DEDUP_WINDOW_MS = 60_000; // 60 seconds
 
+/**
+ * M9: Query strings can contain PHI (e.g. ?patientId=123, ?q=Jane+Doe). Hash
+ * fragments occasionally do too. Only the origin+pathname are safe to ship
+ * to error tracking — sensitive identifiers must not persist in error logs.
+ */
+function safeLocationHref(): string {
+  try {
+    return `${window.location.origin}${window.location.pathname}`;
+  } catch {
+    return '';
+  }
+}
+
 import { getCsrfToken } from './api';
 
 function getLegacyToken(): string | null {
@@ -52,7 +65,7 @@ export function reportError(error: Error, componentName?: string): void {
       message: message.slice(0, 5000),
       stack: error.stack?.slice(0, 10000),
       componentName,
-      url: window.location.href,
+      url: safeLocationHref(),
       userAgent: navigator.userAgent,
     });
 
@@ -127,7 +140,7 @@ function flushPerfMetrics(): void {
         message: `[APM] ${batch.length} metrics`,
         stack: JSON.stringify(batch),
         componentName: 'apm',
-        url: window.location.href,
+        url: safeLocationHref(),
       }),
     }).catch(() => {});
   } catch {

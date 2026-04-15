@@ -11,6 +11,7 @@ import { listTemplates, getTemplateById } from '../services/extractionTemplates'
 import { logAuditEvent } from '../services/audit';
 import { logger } from '../utils/logger';
 import { validateFileContent } from '../utils/fileValidation';
+import { resolveRateLimitKey } from '../utils/rateLimitKey';
 import { createJob, getJob, updateJob, getUserJobs } from '../services/jobQueue';
 import {
   submitExtractionCorrection,
@@ -29,7 +30,7 @@ const router = Router();
 const extractionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many extraction requests. Please wait before submitting again.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -337,7 +338,7 @@ router.get('/model', authenticate, (_req, res) => {
 const feedbackLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 60,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many feedback submissions. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,

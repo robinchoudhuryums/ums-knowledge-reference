@@ -12,6 +12,7 @@ import { Router, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import { resolveRateLimitKey } from '../utils/rateLimitKey';
 import {
   upsertDraft,
   getDraft,
@@ -28,7 +29,7 @@ const router = Router();
 const draftLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 240,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many draft saves. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,

@@ -142,8 +142,10 @@ app.use((req, res, next) => {
 
   // Only enforce on state-changing methods
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-    // Skip CSRF check for exempt paths (login, health)
-    if (!CSRF_EXEMPT_PATHS.some(p => req.path === p || req.path.startsWith(p))) {
+    // H1: Exact-match exemption list. The old `startsWith` prefix match would
+    // have silently exempted any future route starting with an exempt path
+    // (e.g. `/api/auth/login-sso` inheriting `/api/auth/login`'s exemption).
+    if (!CSRF_EXEMPT_PATHS.includes(req.path)) {
       const headerToken = req.headers[CSRF_HEADER] as string | undefined;
       if (!headerToken || headerToken !== csrfToken) {
         res.status(403).json({ error: 'CSRF token missing or invalid' });
@@ -202,6 +204,21 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,  // 15 minutes
   max: 10,                     // 10 attempts per window
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  ...(rateLimitStore && { store: rateLimitStore }),
+});
+
+// H2: Dedicated rate limit on MFA verify. An authenticated user or stolen
+// access token can otherwise brute-force TOTP (~1M combinations) or recovery
+// codes (~10) through the MFA verify endpoint, which previously only sat
+// behind the global 120/min apiLimiter. 10 verify attempts per 15 min per
+// user is enough for legitimate setup/re-setup traffic and forces an
+// attacker into ~15min-per-10-codes territory.
+const mfaVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many MFA verification attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
   ...(rateLimitStore && { store: rateLimitStore }),
@@ -326,7 +343,7 @@ app.post('/api/auth/reset-password', loginLimiter, resetPasswordWithCodeHandler)
 
 // MFA routes
 app.post('/api/auth/mfa/setup', authenticate, (req, res) => mfaSetupHandler(req as AuthRequest, res));
-app.post('/api/auth/mfa/verify', authenticate, (req, res) => mfaVerifyHandler(req as AuthRequest, res));
+app.post('/api/auth/mfa/verify', authenticate, mfaVerifyLimiter, (req, res) => mfaVerifyHandler(req as AuthRequest, res));
 app.post('/api/auth/mfa/disable', authenticate, (req, res) => mfaDisableHandler(req as AuthRequest, res));
 
 // Document routes

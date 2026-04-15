@@ -12,6 +12,7 @@ import {
 } from '../services/sourceMonitor';
 import { logAuditEvent } from '../services/audit';
 import { logger } from '../utils/logger';
+import { resolveRateLimitKey } from '../utils/rateLimitKey';
 
 const router = Router();
 
@@ -20,7 +21,7 @@ const router = Router();
 const adminWriteLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many source monitor requests. Please wait before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,

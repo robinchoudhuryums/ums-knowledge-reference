@@ -12,6 +12,7 @@ import { InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-s
 import { bedrockClient, BEDROCK_GENERATION_MODEL, bedrockCircuitBreaker } from '../config/aws';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
+import { resolveRateLimitKey } from '../utils/rateLimitKey';
 import { enrichQueryWithStructuredData, classifyQuery } from '../services/referenceEnrichment';
 import { findProductImages, ProductImageMatch } from '../services/productImageResolver';
 import { withSpan } from '../utils/traceSpan';
@@ -23,7 +24,7 @@ const router = Router();
 const queryLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many queries. Please wait before submitting again.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -337,9 +338,16 @@ export function detectPromptInjection(text: string): { detected: boolean; reason
   // Strip HTML/XML comments that could hide injection (adapted from Observatory QA)
   const decommented = decoded.replace(/<!--[\s\S]*?-->/g, '');
 
+  // H4: Strip zero-width and invisible characters BEFORE normalization.
+  // Without this, "ignore\u200Bprevious\u200Cinstructions" fails every
+  // regex below while Claude still reads the attacker's intended phrase.
+  // Covers: U+200B ZWSP, U+200C ZWNJ, U+200D ZWJ, U+FEFF BOM/ZWNBSP,
+  // U+2060 WORD JOINER, U+00AD SOFT HYPHEN, U+180E MVS, U+2061-2064 invisible math.
+  const stripped = decommented.replace(/[\u200B-\u200D\uFEFF\u2060\u00AD\u180E\u2061-\u2064]/g, '');
+
   // NFKD normalization + diacritical mark stripping (adapted from Observatory QA).
   // Defeats "ìgnórè prëvíóüs ìnstrûctíons" bypasses.
-  const normalized = decommented.normalize('NFKD')
+  const normalized = stripped.normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '') // Strip combining diacritical marks
     .replace(/[\u0400-\u04FF]/g, ch => {
       // Map common Cyrillic look-alikes to Latin

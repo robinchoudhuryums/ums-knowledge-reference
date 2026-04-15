@@ -16,13 +16,14 @@ import { generateSeatingEvaluation, renderSeatingEvalHtml } from '../services/se
 import { requireAdmin } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { escapeHtml } from '../utils/htmlEscape';
+import { resolveRateLimitKey } from '../utils/rateLimitKey';
 
 // Stricter rate limit for PPD queue submissions to prevent abuse.
 // 10 submissions per 15 minutes per user should be more than sufficient.
 const submissionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many submissions. Please wait before submitting again.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -32,7 +33,7 @@ const submissionLimiter = rateLimit({
 const emailLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many emails sent. Please wait before sending again.' },
   standardHeaders: true,
   legacyHeaders: false,

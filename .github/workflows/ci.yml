@@ -186,19 +186,34 @@ jobs:
             # --- Pre-build cleanup: free disk space from previous failed deploys ---
             # Accumulation from failed deploys (where the success-path prune never ran)
             # can fill the disk and cause `npm ci` to fail during build.
+            # The two biggest consumers are usually: (1) the BuildKit build cache,
+            # which `docker image prune` does NOT touch, and (2) container logs.
             echo "=== Pre-build disk and cleanup ==="
             df -h / | tail -1
             # Remove ALL ums-knowledge tagged images EXCEPT :latest (current prod container
             # uses :latest as fallback; the new build will re-tag as both :latest and :SHA).
             docker images --format '{{.Repository}}:{{.Tag}}' | grep '^ums-knowledge:' | grep -v ':latest$' | xargs -r docker rmi -f 2>&1 | tail -5 || true
-            # Remove dangling images (intermediate build layers no longer referenced)
-            docker image prune -f 2>&1 | tail -3 || true
-            # Remove stopped containers (staging containers from failed deploys)
+            # Prune images not used by any container (keeps :latest since it's in use)
+            docker image prune -a -f 2>&1 | tail -3 || true
+            # Prune BuildKit build cache — this is usually the biggest space consumer
+            # after many failed builds, and `image prune` alone does NOT touch it.
+            docker builder prune -a -f 2>&1 | tail -3 || true
+            # Prune stopped containers, unused volumes, unused networks
             docker container prune -f 2>&1 | tail -3 || true
-            # Remove unused volumes (build caches, test volumes)
             docker volume prune -f 2>&1 | tail -3 || true
-            # Remove unused networks
             docker network prune -f 2>&1 | tail -3 || true
+            # Truncate running container logs if they've grown large (>100MB each).
+            # Docker json-file driver has no default rotation; logs can grow unboundedly.
+            for cid in $(docker ps -q 2>/dev/null); do
+              LOG_PATH=$(docker inspect --format='{{.LogPath}}' "$cid" 2>/dev/null)
+              if [ -n "$LOG_PATH" ] && [ -f "$LOG_PATH" ]; then
+                LOG_SIZE=$(stat -c%s "$LOG_PATH" 2>/dev/null || echo 0)
+                if [ "$LOG_SIZE" -gt 104857600 ]; then
+                  echo "Truncating large container log ($((LOG_SIZE / 1048576))MB): $LOG_PATH"
+                  sudo truncate -s 0 "$LOG_PATH" 2>/dev/null || truncate -s 0 "$LOG_PATH" 2>/dev/null || true
+                fi
+              fi
+            done
             df -h / | tail -1
 
             # Fail fast if disk is still critically low after cleanup
@@ -207,6 +222,10 @@ jobs:
               echo "::error::Less than 2GB free disk space after cleanup — manual intervention needed"
               df -h /
               docker images --format 'table {{.Repository}}:{{.Tag}}\t{{.Size}}' | head -20
+              echo "=== Largest dirs in /var/lib/docker (if accessible): ==="
+              sudo du -sh /var/lib/docker/* 2>/dev/null | sort -h | tail -10 || du -sh /var/lib/docker/* 2>/dev/null | sort -h | tail -10 || echo "(not accessible)"
+              echo "=== Largest files in home: ==="
+              du -sh ~/* 2>/dev/null | sort -h | tail -5 || true
               exit 1
             fi
             echo "==="

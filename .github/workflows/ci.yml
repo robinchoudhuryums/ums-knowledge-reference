@@ -231,12 +231,15 @@ jobs:
             echo "==="
 
             # Build new image with a unique tag for rollback support.
-            # Explicitly capture build exit code — previous script continued past
-            # failed builds, which caused confusing downstream errors.
+            # Use --progress=plain so the FULL build output (including npm error
+            # messages, not just summary lines) is visible in CI logs. BuildKit's
+            # default "tty" progress mode truncates output on failure.
+            # Capture exit code BEFORE the if-block (inside `if !` $? is inverted).
             NEW_TAG="ums-knowledge:$(git rev-parse --short HEAD)"
             echo "=== Building image: $NEW_TAG ==="
-            if ! docker build -t "$NEW_TAG" -t ums-knowledge:latest . ; then
-              BUILD_EXIT=$?
+            docker build --progress=plain -t "$NEW_TAG" -t ums-knowledge:latest .
+            BUILD_EXIT=$?
+            if [ "$BUILD_EXIT" -ne 0 ]; then
               echo "::error::Docker build failed with exit code $BUILD_EXIT"
               df -h / | tail -1
               exit 1

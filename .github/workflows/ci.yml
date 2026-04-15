@@ -230,16 +230,25 @@ jobs:
             fi
             echo "==="
 
-            # Build new image with a unique tag for rollback support
+            # Build new image with a unique tag for rollback support.
+            # Explicitly capture build exit code — previous script continued past
+            # failed builds, which caused confusing downstream errors.
             NEW_TAG="ums-knowledge:$(git rev-parse --short HEAD)"
-            docker build -t "$NEW_TAG" -t ums-knowledge:latest .
+            echo "=== Building image: $NEW_TAG ==="
+            if ! docker build -t "$NEW_TAG" -t ums-knowledge:latest . ; then
+              BUILD_EXIT=$?
+              echo "::error::Docker build failed with exit code $BUILD_EXIT"
+              df -h / | tail -1
+              exit 1
+            fi
 
             # Guard: fail if image exceeds 500MB (catches accidental bloat)
             SIZE=$(docker image inspect "$NEW_TAG" --format='{{.Size}}' 2>/dev/null || echo 0)
             SIZE_MB=$((SIZE / 1048576))
             echo "Image size: ${SIZE_MB}MB"
             if [ "$SIZE" = "0" ]; then
-              echo "::error::Docker build failed — no image produced"
+              echo "::error::Docker build completed but image '$NEW_TAG' not found"
+              docker images --format 'table {{.Repository}}:{{.Tag}}\t{{.Size}}' | head -10
               exit 1
             fi
             if [ "$SIZE" -gt 524288000 ]; then
@@ -255,15 +264,37 @@ jobs:
             echo "=== Pre-deploy diagnostics ==="
             df -h / | tail -1
             docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | head -10
+            # Check port 3002 is available (staging port)
+            if ss -tlnH 'sport = :3002' 2>/dev/null | grep -q LISTEN; then
+              echo "::warning::Port 3002 already in use — staging container may fail to start"
+              ss -tlnp 'sport = :3002' 2>/dev/null || true
+            fi
             echo "==="
 
-            docker run -d \
-              --name "$STAGING_NAME" \
-              --restart no \
-              --env-file ~/ums-knowledge.env \
-              -e PORT=3001 \
-              -p 3002:3001 \
-              "$NEW_TAG"
+            # Start staging container — capture stderr so failures surface in CI logs.
+            # Previously this ran as fire-and-forget; if docker run failed (port in use,
+            # missing env file, image not found), the error went to the void and the
+            # health check loop would just report "No such container".
+            echo "=== Starting staging container ==="
+            if ! RUN_OUTPUT=$(docker run -d \
+                --name "$STAGING_NAME" \
+                --restart no \
+                --env-file ~/ums-knowledge.env \
+                -e PORT=3001 \
+                -p 3002:3001 \
+                "$NEW_TAG" 2>&1) ; then
+              echo "::error::docker run failed to start staging container"
+              echo "Output: $RUN_OUTPUT"
+              echo "=== Diagnostics ==="
+              echo "Image exists check:"
+              docker image inspect "$NEW_TAG" --format 'ID: {{.Id}} | Size: {{.Size}}' 2>&1 || true
+              echo "Env file check:"
+              ls -l ~/ums-knowledge.env 2>&1 || echo "  env file missing"
+              echo "Port 3002 usage:"
+              ss -tlnp 'sport = :3002' 2>&1 || true
+              exit 1
+            fi
+            echo "Started container: $RUN_OUTPUT"
 
             # Health check staging container (up to 60s — covers cold-start with
             # migrations, vector store load, and DB connection retries)

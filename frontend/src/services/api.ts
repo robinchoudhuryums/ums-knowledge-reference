@@ -929,6 +929,192 @@ export async function getExtractionModel(): Promise<{ model: string }> {
   return request('/extraction/model');
 }
 
+// ─── Human-in-the-Loop extraction correction ─────────────────────────────────
+
+export type ExtractionActualQuality = 'correct' | 'minor_errors' | 'major_errors' | 'unusable';
+export type ExtractionReportedConfidence = 'high' | 'medium' | 'low';
+
+export interface CorrectedField {
+  key: string;
+  originalValue: string | number | boolean | null;
+  correctedValue: string | number | boolean | null;
+}
+
+export interface ExtractionCorrection {
+  id: string;
+  templateId: string;
+  templateName: string;
+  modelUsed: string;
+  reportedConfidence: ExtractionReportedConfidence;
+  actualQuality: ExtractionActualQuality;
+  correctedFields: CorrectedField[];
+  reviewerNote?: string;
+  submittedBy: string;
+  submittedAt: string;
+  filename?: string;
+}
+
+export interface ExtractionCorrectionIndexEntry {
+  id: string;
+  templateId: string;
+  actualQuality: ExtractionActualQuality;
+  reportedConfidence: ExtractionReportedConfidence;
+  correctedFieldCount: number;
+  submittedBy: string;
+  submittedAt: string;
+}
+
+export async function submitExtractionCorrection(input: {
+  templateId: string;
+  reportedConfidence: ExtractionReportedConfidence;
+  actualQuality: ExtractionActualQuality;
+  correctedFields: CorrectedField[];
+  reviewerNote?: string;
+  filename?: string;
+}): Promise<{ correction: ExtractionCorrection }> {
+  return request('/extraction/correct', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listExtractionCorrections(filters?: {
+  templateId?: string;
+  actualQuality?: ExtractionActualQuality;
+  limit?: number;
+}): Promise<{ corrections: ExtractionCorrectionIndexEntry[]; total: number }> {
+  const params = new URLSearchParams();
+  if (filters?.templateId) params.set('templateId', filters.templateId);
+  if (filters?.actualQuality) params.set('actualQuality', filters.actualQuality);
+  if (filters?.limit) params.set('limit', String(filters.limit));
+  const qs = params.toString();
+  return request(`/extraction/corrections${qs ? `?${qs}` : ''}`);
+}
+
+export interface ExtractionQualityStats {
+  templateId?: string;
+  total: number;
+  byActualQuality: Record<ExtractionActualQuality, number>;
+  accuracyRate: number;
+  overconfidenceRate: number;
+  totalFieldsCorrected: number;
+}
+
+export async function getExtractionQualityStats(templateId?: string): Promise<{ stats: ExtractionQualityStats }> {
+  const qs = templateId ? `?templateId=${encodeURIComponent(templateId)}` : '';
+  return request(`/extraction/corrections-stats${qs}`);
+}
+
+// ─── Form drafts (partial save/resume) ───────────────────────────────────────
+
+export type FormDraftType = 'ppd' | 'pmd-account' | 'pap-account';
+
+export interface FormDraft {
+  id: string;
+  formType: FormDraftType;
+  payload: unknown;
+  label?: string;
+  formVersion?: string;
+  completionPercent?: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FormDraftIndexEntry {
+  id: string;
+  formType: FormDraftType;
+  label?: string;
+  completionPercent?: number;
+  formVersion?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listFormDrafts(formType?: FormDraftType): Promise<{ drafts: FormDraftIndexEntry[]; total: number }> {
+  const qs = formType ? `?formType=${encodeURIComponent(formType)}` : '';
+  return request(`/form-drafts${qs}`);
+}
+
+export async function upsertFormDraft(input: {
+  id?: string;
+  formType: FormDraftType;
+  payload: unknown;
+  label?: string;
+  formVersion?: string;
+  completionPercent?: number;
+}): Promise<{ draft: FormDraft }> {
+  return request('/form-drafts', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function loadFormDraft(formType: FormDraftType, id: string): Promise<{ draft: FormDraft }> {
+  return request(`/form-drafts/${encodeURIComponent(formType)}/${encodeURIComponent(id)}`);
+}
+
+export async function discardFormDraft(formType: FormDraftType, id: string): Promise<{ removed: boolean }> {
+  return request(`/form-drafts/${encodeURIComponent(formType)}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+// ─── Source staleness (admin) ────────────────────────────────────────────────
+
+export interface SourceStalenessEntry {
+  sourceId: string;
+  name: string;
+  url: string;
+  expectedCadenceDays: number;
+  daysSinceLastChange: number;
+  lastContentChangeAt?: string;
+  lastCheckedAt?: string;
+  lastStalenessAlertAt?: string;
+  isStale: boolean;
+}
+
+export async function listSourceStaleness(): Promise<{ sources: SourceStalenessEntry[]; staleCount: number }> {
+  return request('/sources/staleness');
+}
+
+export async function runSourceStalenessAudit(): Promise<{
+  stale: Array<{
+    sourceId: string;
+    name: string;
+    url: string;
+    expectedCadenceDays: number;
+    daysSinceLastChange: number;
+    alertedNow: boolean;
+  }>;
+  total: number;
+}> {
+  return request('/sources/audit-staleness', { method: 'POST' });
+}
+
+// ─── Gold-standard RAG eval dataset (admin read-only view) ──────────────────
+
+export interface GoldPair {
+  question: string;
+  category: string;
+  expectedKeywords: string[];
+  expectedCodes: string[];
+}
+
+export interface EvalDataset {
+  version: string;
+  description: string;
+  lastUpdated: string;
+  totalPairs: number;
+  categories: Array<{ name: string; count: number }>;
+  pairs: GoldPair[];
+}
+
+export async function getEvalDataset(): Promise<EvalDataset> {
+  return request('/eval/dataset');
+}
+
 // Query log (admin) — downloads CSV as a blob and triggers browser download
 export async function downloadQueryLogCsv(date: string): Promise<void> {
   const legacyToken = getLegacyToken();

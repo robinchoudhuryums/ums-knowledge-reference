@@ -15,6 +15,9 @@ import { DocumentsTab } from './components/DocumentsTab';
 import { UserManagement } from './components/UserManagement';
 import { ProductImageManager } from './components/ProductImageManager';
 import { UsageLimitsManager } from './components/UsageLimitsManager';
+import { SourceStalenessManager } from './components/SourceStalenessManager';
+import { RagEvalDatasetViewer } from './components/RagEvalDatasetViewer';
+import { ExtractionQualityStatsCard } from './components/ExtractionQualityStatsCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/ConfirmDialog';
@@ -273,6 +276,21 @@ export default function App() {
                 <ErrorBoundary fallbackMessage="Product image manager encountered an error.">
                   <div style={styles.adminSection}>
                     <ProductImageManager />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="Extraction quality stats encountered an error.">
+                  <div style={styles.adminSection}>
+                    <ExtractionQualityStatsCard />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="Source staleness view encountered an error.">
+                  <div style={styles.adminSection}>
+                    <SourceStalenessManager />
+                  </div>
+                </ErrorBoundary>
+                <ErrorBoundary fallbackMessage="RAG eval dataset view encountered an error.">
+                  <div style={styles.adminSection}>
+                    <RagEvalDatasetViewer />
                   </div>
                 </ErrorBoundary>
               </div>

@@ -26,7 +26,7 @@
 ### Retrieval Quality
 - [ ] **Cross-encoder re-ranking** — replace heuristic re-ranking with learned cross-encoder (e.g., MS MARCO MiniLM)
 - [ ] **Query routing** — classify queries as structured-data-only, RAG, or hybrid to reduce unnecessary LLM calls
-- [ ] **Retrieval evaluation framework** — build gold-standard Q&A test set (50+ pairs), automate recall@K and MRR measurement
+- [x] **Retrieval evaluation framework** — gold-standard Q&A test set (51 pairs, `backend/src/evalData/goldStandardRag.json`) with automated recall@K + MRR measurement via `scripts/evalRag.ts` (emits JUnit XML + results.json with configurable thresholds)
 - [ ] **HNSW index migration** — switch pgvector from IVFFlat to HNSW for better recall at scale
 
 ### Generation Quality

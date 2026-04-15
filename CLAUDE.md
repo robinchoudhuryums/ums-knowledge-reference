@@ -25,7 +25,9 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `queryLog.ts` — Query analytics with CSV export
   - `ragTrace.ts` — Per-query RAG observability tracing (retrieval scores, timing, confidence)
   - `ragMetrics.ts` — Retrieval evaluation metrics: recall@K, MRR, keyword coverage, formatted report output
-  - `alertService.ts` — Operational email alerts for critical failures (audit write drops, reindex failures, ingestion errors). Throttled to 1 alert/hour per category. Configurable via ALERT_EMAIL.
+  - `alertService.ts` — Operational email alerts for critical failures (audit write drops, reindex failures, ingestion errors, source staleness). Throttled to 1 alert/hour per category. Configurable via ALERT_EMAIL.
+  - `extractionFeedback.ts` — Human-in-the-loop extraction correction store. Reviewers submit per-field corrections + overall quality rating after editing extraction results; S3-backed append-only audit record with accuracy and overconfidence stats.
+  - `formDrafts.ts` — Server-side partial save/resume for PPD, PMD Account, and PAP Account forms. S3-backed, user-scoped, 2MB payload guard. Complements per-form sessionStorage with cross-device resume.
   - `faqAnalytics.ts` — FAQ pattern detection from query logs
   - `feedback.ts` — User feedback/flagging service
   - `formAnalyzer.ts` — CMN form analysis with blank detection and confidence scoring
@@ -33,7 +35,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `documentExtractor.ts` — Structured document extraction with templates (PPD, CMN, Prior Auth, General) using Claude Sonnet
   - `extractionTemplates.ts` — Extraction template definitions and field schemas
   - `clinicalNoteExtractor.ts` — AI-assisted clinical note extraction (ICD-10, test results, medical necessity) using Claude Sonnet
-  - `sourceMonitor.ts` — Automated URL monitoring for external document changes (SHA-256 hash comparison). Parallel checks with concurrency limit of 3.
+  - `sourceMonitor.ts` — Automated URL monitoring for external document changes (SHA-256 hash comparison). Parallel checks with concurrency limit of 3. Staleness audit (`auditStaleSources`) runs daily and alerts when a source hasn't produced fresh content in longer than its configured `expectedUpdateCadenceDays`; per-source alerts throttled to 1/24h.
   - `feeScheduleFetcher.ts` — CMS DME fee schedule auto-fetch and ingestion
   - `reindexer.ts` — Document change detection and re-ingestion service
   - `hcpcsLookup.ts` — Static HCPCS code database (334 codes, 25 categories) with search, lookup, and category browsing
@@ -68,7 +70,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Routes** (`backend/src/routes/`):
   - `query.ts` — RAG query (non-streaming + streaming SSE), query reformulation for follow-ups, rate-limited (30 req/15min per user)
   - `documents.ts` — Document upload, listing, deletion, clinical extraction, fee schedule fetch, reindex, embedding reindex (migration path for model changes)
-  - `extraction.ts` — Structured document extraction with template selection + async job endpoints. Error messages sanitized to prevent internal AWS/Bedrock detail leakage.
+  - `extraction.ts` — Structured document extraction with template selection + async job endpoints. Error messages sanitized to prevent internal AWS/Bedrock detail leakage. Includes human-in-the-loop correction endpoints (submit per-field corrections, list/fetch history, admin aggregate stats).
   - `users.ts` — Admin user management CRUD (list, update role, delete, password reset)
   - `errors.ts` — Frontend error reporting endpoint
   - `feedback.ts` — User feedback and response flagging
@@ -81,13 +83,16 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `ppd.ts` — PPD questionnaire, PMD recommendations, seating evaluation, submission queue, email
   - `accountCreation.ts` — PMD Account Creation form submission + insurance card OCR
   - `papAccountCreation.ts` — PAP/CPAP Account Creation form submission
+  - `formDrafts.ts` — Partial save/resume/discard for PPD, PMD Account, and PAP Account forms
+  - `eval.ts` — Admin read-only view of the gold-standard RAG evaluation dataset
 - **Config** (`backend/src/config/`): `aws.ts` (AWS clients, model IDs), `database.ts` (PostgreSQL connection pool with RDS SSL), `migrate.ts` (SQL migration runner), `formRules.ts` (CMN form type rules)
 - **Database layer** (`backend/src/db/`): Hybrid S3/RDS access layer. `index.ts` routes to PostgreSQL when DATABASE_URL is configured, falls back to S3 JSON. `users.ts` (user CRUD), `documents.ts` (document/collection CRUD with document count aggregation), `vectorStore.ts` (pgvector-backed similarity search with HNSW index).
 - **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index), `003_add_fk_indexes.sql` (indexes on FK columns: usage_records, audit_logs, query_logs, feedback, jobs by user_id + partial index on documents where status='ready'), `004_add_foreign_keys.sql` (FK constraints on 12 columns across 9 tables: RESTRICT on audit/log tables for HIPAA preservation, CASCADE on chunks/usage/jobs), `005_fix_user_id_default.sql` (replaces predictable timestamp-based user ID default with `gen_random_uuid()`), `005_add_mfa_columns.sql` (MFA secret, enabled flag), `006_audit_chain_state.sql` (DB-backed audit hash chain for multi-instance), `007_add_user_email.sql` (email column for password reset), `008_add_mfa_recovery_codes.sql` (recovery codes array), `009_hnsw_index.sql.manual` (replaces IVFFlat with HNSW — MANUAL migration, not auto-applied on startup because non-concurrent CREATE INDEX on a populated chunks table would exceed the deploy health-check timeout. Run steps manually via `psql "$DATABASE_URL"` using `CREATE INDEX CONCURRENTLY`)
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): 930 total tests across 58 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
-- **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`. `reembed.ts` — Re-embed all chunks with the current embedding model (migration path for model changes). `evalEmbeddings.ts` — Embedding model comparison script (Titan vs Cohere): runs gold-standard Q&A pairs, computes recall@K/MRR/keyword coverage, produces side-by-side report.
+- **Tests** (`backend/src/__tests__/`): 964 total tests across 62 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, extraction feedback, form drafts, gold-standard eval dataset + scoring, source staleness auditing + alerting, orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
+- **Eval data** (`backend/src/evalData/`): `goldStandardRag.json` (51 Q&A pairs across coverage, clinical, equipment, billing, forms categories) + `loader.ts` (validating loader — fails fast on malformed entries). Consumed by `scripts/evalRag.ts` (CI harness) and `scripts/evalEmbeddings.ts` (embedding-model comparison).
+- **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`. `reembed.ts` — Re-embed all chunks with the current embedding model (migration path for model changes). `evalEmbeddings.ts` — Embedding model comparison (Titan vs Cohere) against the gold-standard dataset. `evalRag.ts` — Gold-standard RAG eval harness; emits `eval-output/junit.xml` + `results.json` and exits non-zero when recall/MRR fall below configured thresholds. Not in `npm test` because it requires Bedrock + a populated index.
 
 ### Frontend (`frontend/`)
 - **Framework**: React + TypeScript + Vite
@@ -119,7 +124,12 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `LoadingSkeleton.tsx` — Reusable shimmer-animated loading placeholder
   - `Toast.tsx` — Toast notification system with Heroicon status icons and semantic CSS variable theming
   - `ConfirmDialog.tsx` — Modal confirmation dialog with danger variant, Escape key dismiss, auto-focus management
-- **Hooks**: `frontend/src/hooks/useAuth.ts` (login/logout with stream cancellation), `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout with full-viewport interaction blocker)
+  - `FormDraftBanner.tsx` — Save-status indicator + "Resume draft…" dropdown + "Start over" button shown at the top of PPD/PMD/PAP forms; drives the `useFormDraft` hook
+  - `ExtractionCorrectionPanel.tsx` — Inline panel under extraction results. Diffs original LLM output against reviewer edits and submits the correction record with an overall quality rating and optional note
+  - `SourceStalenessManager.tsx` — Admin dashboard card listing monitored sources past their expected update cadence; includes "Run audit now" button that triggers the alerting path
+  - `RagEvalDatasetViewer.tsx` — Admin read-only view of the gold-standard RAG dataset with category filter and text search
+  - `ExtractionQualityStatsCard.tsx` — Admin card showing aggregate accuracy and overconfidence from reviewer-submitted extraction corrections
+- **Hooks**: `frontend/src/hooks/useAuth.ts` (login/logout with stream cancellation), `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout with full-viewport interaction blocker), `frontend/src/hooks/useFormDraft.ts` (debounced 2s auto-save to `/api/form-drafts`, `resume(id)`, `discardCurrent()`; failures are non-fatal since sessionStorage remains the first line of defense)
 - **API client**: `frontend/src/services/api.ts` (AbortController-based stream cancellation, 2MB SSE buffer cap, silent token refresh on 401)
 - **Types**: `frontend/src/types/index.ts`
 - **Styling**: CSS variables design system (`index.css`) with 60+ tokens for light/dark themes including semantic status colors (success/error/warning/info with light/border/text variants) and confidence colors (high/partial/low with background/border variants). Tailwind CSS v4 for utility classes. Healthcare blue palette with hexagonal/molecular background pattern. Dark mode via `class="dark"` on `<html>` with localStorage persistence and system preference detection. Responsive breakpoints at 900px (tablet: icon-only tabs, compact header) and 640px (mobile: stacked header, wrapped tabs).
@@ -234,6 +244,11 @@ AUDIT_RETENTION_YEARS           # Retention period in years (default: 6, HIPAA m
 # Cross-encoder re-ranking (optional — adds ~200-500ms latency per query)
 CROSS_ENCODER_RERANK            # "true" to enable LLM-based re-ranking after retrieval
 CROSS_ENCODER_TOP_N             # Number of candidates to re-score (default: 8, max: 20)
+
+# RAG gold-standard eval harness (CLI: scripts/evalRag.ts, not run in CI by default)
+RAG_EVAL_RECALL_THRESHOLD       # Minimum average recall@10 to pass (default: 0.5)
+RAG_EVAL_MRR_THRESHOLD          # Minimum MRR to pass (default: 0.4)
+RAG_EVAL_OUTPUT_DIR             # Where to write junit.xml + results.json (default: ./eval-output)
 ```
 
 ## Recent Changes
@@ -272,6 +287,10 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/documents/reindex-embeddings` | Admin | Re-embed all chunks with current model (migration path) |
 | POST | `/api/extraction/extract` | User | Structured document extraction with template (sync) |
 | POST | `/api/extraction/extract/async` | User | Start async extraction job, returns jobId |
+| POST | `/api/extraction/correct` | User | Submit reviewer correction for an extraction result |
+| GET | `/api/extraction/corrections` | User | List reviewer corrections (own only; admins see all) |
+| GET | `/api/extraction/corrections/:templateId/:id` | User | Fetch a single correction record |
+| GET | `/api/extraction/corrections-stats` | Admin | Aggregate accuracy + overconfidence stats |
 | GET | `/api/extraction/jobs/:id` | User | Get async job status and result |
 | GET | `/api/extraction/jobs` | User | List user's async jobs |
 | GET | `/api/users` | Admin | List all users |
@@ -290,6 +309,13 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/sources/:id/check` | Admin | Force-check a source for changes |
 | POST | `/api/sources/check-all` | Admin | Force-check all sources |
 | POST | `/api/sources/seed-lcds` | Admin | Seed 8 CMS LCD sources for auto-monitoring |
+| GET | `/api/sources/staleness` | Admin | Read-only view of sources past their expected update cadence |
+| POST | `/api/sources/audit-staleness` | Admin | Run staleness audit now; alerts via operational email (throttled) |
+| POST | `/api/form-drafts` | User | Upsert a form draft (partial save) for PPD/PMD/PAP |
+| GET | `/api/form-drafts` | User | List caller's form drafts (admins can pass `?all=1`) |
+| GET | `/api/form-drafts/:formType/:id` | User | Load a specific draft (ACL-enforced to owner) |
+| DELETE | `/api/form-drafts/:formType/:id` | User | Discard a draft ("start over") |
+| GET | `/api/eval/dataset` | Admin | Gold-standard RAG evaluation dataset (read-only) |
 | GET | `/api/hcpcs/search?q=` | User | Search HCPCS codes by code or description |
 | GET | `/api/hcpcs/code/:code` | User | Exact HCPCS code lookup |
 | GET | `/api/hcpcs/categories` | User | List all HCPCS categories |
@@ -330,13 +356,13 @@ PHI Protection, Authentication & Authorization Integrity, RAG Retrieval Quality,
 
 ## Subsystems
 RAG Query Pipeline:
-services/vectorStore.ts, services/embeddings.ts, services/embeddingProvider.ts, services/titanEmbeddingProvider.ts, services/cohereEmbeddingProvider.ts, services/chunker.ts, services/referenceEnrichment.ts, services/abTesting.ts, services/ragMetrics.ts, services/crossEncoderRerank.ts, db/vectorStore.ts, routes/query.ts
+services/vectorStore.ts, services/embeddings.ts, services/embeddingProvider.ts, services/titanEmbeddingProvider.ts, services/cohereEmbeddingProvider.ts, services/chunker.ts, services/referenceEnrichment.ts, services/abTesting.ts, services/ragMetrics.ts, services/crossEncoderRerank.ts, db/vectorStore.ts, evalData/loader.ts, scripts/evalRag.ts, routes/query.ts, routes/eval.ts
 
 ## Document Ingestion & Lifecycle:
 services/ingestion.ts, services/textExtractor.ts, services/visionExtractor.ts, services/ocr.ts, services/s3Storage.ts, services/sourceMonitor.ts, services/feeScheduleFetcher.ts, services/reindexer.ts, services/orphanCleanup.ts, routes/documents.ts, routes/sourceMonitor.ts
 
 ## Document Extraction & Analysis:
-services/documentExtractor.ts, services/extractionTemplates.ts, services/clinicalNoteExtractor.ts, services/formAnalyzer.ts, services/pdfAnnotator.ts, services/jobQueue.ts, routes/extraction.ts
+services/documentExtractor.ts, services/extractionTemplates.ts, services/clinicalNoteExtractor.ts, services/extractionFeedback.ts, services/formAnalyzer.ts, services/pdfAnnotator.ts, services/jobQueue.ts, routes/extraction.ts
 
 ## Auth, Security & Access Control:
 middleware/auth.ts, middleware/authConfig.ts, middleware/tokenService.ts, middleware/waf.ts, services/mfa.ts, services/vulnerabilityScanner.ts, routes/users.ts
@@ -348,7 +374,7 @@ services/audit.ts, services/dataRetention.ts, services/incidentResponse.ts, util
 services/hcpcsLookup.ts, services/icd10Mapping.ts, services/coverageChecklists.ts, services/pmdCatalog.ts, config/formRules.ts, routes/hcpcs.ts, routes/icd10.ts, routes/coverage.ts
 
 ## Forms & Workflows:
-services/ppdQuestionnaire.ts, services/seatingEvaluation.ts, services/ppdQueue.ts, services/accountCreation.ts, services/papAccountCreation.ts, services/insuranceCardReader.ts, services/emailService.ts, services/productImageResolver.ts, utils/htmlEscape.ts, routes/ppd.ts, routes/accountCreation.ts, routes/papAccountCreation.ts, routes/productImages.ts
+services/ppdQuestionnaire.ts, services/seatingEvaluation.ts, services/ppdQueue.ts, services/accountCreation.ts, services/papAccountCreation.ts, services/insuranceCardReader.ts, services/emailService.ts, services/productImageResolver.ts, services/formDrafts.ts, utils/htmlEscape.ts, routes/ppd.ts, routes/accountCreation.ts, routes/papAccountCreation.ts, routes/productImages.ts, routes/formDrafts.ts
 
 ## Observability & Analytics:
 services/ragTrace.ts, services/queryLog.ts, services/faqAnalytics.ts, services/usage.ts, services/feedback.ts, services/alertService.ts, utils/metrics.ts, routes/queryLog.ts, routes/feedback.ts, routes/usage.ts, routes/abTesting.ts, routes/errors.ts

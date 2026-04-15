@@ -8,6 +8,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
+import { useFormDraft } from '../hooks/useFormDraft';
+import { FormDraftBanner } from './FormDraftBanner';
+import type { FormDraft } from '../services/api';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -299,6 +302,53 @@ export function PpdQuestionnaire() {
     return Object.entries(responses).map(([questionId, answer]) => ({ questionId, answer }));
   }, [responses]);
 
+  // Server-side draft: complements existing sessionStorage by letting the
+  // user resume across devices or after an accidental tab close. Auto-save
+  // is debounced 2s and only engages once the patient label is entered so
+  // we don't litter the queue with empty records.
+  const draftPayload = useMemo(
+    () => ({ patientInfo, responses, lang, preferred, productStatus }),
+    [patientInfo, responses, lang, preferred, productStatus],
+  );
+  const draft = useFormDraft({
+    formType: 'ppd',
+    payload: draftPayload,
+    label: patientInfo.trim() || undefined,
+    completionPercent: progressPct,
+    enabled: patientInfo.trim().length > 0 && !recommendations,
+  });
+
+  const handleResumeDraft = useCallback((rec: FormDraft) => {
+    const p = rec.payload as {
+      patientInfo?: string;
+      responses?: Record<string, string>;
+      lang?: Lang;
+      preferred?: string;
+      productStatus?: Record<string, string>;
+    } | null;
+    if (!p) return;
+    if (typeof p.patientInfo === 'string') setPatientInfo(p.patientInfo);
+    if (p.responses && typeof p.responses === 'object') setResponses(p.responses);
+    if (p.lang === 'en' || p.lang === 'es') setLang(p.lang);
+    if (typeof p.preferred === 'string') setPreferred(p.preferred);
+    if (p.productStatus && typeof p.productStatus === 'object') setProductStatus(p.productStatus);
+  }, []);
+
+  const handleStartOverDraft = useCallback(async () => {
+    await draft.discardCurrent();
+    setResponses({});
+    setRecommendations(null);
+    setSeatingEvalHtml('');
+    setSubmitSuccess('');
+    setError('');
+    setPreferred('');
+    setProductStatus({});
+    if (patientInfo.trim()) {
+      sessionStorage.removeItem(storageKey(patientInfo));
+    }
+    setPatientInfo('');
+  }, [draft, patientInfo]);
+
   // Submit to API for recommendations
   const handleSubmit = async () => {
     setLoading(true);
@@ -558,6 +608,19 @@ export function PpdQuestionnaire() {
           </div>
         </div>
       </div>
+
+      {/* Server-side draft status + resume/start-over controls */}
+      <FormDraftBanner
+        formType="ppd"
+        currentDraftId={draft.currentDraftId}
+        lastSavedAt={draft.lastSavedAt}
+        saving={draft.saving}
+        error={draft.error}
+        resume={draft.resume}
+        onResume={handleResumeDraft}
+        onStartOver={handleStartOverDraft}
+        currentLabel={patientInfo.trim() || undefined}
+      />
 
       {/* Progress ring */}
       <div style={sty.progressRing}>

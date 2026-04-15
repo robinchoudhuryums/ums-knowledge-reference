@@ -8,6 +8,7 @@ import {
   ExtractionTemplateField,
   ExtractionResult,
 } from '../services/api';
+import { ExtractionCorrectionPanel } from './ExtractionCorrectionPanel';
 
 export function DocumentExtractor() {
   const [templates, setTemplates] = useState<ExtractionTemplateInfo[]>([]);
@@ -313,6 +314,18 @@ export function DocumentExtractor() {
               </div>
             ))}
           </div>
+
+          {/* Human-in-the-loop correction feedback */}
+          <ExtractionCorrectionPanel
+            templateId={result.templateId}
+            reportedConfidence={result.confidence === 'medium' ? 'medium' : result.confidence}
+            filename={selectedFile?.name}
+            originalData={result.data}
+            editedData={editedData}
+            fieldLabels={Object.fromEntries(
+              templateDetail.fields.map(f => [f.key, f.label]),
+            )}
+          />
         </div>
       )}
     </div>

@@ -63,6 +63,7 @@ import accountCreationRoutes from './routes/accountCreation';
 import papAccountCreationRoutes from './routes/papAccountCreation';
 import productImageRoutes from './routes/productImages';
 import formDraftsRoutes from './routes/formDrafts';
+import evalRoutes from './routes/eval';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -369,6 +370,9 @@ app.use('/api/pap-account', papAccountCreationRoutes);
 
 // Form drafts — partial save/resume for PPD, PMD Account, PAP Account
 app.use('/api/form-drafts', formDraftsRoutes);
+
+// Gold-standard RAG eval dataset (read-only admin view)
+app.use('/api/eval', evalRoutes);
 
 // Product images (S3-backed)
 app.use('/api/products', productImageRoutes);

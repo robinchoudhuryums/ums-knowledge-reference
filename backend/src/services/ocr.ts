@@ -9,6 +9,7 @@ import { s3Client, S3_BUCKET } from '../config/aws';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
+import { withSpan } from '../utils/traceSpan';
 import { pollTextractJob } from '../utils/textractPoller';
 
 const region = process.env.AWS_REGION || 'us-east-1';
@@ -37,10 +38,12 @@ const MAX_TRANSIENT_RETRIES = 3; // Retry transient errors (HTTP 500) up to 3 ti
  * we upload to S3 and use the async StartDocumentTextDetection API.
  */
 export async function extractTextWithOcr(buffer: Buffer, filename: string): Promise<OcrResult> {
+  return withSpan('ocr.extract', { filename, sizeBytes: buffer.length }, async (span) => {
   logger.info('Starting OCR extraction', { filename, sizeBytes: buffer.length });
 
   const ext = filename.split('.').pop()?.toLowerCase() || '';
   const isPdf = ext === 'pdf';
+  span.setAttribute('isPdf', isPdf);
 
   // Wrap in a hard timeout to prevent indefinite hangs if Textract is unresponsive.
   // Without this, a stuck job could block the request forever.
@@ -54,10 +57,14 @@ export async function extractTextWithOcr(buffer: Buffer, filename: string): Prom
   });
 
   try {
-    return await Promise.race([ocrPromise, timeoutPromise]);
+    const result = await Promise.race([ocrPromise, timeoutPromise]);
+    span.setAttribute('confidence', result.confidence ?? 0);
+    span.setAttribute('textLength', result.text.length);
+    return result;
   } finally {
     clearTimeout(timeoutId!);
   }
+  }); // end withSpan
 }
 
 /**

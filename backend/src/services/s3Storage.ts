@@ -8,6 +8,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { VectorStoreIndex } from '../types';
 import { logger } from '../utils/logger';
+import { withSpan } from '../utils/traceSpan';
 import { Readable } from 'stream';
 
 // --- Document file storage ---
@@ -17,6 +18,7 @@ export async function uploadDocumentToS3(
   s3Key: string,
   contentType: string
 ): Promise<void> {
+  return withSpan('s3.upload_document', { s3Key, sizeBytes: fileBuffer.length, contentType }, async () => {
   const upload = new Upload({
     client: s3Client,
     params: {
@@ -30,6 +32,7 @@ export async function uploadDocumentToS3(
 
   await upload.done();
   logger.info('Document uploaded to S3', { s3Key });
+  }); // end withSpan
 }
 
 // M12: Max size we'll buffer into memory when fetching a raw document back
@@ -40,6 +43,7 @@ export async function uploadDocumentToS3(
 const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
 
 export async function getDocumentFromS3(s3Key: string): Promise<Buffer> {
+  return withSpan('s3.get_document', { s3Key }, async (span) => {
   // HEAD first so we can reject oversized objects without streaming them.
   // Also catches objects that existed before the guard was in place.
   const head = await s3Client.send(new HeadObjectCommand({
@@ -56,12 +60,12 @@ export async function getDocumentFromS3(s3Key: string): Promise<Buffer> {
     );
   }
 
-  const result = await s3Client.send(new GetObjectCommand({
+  const getResult = await s3Client.send(new GetObjectCommand({
     Bucket: S3_BUCKET,
     Key: s3Key,
   }));
 
-  const stream = result.Body as Readable;
+  const stream = getResult.Body as Readable;
   const chunks: Buffer[] = [];
   let totalSize = 0;
   for await (const chunk of stream) {
@@ -78,7 +82,10 @@ export async function getDocumentFromS3(s3Key: string): Promise<Buffer> {
     }
     chunks.push(buf);
   }
-  return Buffer.concat(chunks);
+  const doc = Buffer.concat(chunks);
+  span.setAttribute('sizeBytes', doc.length);
+  return doc;
+  }); // end withSpan
 }
 
 /**

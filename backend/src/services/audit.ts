@@ -4,6 +4,7 @@ import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { AuditLogEntry } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
+import { withSpan } from '../utils/traceSpan';
 import { redactPhi } from '../utils/phiRedactor';
 import { createMutex } from '../utils/asyncMutex';
 import { withRetry } from '../utils/resilience';
@@ -171,6 +172,7 @@ export async function logAuditEvent(
   action: AuditLogEntry['action'],
   details: Record<string, unknown>
 ): Promise<void> {
+  return withSpan('audit.log_event', { action, userId }, async () => {
   const sanitizedDetails = deepRedactPhi(details) as Record<string, unknown>;
 
   await withAuditLock(async () => {
@@ -237,6 +239,7 @@ export async function logAuditEvent(
       }).catch(() => {}); // Never block audit path
     }
   });
+  }); // end withSpan
 }
 
 /** Concurrency limit for parallel S3 GETs during audit log retrieval */

@@ -13,6 +13,7 @@ import { bedrockClient, BEDROCK_EXTRACTION_MODEL } from '../config/aws';
 import { extractText } from './textExtractor';
 import { logger } from '../utils/logger';
 import { withRetry, withTimeout } from '../utils/resilience';
+import { withSpan } from '../utils/traceSpan';
 
 export interface ClinicalExtraction {
   // Patient
@@ -167,15 +168,20 @@ export async function extractClinicalNotes(
 
   let responseText: string;
   try {
-    const response = await withRetry(
-      () => withTimeout(
-        () => bedrockClient.send(command),
-        60000,
-        'Bedrock clinical extraction',
-      ),
-      { maxRetries: 3, baseDelayMs: 1000, label: 'Bedrock clinical extraction' },
-    );
-    const body = JSON.parse(new TextDecoder().decode(response.body));
+    const body = await withSpan('clinical_extraction.bedrock', { model: BEDROCK_EXTRACTION_MODEL }, async (span) => {
+      const res = await withRetry(
+        () => withTimeout(
+          () => bedrockClient.send(command),
+          60000,
+          'Bedrock clinical extraction',
+        ),
+        { maxRetries: 3, baseDelayMs: 1000, label: 'Bedrock clinical extraction' },
+      );
+      const parsed = JSON.parse(new TextDecoder().decode(res.body));
+      span.setAttribute('tokens.input', parsed.usage?.input_tokens ?? 0);
+      span.setAttribute('tokens.output', parsed.usage?.output_tokens ?? 0);
+      return parsed;
+    });
     responseText = body.content?.[0]?.text || '';
   } catch (error: unknown) {
     const message = (error as Error).message;

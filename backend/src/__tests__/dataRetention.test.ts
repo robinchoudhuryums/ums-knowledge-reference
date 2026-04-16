@@ -455,7 +455,6 @@ describe('dataRetention', () => {
         { id: 'd2', formType: 'ppd', createdBy: 'alice', updatedAt: daysAgo(10) },
       ];
       let savedIndex: unknown = null;
-      let listCallsDone = 0;
 
       mockSend.mockImplementation(async (cmd: { _type?: string; input?: { Key?: string; Body?: string } }) => {
         // Existing date-based categories return empty listings

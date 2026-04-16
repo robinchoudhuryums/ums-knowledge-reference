@@ -1,0 +1,149 @@
+# UMS Knowledge Base — Nightly RAG Evaluation
+#
+# Runs the gold-standard RAG eval harness (scripts/evalRag.ts) against
+# the production vector store. Measures recall@10 and MRR on the 51-pair
+# gold-standard dataset and fails if either drops below threshold.
+#
+# WHY NIGHTLY (not per-push):
+#   - Requires live AWS Bedrock credentials + a populated vector store
+#   - Each run costs ~$0.02 in embedding calls (51 × Titan Embed V2)
+#   - Too slow for per-push CI (~2-5 min vs ~15s for unit tests)
+#
+# WHEN IT FIRES:
+#   - On schedule: every day at 5 AM UTC (after any overnight deploys)
+#   - On manual dispatch: operators can trigger it after major changes
+#
+# WHAT IT DOES:
+#   1. Checks out the repo
+#   2. Installs backend deps
+#   3. Runs scripts/evalRag.ts with production env vars from secrets
+#   4. Uploads eval-output/junit.xml + results.json as a workflow artifact
+#   5. If recall or MRR drop below thresholds, opens a GitHub Issue
+#
+# REQUIRED SECRETS (same as production deployment):
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_BUCKET,
+#   DATABASE_URL (optional — if set, uses pgvector; otherwise falls back
+#   to S3 in-memory index)
+#
+# Thresholds are configurable via env vars (see CLAUDE.md):
+#   RAG_EVAL_RECALL_THRESHOLD — default 0.5 (50% recall@10)
+#   RAG_EVAL_MRR_THRESHOLD    — default 0.4 (40% MRR)
+
+name: RAG Eval Nightly
+
+on:
+  schedule:
+    - cron: '0 5 * * *'  # 5 AM UTC daily
+  workflow_dispatch:      # Manual trigger from Actions tab
+    inputs:
+      recall_threshold:
+        description: 'Minimum average recall@10 (0.0-1.0)'
+        required: false
+        default: '0.5'
+      mrr_threshold:
+        description: 'Minimum MRR (0.0-1.0)'
+        required: false
+        default: '0.4'
+
+jobs:
+  evaluate:
+    name: Gold-standard RAG evaluation
+    runs-on: ubuntu-latest
+    # Don't block the branch — this is an advisory check, not a gate.
+    # Failures surface via the artifact + GitHub Issue (below).
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run RAG evaluation
+        id: eval
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RAG_EVAL_RECALL_THRESHOLD: ${{ github.event.inputs.recall_threshold || '0.5' }}
+          RAG_EVAL_MRR_THRESHOLD: ${{ github.event.inputs.mrr_threshold || '0.4' }}
+          RAG_EVAL_OUTPUT_DIR: ./eval-output
+        run: |
+          npx tsx src/scripts/evalRag.ts 2>&1 | tee eval-log.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload evaluation artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rag-eval-results
+          path: |
+            backend/eval-output/junit.xml
+            backend/eval-output/results.json
+            backend/eval-log.txt
+          retention-days: 90
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '## RAG Eval Nightly — Threshold Breach\n\n';
+            body += 'The nightly gold-standard RAG evaluation dropped below ';
+            body += 'configured thresholds.\n\n';
+
+            try {
+              const results = JSON.parse(
+                fs.readFileSync('backend/eval-output/results.json', 'utf8')
+              );
+              body += `**Average Recall@10:** ${(results.avgRecall * 100).toFixed(1)}%`;
+              body += ` (threshold: ${(results.thresholds.recall * 100).toFixed(0)}%)\n`;
+              body += `**MRR:** ${(results.mrr * 100).toFixed(1)}%`;
+              body += ` (threshold: ${(results.thresholds.mrr * 100).toFixed(0)}%)\n\n`;
+              body += `Dataset version: ${results.datasetVersion}\n`;
+            } catch {
+              body += '_Could not parse results.json — check the workflow log._\n\n';
+            }
+
+            body += '\n**Action required:** review recent changes to the ';
+            body += 'RAG pipeline (embeddings, chunker, scoring) or the ';
+            body += 'gold-standard dataset.\n\n';
+            body += `Run: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+            // Deduplicate: don't open a second issue if one is already open
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'rag-eval-failure',
+              per_page: 1,
+            });
+            if (existing.data.length > 0) {
+              // Comment on the existing issue instead
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'RAG Eval Nightly: threshold breach',
+                body,
+                labels: ['rag-eval-failure', 'automated'],
+              });
+            }

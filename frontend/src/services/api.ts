@@ -43,7 +43,9 @@ function dispatchSessionExpired(): void {
     localStorage.removeItem('token');
   } catch { /* localStorage may be disabled — ignore */ }
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+    // Event, not CustomEvent: we don't need a detail payload and Event is in
+    // the shared browser globals known to our ESLint config.
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
   }
 }
 

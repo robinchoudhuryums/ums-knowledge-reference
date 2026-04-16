@@ -11,6 +11,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
+import JSZip from 'jszip';
 
 vi.mock('../utils/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -126,5 +127,107 @@ describe('stripPdfMetadata (M10)', () => {
     const result = await stripPdfMetadata(pdf);
     const roundTripped = await PDFDocument.load(result.buffer);
     expect(roundTripped.getPageCount()).toBe(3);
+  });
+});
+
+// ── OOXML (DOCX/XLSX) metadata stripping ──────────────────────────────────
+
+/** Build a minimal DOCX-like ZIP with docProps/core.xml set */
+async function buildMockDocx(meta: { creator?: string; lastModifiedBy?: string; title?: string; company?: string }): Promise<Buffer> {
+  const zip = new JSZip();
+  // Minimal [Content_Types].xml so it looks like a real OOXML file
+  zip.file('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>');
+
+  const coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+    xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <dc:creator>${meta.creator || ''}</dc:creator>
+  <cp:lastModifiedBy>${meta.lastModifiedBy || ''}</cp:lastModifiedBy>
+  <dc:title>${meta.title || ''}</dc:title>
+</cp:coreProperties>`;
+  zip.file('docProps/core.xml', coreXml);
+
+  if (meta.company) {
+    const appXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
+  <Company>${meta.company}</Company>
+</Properties>`;
+    zip.file('docProps/app.xml', appXml);
+  }
+
+  // A fake document body so the zip isn't trivially empty
+  zip.file('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>');
+  return Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
+}
+
+describe('stripOoxmlMetadata (DOCX/XLSX)', () => {
+  it('clears creator, lastModifiedBy, title, and company', async () => {
+    const { stripOoxmlMetadata } = await import('../utils/stripMetadata');
+    const docx = await buildMockDocx({
+      creator: 'Dr. John Smith',
+      lastModifiedBy: 'Jane Doe',
+      title: 'Patient Demographics',
+      company: 'Springfield Hospital',
+    });
+
+    const result = await stripOoxmlMetadata(docx, 'intake.docx');
+    expect(result.stripped).toBe(true);
+    expect(result.metadataFound).toBe(true);
+
+    // Verify the stripped zip no longer contains the PHI
+    const roundTripped = await JSZip.loadAsync(result.buffer);
+    const coreStr = await roundTripped.file('docProps/core.xml')!.async('string');
+    expect(coreStr).not.toContain('Dr. John Smith');
+    expect(coreStr).not.toContain('Jane Doe');
+    expect(coreStr).not.toContain('Patient Demographics');
+
+    const appStr = await roundTripped.file('docProps/app.xml')!.async('string');
+    expect(appStr).not.toContain('Springfield Hospital');
+  });
+
+  it('preserves document body content byte-for-byte', async () => {
+    const { stripOoxmlMetadata } = await import('../utils/stripMetadata');
+    const docx = await buildMockDocx({ creator: 'PHI Name' });
+
+    const result = await stripOoxmlMetadata(docx, 'test.docx');
+    const roundTripped = await JSZip.loadAsync(result.buffer);
+    const bodyXml = await roundTripped.file('word/document.xml')!.async('string');
+    expect(bodyXml).toContain('<w:body/>');
+  });
+
+  it('reports metadataFound=false when docProps entries are absent', async () => {
+    const { stripOoxmlMetadata } = await import('../utils/stripMetadata');
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', '<Types/>');
+    zip.file('word/document.xml', '<doc/>');
+    const noMeta = Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
+
+    const result = await stripOoxmlMetadata(noMeta, 'clean.docx');
+    expect(result.stripped).toBe(true);
+    expect(result.metadataFound).toBe(false);
+  });
+
+  it('returns original buffer on invalid ZIP', async () => {
+    const { stripOoxmlMetadata } = await import('../utils/stripMetadata');
+    const garbage = Buffer.from('not-a-zip');
+    const result = await stripOoxmlMetadata(garbage, 'bad.docx');
+    expect(result.stripped).toBe(false);
+    expect(result.buffer).toBe(garbage);
+  });
+});
+
+describe('stripDocumentMetadata dispatcher — OOXML routing', () => {
+  it('routes DOCX to the OOXML stripper', async () => {
+    const { stripDocumentMetadata } = await import('../utils/stripMetadata');
+    const docx = await buildMockDocx({ creator: 'Test' });
+    const result = await stripDocumentMetadata(docx, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'test.docx');
+    expect(result.stripped).toBe(true);
+  });
+
+  it('routes XLSX to the OOXML stripper', async () => {
+    const { stripDocumentMetadata } = await import('../utils/stripMetadata');
+    const xlsx = await buildMockDocx({ creator: 'Test' });
+    const result = await stripDocumentMetadata(xlsx, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'data.xlsx');
+    expect(result.stripped).toBe(true);
   });
 });

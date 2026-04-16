@@ -125,6 +125,22 @@ export function DocumentManager({ isAdmin, collections, onCollectionsChange }: P
     setUploading(true);
     setError('');
 
+    // S2-8: cap uploads at the server's 50 MB multer limit. Without this
+    // the browser reads the full file into memory before the server ever
+    // rejects it — a 500 MB file can freeze the tab for several seconds
+    // and blow up mobile devices. Catch it early and surface a friendly
+    // message rather than letting the backend error stream in later.
+    const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+    const oversize = fileList.filter(f => f.size > MAX_UPLOAD_BYTES);
+    if (oversize.length > 0) {
+      setError(
+        `File${oversize.length === 1 ? '' : 's'} too large ` +
+        `(max 50 MB): ${oversize.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`).join(', ')}`
+      );
+      setUploading(false);
+      return;
+    }
+
     const queue = fileList.map(f => ({ name: f.name, status: 'pending' as const }));
     setUploadQueue(queue);
 

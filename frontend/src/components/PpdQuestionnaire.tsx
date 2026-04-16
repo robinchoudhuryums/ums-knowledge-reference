@@ -63,17 +63,30 @@ function storageKey(patient: string): string {
 function convertToPng(blob: Blob): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    // S2-7: revoke the object URL in both success and error paths so long
+    // agent sessions with many PMD recommendations don't accumulate blob
+    // URLs in memory until the tab is closed.
+    const url = URL.createObjectURL(blob);
+    const cleanup = () => URL.revokeObjectURL(url);
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { reject(new Error('Canvas not supported')); return; }
-      ctx.drawImage(img, 0, 0);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error('PNG conversion failed')), 'image/png');
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { cleanup(); reject(new Error('Canvas not supported')); return; }
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob(b => {
+          cleanup();
+          return b ? resolve(b) : reject(new Error('PNG conversion failed'));
+        }, 'image/png');
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
     };
-    img.onerror = () => reject(new Error('Image load failed'));
-    img.src = URL.createObjectURL(blob);
+    img.onerror = () => { cleanup(); reject(new Error('Image load failed')); };
+    img.src = url;
   });
 }
 
@@ -601,6 +614,10 @@ export function PpdQuestionnaire() {
             placeholder={lang === 'en' ? 'Patient Name - Trx#' : 'Nombre del Paciente - Trx#'}
             value={patientInfo}
             onChange={e => setPatientInfo(e.target.value)}
+            // S2-6: bound the input — this value is used to derive the
+            // sessionStorage key (see storageKey()), so an unbounded
+            // paste would balloon the key and risk localStorage quota.
+            maxLength={200}
           />
           <div style={sty.langToggle}>
             <button type="button" style={langBtn(lang === 'en')} onClick={() => setLang('en')}>EN</button>

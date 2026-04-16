@@ -19,6 +19,7 @@
 
 import sharp from 'sharp';
 import { PDFDocument } from 'pdf-lib';
+import JSZip from 'jszip';
 import { logger } from '../utils/logger';
 
 /** Image MIME types that can contain EXIF/metadata */
@@ -205,9 +206,87 @@ export async function stripPdfMetadata(
 }
 
 /**
+ * Strip metadata from Office Open XML files (DOCX, XLSX).
+ *
+ * These formats are ZIP archives containing `docProps/core.xml` (Dublin Core:
+ * dc:creator, cp:lastModifiedBy, dc:title, dc:subject, dc:description,
+ * cp:keywords) and `docProps/app.xml` (Application, Company, Manager).
+ * EHR exports routinely populate these with clinician names, facility info,
+ * and sometimes patient names — all of which persist in the raw S3 blob
+ * after text extraction.
+ *
+ * Strategy: open the ZIP, replace the two metadata entries with minimal
+ * empty-field XML, re-zip. All other entries (document.xml, media/, styles,
+ * etc.) are copied byte-for-byte so visible content is unchanged.
+ *
+ * Returns the original buffer on any error — never blocks an upload.
+ */
+
+const EMPTY_CORE_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:dcmitype="http://purl.org/dc/dcmitype/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+</cp:coreProperties>`;
+
+const EMPTY_APP_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
+</Properties>`;
+
+const OOXML_MIMES = new Set([
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',    // .docx
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',          // .xlsx
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',  // .pptx
+]);
+
+export async function stripOoxmlMetadata(
+  buffer: Buffer,
+  filename?: string,
+): Promise<StripResult> {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+
+    const hadCore = zip.file('docProps/core.xml') !== null;
+    const hadApp = zip.file('docProps/app.xml') !== null;
+    const metadataFound = hadCore || hadApp;
+
+    if (hadCore) zip.file('docProps/core.xml', EMPTY_CORE_XML);
+    if (hadApp) zip.file('docProps/app.xml', EMPTY_APP_XML);
+
+    const strippedBytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const strippedBuffer = Buffer.from(strippedBytes);
+
+    if (metadataFound) {
+      logger.info('OOXML metadata stripped', {
+        filename,
+        originalSize: buffer.length,
+        strippedSize: strippedBuffer.length,
+        clearedCore: hadCore,
+        clearedApp: hadApp,
+      });
+    }
+
+    return {
+      buffer: strippedBuffer,
+      stripped: true,
+      metadataFound,
+      originalSize: buffer.length,
+      strippedSize: strippedBuffer.length,
+    };
+  } catch (error) {
+    logger.warn('OOXML metadata stripping failed, proceeding with original', {
+      filename,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { buffer, stripped: false, metadataFound: false, originalSize: buffer.length, strippedSize: buffer.length };
+  }
+}
+
+/**
  * Dispatcher: routes each MIME type to the appropriate stripping function.
  * Returns { stripped: false } with the original buffer for types we don't
- * yet cover (DOCX, XLSX, etc.) — safe default.
+ * cover — safe default.
  */
 export async function stripDocumentMetadata(
   buffer: Buffer,
@@ -219,6 +298,9 @@ export async function stripDocumentMetadata(
   }
   if (mimeType === 'application/pdf') {
     return stripPdfMetadata(buffer, filename);
+  }
+  if (OOXML_MIMES.has(mimeType)) {
+    return stripOoxmlMetadata(buffer, filename);
   }
   return { buffer, stripped: false, metadataFound: false, originalSize: buffer.length, strippedSize: buffer.length };
 }

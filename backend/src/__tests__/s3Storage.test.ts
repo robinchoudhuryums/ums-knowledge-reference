@@ -271,8 +271,14 @@ describe('s3Storage', () => {
   // --- getDocumentFromS3 ---
 
   describe('getDocumentFromS3', () => {
+    // M12: getDocumentFromS3 now HEADs the object first to enforce the
+    // 100MB size guard, then GETs. Each test queues a HEAD response
+    // (ContentLength well under the limit) before the GET response.
+    const mockHead = (bytes: number) => mockSend.mockResolvedValueOnce({ ContentLength: bytes });
+
     it('returns document buffer from S3', async () => {
       const content = Buffer.from('PDF file content');
+      mockHead(content.length);
       mockSend.mockResolvedValueOnce(mockReadableStream(content));
 
       const result = await getDocumentFromS3('documents/test.pdf');
@@ -280,11 +286,13 @@ describe('s3Storage', () => {
     });
 
     it('sends GetObjectCommand with correct key', async () => {
+      mockHead(4);
       mockSend.mockResolvedValueOnce(mockReadableStream(Buffer.from('data')));
       await getDocumentFromS3('documents/myfile.docx');
 
-      const command = mockSend.mock.calls[0][0];
-      expect(command.input).toEqual({
+      // HEAD is call[0], GET is call[1]
+      const getCommand = mockSend.mock.calls[1][0];
+      expect(getCommand.input).toEqual({
         Bucket: 'test-bucket',
         Key: 'documents/myfile.docx',
       });
@@ -293,6 +301,7 @@ describe('s3Storage', () => {
     it('concatenates multiple stream chunks', async () => {
       const chunk1 = Buffer.from('Hello ');
       const chunk2 = Buffer.from('World');
+      mockHead(chunk1.length + chunk2.length);
       mockSend.mockResolvedValueOnce({
         Body: {
           [Symbol.asyncIterator]: async function* () {
@@ -304,6 +313,27 @@ describe('s3Storage', () => {
 
       const result = await getDocumentFromS3('documents/multi.txt');
       expect(result.toString()).toBe('Hello World');
+    });
+
+    it('rejects oversized documents reported by HEAD (M12)', async () => {
+      // 200MB — over the 100MB guard
+      mockHead(200 * 1024 * 1024);
+      await expect(getDocumentFromS3('documents/huge.pdf')).rejects.toThrow(/too large/i);
+    });
+
+    it('rejects oversized documents via stream-size fallback (M12 belt-and-suspenders)', async () => {
+      // HEAD under-reports size (0 or small), then the stream exceeds the guard.
+      // This is the defense against an object replaced mid-read.
+      mockHead(1024);
+      // Stream yields a single huge chunk that crosses the 100MB threshold
+      mockSend.mockResolvedValueOnce({
+        Body: {
+          [Symbol.asyncIterator]: async function* () {
+            yield Buffer.alloc(101 * 1024 * 1024, 0x00);
+          },
+        },
+      });
+      await expect(getDocumentFromS3('documents/sneaky.pdf')).rejects.toThrow(/exceeded size limit/i);
     });
   });
 

@@ -6,7 +6,7 @@
  * and deletes them when they exceed their retention period.
  */
 
-import { ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { ListObjectsV2Command, DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { logAuditEvent } from './audit';
 import { logger } from '../utils/logger';
@@ -19,6 +19,7 @@ const MIN_RETENTION_QUERY_LOG_DAYS = 180;  // 6 months minimum for operational l
 const MIN_RETENTION_RAG_TRACE_DAYS = 30;   // 30 days minimum for troubleshooting
 const MIN_RETENTION_FEEDBACK_DAYS = 180;   // 6 months minimum
 const MIN_RETENTION_PPD_DAYS = 365;        // 1 year minimum for clinical intake data
+const MIN_RETENTION_FORM_DRAFT_DAYS = 30;  // 30 days minimum for abandoned form drafts
 
 /**
  * Parse an integer from an env var with a safe fallback.
@@ -55,6 +56,10 @@ const RETENTION_PPD_DAYS = Math.max(
   safeParseInt(process.env.RETENTION_PPD_DAYS, 730),
   MIN_RETENTION_PPD_DAYS
 );
+const RETENTION_FORM_DRAFT_DAYS = Math.max(
+  safeParseInt(process.env.RETENTION_FORM_DRAFT_DAYS, 90),
+  MIN_RETENTION_FORM_DRAFT_DAYS
+);
 
 export interface RetentionSummary {
   auditDeleted: number;
@@ -62,6 +67,7 @@ export interface RetentionSummary {
   traceDeleted: number;
   feedbackDeleted: number;
   ppdDeleted: number;
+  formDraftsDeleted: number;
 }
 
 // Date pattern: YYYY-MM-DD with valid month (01-12) and day (01-31) ranges.
@@ -150,6 +156,100 @@ async function deleteExpiredObjects(
 }
 
 /**
+ * Cleanup abandoned form drafts. Unlike other data categories (which embed
+ * YYYY-MM-DD in the S3 key), form drafts use an index file with `updatedAt`
+ * timestamps. We load the index, find entries older than the retention
+ * threshold, delete the corresponding S3 objects, and save the pruned index.
+ *
+ * This runs as part of the daily retention sweep alongside audit/queryLog/etc.
+ * The minimum retention floor (MIN_RETENTION_FORM_DRAFT_DAYS = 30) ensures
+ * even a misconfigured env var can't silently delete an active draft.
+ */
+const FORM_DRAFTS_INDEX_KEY = `${S3_PREFIXES.metadata}form-drafts-index.json`;
+const FORM_DRAFTS_PREFIX = `${S3_PREFIXES.metadata}form-drafts/`;
+
+interface DraftIndexEntry {
+  id: string;
+  formType: string;
+  createdBy: string;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
+async function cleanupExpiredFormDrafts(retentionDays: number, now: Date): Promise<number> {
+  try {
+    // Load the draft index
+    const indexResult = await s3Client.send(new GetObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: FORM_DRAFTS_INDEX_KEY,
+    }));
+    const indexBody = await indexResult.Body?.transformToString();
+    if (!indexBody) return 0;
+
+    const entries: DraftIndexEntry[] = JSON.parse(indexBody);
+    if (!Array.isArray(entries) || entries.length === 0) return 0;
+
+    const cutoff = new Date(now);
+    cutoff.setUTCDate(cutoff.getUTCDate() - retentionDays);
+
+    const toDelete: DraftIndexEntry[] = [];
+    const toKeep: DraftIndexEntry[] = [];
+    for (const entry of entries) {
+      const updated = new Date(entry.updatedAt);
+      if (isNaN(updated.getTime()) || updated < cutoff) {
+        toDelete.push(entry);
+      } else {
+        toKeep.push(entry);
+      }
+    }
+
+    if (toDelete.length === 0) return 0;
+
+    // Delete the S3 objects for expired drafts
+    for (const entry of toDelete) {
+      try {
+        const key = `${FORM_DRAFTS_PREFIX}${entry.createdBy}/${entry.formType}/${entry.id}.json`;
+        await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+        logger.debug('Retention: deleted expired form draft', {
+          id: entry.id,
+          formType: entry.formType,
+          updatedAt: entry.updatedAt,
+        });
+      } catch (err) {
+        // Best-effort — S3 DeleteObject is idempotent, so a missing key is fine
+        logger.warn('Retention: failed to delete form draft object', {
+          id: entry.id,
+          error: String(err),
+        });
+      }
+    }
+
+    // Save the pruned index
+    await s3Client.send(new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: FORM_DRAFTS_INDEX_KEY,
+      Body: JSON.stringify(toKeep, null, 2),
+      ContentType: 'application/json',
+      ServerSideEncryption: 'AES256',
+    }));
+
+    logger.info('Retention: form drafts cleanup', {
+      deleted: toDelete.length,
+      remaining: toKeep.length,
+      retentionDays,
+    });
+
+    return toDelete.length;
+  } catch (err) {
+    // If the index doesn't exist, there are no drafts to clean up
+    const errObj = err as { name?: string };
+    if (errObj.name === 'NoSuchKey' || errObj.name === 'NotFound') return 0;
+    logger.error('Retention: form drafts cleanup failed', { error: String(err) });
+    return 0;
+  }
+}
+
+/**
  * Run retention cleanup across all data categories.
  * Deletes S3 objects whose embedded date exceeds their retention period.
  * Logs the cleanup action via the audit service.
@@ -162,6 +262,7 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
     retentionRagTraceDays: RETENTION_RAG_TRACE_DAYS,
     retentionFeedbackDays: RETENTION_FEEDBACK_DAYS,
     retentionPpdDays: RETENTION_PPD_DAYS,
+    retentionFormDraftDays: RETENTION_FORM_DRAFT_DAYS,
   });
 
   // Audit logs: stored under audit/YYYY-MM-DD/
@@ -199,15 +300,23 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
     now
   );
 
+  // Form drafts: stored under metadata/form-drafts/ with an index-based
+  // retention approach (no YYYY-MM-DD in key; uses updatedAt from index)
+  const formDraftsDeleted = await cleanupExpiredFormDrafts(
+    RETENTION_FORM_DRAFT_DAYS,
+    now
+  );
+
   const summary: RetentionSummary = {
     auditDeleted,
     queryLogDeleted,
     traceDeleted,
     feedbackDeleted,
     ppdDeleted,
+    formDraftsDeleted,
   };
 
-  const totalDeleted = auditDeleted + queryLogDeleted + traceDeleted + feedbackDeleted + ppdDeleted;
+  const totalDeleted = auditDeleted + queryLogDeleted + traceDeleted + feedbackDeleted + ppdDeleted + formDraftsDeleted;
 
   logger.info('Data retention cleanup completed', {
     ...summary,
@@ -226,6 +335,7 @@ export async function cleanupExpiredData(): Promise<RetentionSummary> {
           ragTraceDays: RETENTION_RAG_TRACE_DAYS,
           feedbackDays: RETENTION_FEEDBACK_DAYS,
           ppdDays: RETENTION_PPD_DAYS,
+          formDraftDays: RETENTION_FORM_DRAFT_DAYS,
         },
       });
     } catch (error) {

@@ -171,4 +171,16 @@ describe('Ingestion — full lifecycle (S2-2)', () => {
     // Restore original for the next test
     (s3.saveDocumentsIndex as unknown as ReturnType<typeof vi.fn>).mockImplementation(originalSave);
   });
+
+  it('rejects files over the 100MB ingest limit before any S3 work (M12)', async () => {
+    const { ingestDocument } = await import('../services/ingestion');
+    // 101MB — just over the guard
+    const oversize = Buffer.alloc(101 * 1024 * 1024, 0x00);
+    await expect(
+      ingestDocument(oversize, 'huge.pdf', 'application/pdf', 'col-a', 'alice'),
+    ).rejects.toThrow(/Document too large/);
+    // Nothing should have been written
+    expect(storedChunks.length).toBe(0);
+    expect(docsIndex.length).toBe(0);
+  });
 });

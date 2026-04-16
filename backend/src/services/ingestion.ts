@@ -63,6 +63,18 @@ export async function ingestDocument(
     );
   }
 
+  // M12: Size guard at the ingestion entry point. multer caps browser uploads
+  // at 50 MB (backend/src/routes/documents.ts:45), but service-account callers
+  // using X-API-Key bypass multer entirely. Without this check, a hostile
+  // integration could PUT a 1 GB payload and exhaust process memory.
+  const MAX_INGEST_BYTES = 100 * 1024 * 1024;
+  if (fileBuffer.length > MAX_INGEST_BYTES) {
+    throw new Error(
+      `Document too large: ${Math.round(fileBuffer.length / 1024 / 1024)}MB ` +
+      `(limit: ${MAX_INGEST_BYTES / 1024 / 1024}MB)`
+    );
+  }
+
   // Check if this is a re-upload (same name in same collection)
   const existingDocs = await getDocumentsIndex();
   const existingDoc = existingDocs.find(

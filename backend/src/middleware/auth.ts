@@ -419,16 +419,50 @@ export async function createUserHandler(req: AuthRequest, res: Response): Promis
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const effectiveRole: 'admin' | 'user' = role === 'admin' ? 'admin' : 'user';
   const newUser: User = {
     id: crypto.randomUUID(),
     username,
     passwordHash,
-    role: role === 'admin' ? 'admin' : 'user',
+    role: effectiveRole,
     createdAt: new Date().toISOString(),
   };
 
   users.push(newUser);
   await saveUsers(users);
+
+  // L2: every user creation is audit-logged, and admin-role grants also
+  // fire an operational alert so a compromised admin creating another
+  // admin is visible to operators within the hour throttle. HIPAA
+  // §164.308(a)(4) — separation-of-duties detective control.
+  logAuditEvent(req.user!.id, req.user!.username, 'user_create', {
+    createdUserId: newUser.id,
+    createdUsername: newUser.username,
+    role: newUser.role,
+    adminRoleGranted: newUser.role === 'admin',
+  }).catch(err => logger.error('Failed to audit user_create', { error: String(err) }));
+
+  if (newUser.role === 'admin') {
+    // Alerts are throttled per-category (1/hour) but the audit log above
+    // captures every event, so no admin creation goes unrecorded.
+    import('../services/alertService').then(({ sendOperationalAlert }) => {
+      void sendOperationalAlert(
+        'admin_role_granted',
+        `New admin user created: ${newUser.username}`,
+        {
+          actor: req.user!.username,
+          actorId: req.user!.id,
+          createdUsername: newUser.username,
+          createdUserId: newUser.id,
+          createdAt: newUser.createdAt,
+        },
+      );
+    }).catch(() => { /* alert is best-effort */ });
+    logger.warn('Admin role granted at user creation', {
+      actor: req.user!.username,
+      createdUsername: newUser.username,
+    });
+  }
 
   res.status(201).json({ user: { id: newUser.id, username: newUser.username, role: newUser.role } });
 }

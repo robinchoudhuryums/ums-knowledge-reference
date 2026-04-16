@@ -32,7 +32,30 @@ export async function uploadDocumentToS3(
   logger.info('Document uploaded to S3', { s3Key });
 }
 
+// M12: Max size we'll buffer into memory when fetching a raw document back
+// from S3. multer caps browser uploads at 50 MB, but service-account callers
+// (X-API-Key) bypass multer, and adversarial callers could upload large blobs
+// that later OOM the process when a re-processing flow pulls them back.
+// 100 MB is well above the largest legitimate medical document we've seen.
+const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
+
 export async function getDocumentFromS3(s3Key: string): Promise<Buffer> {
+  // HEAD first so we can reject oversized objects without streaming them.
+  // Also catches objects that existed before the guard was in place.
+  const head = await s3Client.send(new HeadObjectCommand({
+    Bucket: S3_BUCKET,
+    Key: s3Key,
+  }));
+  if (head.ContentLength && head.ContentLength > MAX_DOCUMENT_BYTES) {
+    logger.error('S3 document exceeds size limit', {
+      s3Key, sizeBytes: head.ContentLength, limitBytes: MAX_DOCUMENT_BYTES,
+    });
+    throw new Error(
+      `Document too large: ${Math.round(head.ContentLength / 1024 / 1024)}MB ` +
+      `(limit: ${MAX_DOCUMENT_BYTES / 1024 / 1024}MB)`
+    );
+  }
+
   const result = await s3Client.send(new GetObjectCommand({
     Bucket: S3_BUCKET,
     Key: s3Key,
@@ -40,8 +63,20 @@ export async function getDocumentFromS3(s3Key: string): Promise<Buffer> {
 
   const stream = result.Body as Readable;
   const chunks: Buffer[] = [];
+  let totalSize = 0;
   for await (const chunk of stream) {
-    chunks.push(Buffer.from(chunk));
+    const buf = Buffer.from(chunk);
+    totalSize += buf.length;
+    // Belt-and-suspenders guard — a streamed body can exceed the HEAD-reported
+    // size if the object is replaced mid-read. Abort early rather than
+    // unbounded memory growth.
+    if (totalSize > MAX_DOCUMENT_BYTES) {
+      throw new Error(
+        `Document stream exceeded size limit while reading ${s3Key} ` +
+        `(${MAX_DOCUMENT_BYTES / 1024 / 1024}MB)`
+      );
+    }
+    chunks.push(buf);
   }
   return Buffer.concat(chunks);
 }

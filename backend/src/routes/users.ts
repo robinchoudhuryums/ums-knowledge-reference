@@ -72,9 +72,32 @@ router.put('/:id/role', async (req: AuthRequest, res: Response) => {
       targetUsername: user.username,
       previousRole,
       newRole: role,
+      adminRoleGranted: previousRole !== 'admin' && role === 'admin',
     });
 
     logger.info('User role updated', { targetUserId: id, targetUsername: user.username, previousRole, newRole: role, updatedBy: req.user!.username });
+
+    // L2: elevations to admin fire an operational alert (throttled 1/hr).
+    // A compromised admin session silently promoting another account is
+    // otherwise invisible until someone reviews the audit log.
+    if (previousRole !== 'admin' && role === 'admin') {
+      const { sendOperationalAlert } = await import('../services/alertService');
+      void sendOperationalAlert(
+        'admin_role_granted',
+        `User elevated to admin: ${user.username}`,
+        {
+          actor: req.user!.username,
+          actorId: req.user!.id,
+          targetUsername: user.username,
+          targetUserId: id,
+          previousRole,
+        },
+      );
+      logger.warn('User elevated to admin role', {
+        actor: req.user!.username,
+        targetUsername: user.username,
+      });
+    }
 
     res.json({ user: { id: user.id, username: user.username, role: user.role } });
   } catch (error) {

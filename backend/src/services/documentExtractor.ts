@@ -11,6 +11,7 @@ import { getTemplateById, ExtractionTemplate } from './extractionTemplates';
 import { extractText } from './textExtractor';
 import { logger } from '../utils/logger';
 import { withRetry, withTimeout } from '../utils/resilience';
+import { withSpan } from '../utils/traceSpan';
 
 export { BEDROCK_EXTRACTION_MODEL };
 
@@ -180,16 +181,21 @@ export async function extractDocumentData(
 
   let responseText: string;
   try {
-    const response = await withRetry(
-      () => withTimeout(
-        () => bedrockClient.send(command),
-        60000,
-        'Bedrock extraction',
-      ),
-      { maxRetries: 3, baseDelayMs: 1000, label: 'Bedrock extraction' },
-    );
-    const body = JSON.parse(new TextDecoder().decode(response.body));
-    responseText = body.content?.[0]?.text || '';
+    const response = await withSpan('extraction.bedrock', { model: BEDROCK_EXTRACTION_MODEL, templateId }, async (span) => {
+      const res = await withRetry(
+        () => withTimeout(
+          () => bedrockClient.send(command),
+          60000,
+          'Bedrock extraction',
+        ),
+        { maxRetries: 3, baseDelayMs: 1000, label: 'Bedrock extraction' },
+      );
+      const body = JSON.parse(new TextDecoder().decode(res.body));
+      span.setAttribute('tokens.input', body.usage?.input_tokens ?? 0);
+      span.setAttribute('tokens.output', body.usage?.output_tokens ?? 0);
+      return body;
+    });
+    responseText = response.content?.[0]?.text || '';
   } catch (error: unknown) {
     const message = (error as Error).message;
     logger.error('Bedrock extraction call failed', { error: message, templateId });

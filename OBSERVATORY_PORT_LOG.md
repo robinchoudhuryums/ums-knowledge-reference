@@ -29,6 +29,14 @@ Tracks improvements made in UMS Knowledge Reference that are candidates for port
 | Unicode normalization in injection detection | 2026-03-31 | **Pending** | Cyrillic look-alike character mapping before regex matching |
 | Conversation history injection validation | 2026-03-31 | **Pending** | User turns in history checked for injection before inclusion |
 | SSL cert validation default true | 2026-03-31 | N/A | Observatory uses managed DB with valid certs |
+| Malware scan fail-closed on ClamAV unreachable | 2026-04-15 | **Pending** | `utils/malwareScan.ts` throws `MalwareScanUnavailableError` instead of silently passing. Pattern: MALWARE_SCAN_FAIL_CLOSED env var default `true`, operational alert on unavailability, time-boxed 60s availability cache (INV-29) |
+| MFA recovery code TOCTOU fix (per-user login mutex) | 2026-04-15 | **Pending** | Per-username `createMutex()` serializes read-modify-save of user state during login so concurrent attempts can't both consume the same recovery code. In-process only; multi-instance needs Redis. Applicable to any auth system with single-use codes (INV-28) |
+| Session-expired event (no-reload logout) | 2026-04-15 | **Pending** | Frontend pattern: dispatch `SESSION_EXPIRED_EVENT` instead of `window.location.reload()` when refresh fails. Preserves React state and in-memory work. `useAuth` listens and transitions to LoginForm |
+| Rate-limit key resolution (no 'unknown' pooling) | 2026-04-16 | **Pending** | `utils/rateLimitKey.ts` `resolveRateLimitKey(req)` replaces `req.ip \|\| 'unknown'` fallbacks. Resolution ladder: user.id → req.ip → SHA-256(XFF + User-Agent) → per-request UUID. Distinct clients never pool into one bucket even on misconfigured trust-proxy. Throttled warn on fallback (INV-30, H3) |
+| CSRF exempt list exact-match | 2026-04-16 | **Pending** | Prefix-match (`startsWith`) on CSRF exemptions is a trap door — `/api/auth/login-sso` would silently inherit `/api/auth/login`'s exemption. Use exact-equality array lookup instead (H1, INV-11) |
+| Zero-width / invisible character stripping in prompt-injection detector | 2026-04-16 | **Pending** | Strip U+200B-200D, U+FEFF, U+2060, U+00AD, U+180E, U+2061-2064 BEFORE NFKD normalization. Defeats `ign\u200Bore all previous instructions` bypasses where Claude reads the full phrase but the regex fails on literal tokens (INV-21, H4) |
+| Unicode-aware patient name redaction | 2026-04-16 | **Pending** | Name regex uses `\p{Lu}[\p{L}'\-\.]+` with `u` flag (no `i` — it case-folds `\p{Lu}`). Prefix keywords handled via explicit `[Pp]atient` alternation. Catches Spanish/Portuguese accents, Irish apostrophes, French hyphens, middle initials. Imported pattern for any PHI scrubber (M1) |
+| Error report URL scrub (frontend) | 2026-04-16 | **Pending** | `safeLocationHref()` returns `${origin}${pathname}` only — strips query and hash. Query strings routinely carry PHI (`?patientId=123`); hash fragments sometimes do. Apply everywhere a URL ships to error tracking / Sentry (M9) |
 
 ## RAG Quality
 
@@ -50,6 +58,9 @@ Tracks improvements made in UMS Knowledge Reference that are candidates for port
 | Embedding model abstraction (`EmbeddingProvider` interface) | 2026-03-28 | **Ported** | `embedding-provider.ts` interface + `TitanEmbeddingProvider` in embeddings.ts |
 | Table preservation in chunker | 2026-03-28 | **Ported** | `detectTable()` in chunker.ts, pipe/tab/separator detection, 2x size allowance |
 | Usage rollback on failed queries | 2026-03-28 | **Ported** | Negative quantity trackUsage in postProcessing when call status is failed |
+| Gold-standard RAG eval harness (JSON dataset + CI runner) | 2026-04-15 | **Pending** | `evalData/goldStandardRag.json` (51 pairs) + `scripts/evalRag.ts` emits JUnit XML / results.json with configurable recall/MRR thresholds. Scoring logic testable without Bedrock via `goldStandardEval.test.ts` |
+| Full-lifecycle ingestion test (real chunker + rollback) | 2026-04-15 | **Pending** | `__tests__/ingestionLifecycle.test.ts` — exercises real chunker, asserts INV-07 rollback + INV-08 content-hash dedup with only S3/Bedrock stubbed |
+| Prompt caching coverage extended (Converse API + rerank + A/B) | 2026-04-15 | **Pending** | Closes INV-05 gap: `cachePoint` on Bedrock Converse (vision extractor), `cache_control` lifted to system block in cross-encoder rerank, `cache_control` on A/B test system prompts |
 
 ## HIPAA / Compliance
 
@@ -61,6 +72,12 @@ Tracks improvements made in UMS Knowledge Reference that are candidates for port
 | Data retention with HIPAA minimum floors | 2026-03-28 | N/A | Observatory already has 7-year retention |
 | PHI scanning in RAG responses (log warning + flag) | 2026-03-28 | **Ported** | `scanAndRedactOutput()` in rag.ts, integrated into call-processing.ts RAG context |
 | Reformulated query + conversation history redaction in traces | 2026-03-28 | **Ported** | `redactPhi()` applied to queryTextRedacted in all RAG trace logs |
+| Human-in-the-loop extraction correction store | 2026-04-15 | **Pending** | Append-only S3 record of reviewer per-field corrections + overall quality rating. Pattern applies to any LLM extraction: `services/extractionFeedback.ts`, admin aggregate stats endpoint surfaces accuracy + overconfidence rates |
+| Source staleness audit + operational alerting | 2026-04-15 | **Pending** | Distinguishes "healthy + unchanged" from "broken upstream" — `auditStaleSources()` runs daily, alerts via existing alertService with 24h per-source throttle when `lastContentChangeAt` is older than configured `expectedUpdateCadenceDays` |
+| Server-side form drafts (cross-device partial save/resume) | 2026-04-15 | **Pending** | `services/formDrafts.ts` + `/api/form-drafts/*` endpoints. User-scoped ACL on load, 2MB payload guard. Frontend hook `useFormDraft` with debounced 2s auto-save. Generalizable to any long form workflow |
+| PDF info-dictionary metadata stripping | 2026-04-16 | **Pending** | `stripPdfMetadata()` via `pdf-lib` clears /Author, /Creator, /Producer, /Title, /Subject, /Keywords before storage. `stripDocumentMetadata` dispatcher routes images + PDFs. Preserves visible content byte-identically. Generalizable to any HIPAA-adjacent upload path (M10) |
+| Per-state-machine-record mutex (admin-workflow queue) | 2026-04-16 | **Pending** | Same pattern as the MFA-recovery lock but keyed by record ID instead of user. Applied to `updatePpdStatus` so two admins racing on the same submission ID cannot both pass validation + save. In-process only; multi-instance needs Redis. Reusable anywhere a read-modify-write state transition touches shared S3/DB state (H6, INV-31) |
+| Job queue persist on state transition | 2026-04-16 | **Pending** | Debounced periodic S3 persists silently lose jobs if a crash lands in the debounce window. Pattern: add `persistNow()` that fires immediately on create + every status transition; keep debounce only for progress updates. Applies to any S3-backed async queue (M7) |
 
 ## Observability
 

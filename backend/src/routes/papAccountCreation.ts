@@ -5,12 +5,13 @@ import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
 import { logger } from '../utils/logger';
 import { escapeHtml } from '../utils/htmlEscape';
+import { resolveRateLimitKey } from '../utils/rateLimitKey';
 import rateLimit from 'express-rate-limit';
 
 const submitLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many submissions. Please wait before submitting again.' },
   standardHeaders: true,
   legacyHeaders: false,

@@ -21,7 +21,8 @@ import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { validateFileContent } from '../utils/fileValidation';
-import { scanFileForMalware } from '../utils/malwareScan';
+import { scanFileForMalware, MalwareScanUnavailableError } from '../utils/malwareScan';
+import { resolveRateLimitKey } from '../utils/rateLimitKey';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -31,7 +32,7 @@ const router = Router();
 const expensiveOpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many processing requests. Please wait before submitting again.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -83,8 +84,18 @@ router.post(
         return;
       }
 
-      // Malware scan (skipped gracefully if ClamAV is not available)
-      const scanResult = await scanFileForMalware(req.file.buffer, req.file.originalname);
+      // Malware scan. Fail-closed by default: if ClamAV is unreachable
+      // the scan layer throws and we reject the upload with 503.
+      let scanResult;
+      try {
+        scanResult = await scanFileForMalware(req.file.buffer, req.file.originalname);
+      } catch (err) {
+        if (err instanceof MalwareScanUnavailableError) {
+          res.status(503).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
       if (scanResult.scanned && !scanResult.clean) {
         logger.error('Upload rejected: malware detected', {
           filename: req.file.originalname,

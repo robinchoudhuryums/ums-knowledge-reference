@@ -56,12 +56,24 @@ const ZIP_PATTERN = /(?:(?:[A-Z]{2}\s+)|(?:zip(?:\s*code)?[:\s]*))(\d{5}(?:-\d{4
 // Health plan beneficiary / account numbers with clinical context
 const PLAN_ACCOUNT_PATTERN = /(?:(?:health\s*)?plan|account|policy|group|subscriber|certificate)\s*(?:#|number|num|no\.?)?[:\s]*([A-Z0-9]{5,20})\b/gi;
 
-// Name patterns preceded by common clinical prefixes
-// "patient John Smith", "pt: Jane Doe", "for Mary Johnson"
-const NAME_PREFIX_PATTERN = /(?:patient|pt|member|beneficiary|claimant|insured|subscriber|enrollee)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})/gi;
+// M1: Name patterns preceded by common clinical prefixes.
+// The name token uses Unicode letter categories so Spanish ("José García"),
+// Irish/Scottish ("Mary O'Brien"), French hyphenated ("Jean-Paul Martin"),
+// and middle-initial forms ("John Q. Public") are all caught.
+//
+// Flags: `u` enables Unicode property escapes, required for \p{L}/\p{Lu}.
+// We intentionally DO NOT set `i` — combining `i` + `u` causes \p{Lu} to
+// case-fold and match lowercase letters, defeating the "must start with a
+// capital" constraint. Prefix case-insensitivity is handled via an explicit
+// character class ([Pp]atient etc.) instead.
+//
+//   \p{Lu}           first letter must be uppercase (Latin or any Unicode script)
+//   [\p{L}'\-\.]+    subsequent letters may include apostrophes, hyphens, periods
+//   middle name token {1,3} covers up to 4 total tokens (First Middle Last Suffix)
+const NAME_PREFIX_PATTERN = /(?:[Pp]atient|[Pp][Tt]|[Mm]ember|[Bb]eneficiary|[Cc]laimant|[Ii]nsured|[Ss]ubscriber|[Ee]nrollee)[:\s]+(\p{Lu}[\p{L}'\-\.]+(?:\s+\p{Lu}[\p{L}'\-\.]*){1,3})/gu;
 
-// "Mr./Mrs./Ms./Dr. Firstname Lastname"
-const TITLE_NAME_PATTERN = /(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})/g;
+// "Mr./Mrs./Ms./Dr. Firstname Lastname" — same Unicode-aware name token.
+const TITLE_NAME_PATTERN = /(?:Mr|Mrs|Ms|Miss|Dr|Prof)\.?\s+(\p{Lu}[\p{L}'\-\.]+(?:\s+\p{Lu}[\p{L}'\-\.]*){1,3})/gu;
 
 interface RedactionResult {
   text: string;

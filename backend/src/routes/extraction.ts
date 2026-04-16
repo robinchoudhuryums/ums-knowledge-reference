@@ -5,13 +5,22 @@
 import { Router } from 'express';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
 import { extractDocumentData, BEDROCK_EXTRACTION_MODEL } from '../services/documentExtractor';
 import { listTemplates, getTemplateById } from '../services/extractionTemplates';
 import { logAuditEvent } from '../services/audit';
 import { logger } from '../utils/logger';
 import { validateFileContent } from '../utils/fileValidation';
+import { resolveRateLimitKey } from '../utils/rateLimitKey';
 import { createJob, getJob, updateJob, getUserJobs } from '../services/jobQueue';
+import {
+  submitExtractionCorrection,
+  listExtractionCorrections,
+  getExtractionCorrection,
+  getExtractionQualityStats,
+  ExtractionFeedbackRecord,
+  CorrectedField,
+} from '../services/extractionFeedback';
 
 const router = Router();
 
@@ -21,7 +30,7 @@ const router = Router();
 const extractionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => (req as AuthRequest).user?.id || req.ip || 'unknown',
+  keyGenerator: (req) => resolveRateLimitKey(req),
   message: { error: 'Too many extraction requests. Please wait before submitting again.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -318,6 +327,202 @@ router.get('/jobs', authenticate, (req, res) => {
  */
 router.get('/model', authenticate, (_req, res) => {
   res.json({ model: BEDROCK_EXTRACTION_MODEL });
+});
+
+// ─── Human-in-the-Loop Extraction Correction ──────────────────────────
+//
+// After an extraction runs, reviewers can submit corrections so the team
+// has a ground-truth record of how often the model is right. Corrections
+// are append-only audit records — existing feedback is never mutated.
+
+const feedbackLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  keyGenerator: (req) => resolveRateLimitKey(req),
+  message: { error: 'Too many feedback submissions. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const MAX_CORRECTED_FIELDS = 100;
+const MAX_NOTE_LEN = 2000;
+const VALID_QUALITY = new Set(['correct', 'minor_errors', 'major_errors', 'unusable']);
+const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
+
+function isFieldValue(v: unknown): boolean {
+  return v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+}
+
+/**
+ * POST /api/extraction/correct — submit a correction for an extraction result
+ */
+router.post('/correct', authenticate, feedbackLimiter, async (req, res): Promise<void> => {
+  const authReq = req as AuthRequest;
+  const {
+    templateId,
+    reportedConfidence,
+    actualQuality,
+    correctedFields,
+    reviewerNote,
+    filename,
+  } = req.body as {
+    templateId?: string;
+    reportedConfidence?: ExtractionFeedbackRecord['reportedConfidence'];
+    actualQuality?: ExtractionFeedbackRecord['actualQuality'];
+    correctedFields?: unknown;
+    reviewerNote?: string;
+    filename?: string;
+  };
+
+  if (!templateId || typeof templateId !== 'string') {
+    res.status(400).json({ error: 'templateId is required' });
+    return;
+  }
+  const template = getTemplateById(templateId);
+  if (!template) {
+    res.status(400).json({ error: `Unknown template: ${templateId}` });
+    return;
+  }
+  if (!reportedConfidence || !VALID_CONFIDENCE.has(reportedConfidence)) {
+    res.status(400).json({ error: 'reportedConfidence must be one of: high, medium, low' });
+    return;
+  }
+  if (!actualQuality || !VALID_QUALITY.has(actualQuality)) {
+    res.status(400).json({ error: 'actualQuality must be one of: correct, minor_errors, major_errors, unusable' });
+    return;
+  }
+  if (!Array.isArray(correctedFields)) {
+    res.status(400).json({ error: 'correctedFields must be an array' });
+    return;
+  }
+  if (correctedFields.length > MAX_CORRECTED_FIELDS) {
+    res.status(400).json({ error: `correctedFields cannot exceed ${MAX_CORRECTED_FIELDS} entries` });
+    return;
+  }
+  if (reviewerNote !== undefined && (typeof reviewerNote !== 'string' || reviewerNote.length > MAX_NOTE_LEN)) {
+    res.status(400).json({ error: `reviewerNote must be a string under ${MAX_NOTE_LEN} chars` });
+    return;
+  }
+
+  // Validate every corrected field matches the template's field set and has scalar values
+  const templateKeys = new Set(template.fields.map(f => f.key));
+  const normalized: CorrectedField[] = [];
+  for (const cf of correctedFields as unknown[]) {
+    if (!cf || typeof cf !== 'object') {
+      res.status(400).json({ error: 'Each corrected field must be an object' });
+      return;
+    }
+    const obj = cf as { key?: unknown; originalValue?: unknown; correctedValue?: unknown };
+    if (typeof obj.key !== 'string' || !templateKeys.has(obj.key)) {
+      res.status(400).json({ error: `Unknown field key: ${String(obj.key)}` });
+      return;
+    }
+    if (!isFieldValue(obj.originalValue) || !isFieldValue(obj.correctedValue)) {
+      res.status(400).json({ error: `Field "${obj.key}": originalValue and correctedValue must be string/number/boolean/null` });
+      return;
+    }
+    normalized.push({
+      key: obj.key,
+      originalValue: obj.originalValue as CorrectedField['originalValue'],
+      correctedValue: obj.correctedValue as CorrectedField['correctedValue'],
+    });
+  }
+
+  try {
+    const record = await submitExtractionCorrection({
+      templateId,
+      templateName: template.name,
+      modelUsed: BEDROCK_EXTRACTION_MODEL,
+      reportedConfidence,
+      actualQuality,
+      correctedFields: normalized,
+      reviewerNote,
+      submittedBy: authReq.user!.username,
+      filename: typeof filename === 'string' ? filename.slice(0, 200) : undefined,
+    });
+
+    await logAuditEvent(authReq.user!.id, authReq.user!.username, 'feedback', {
+      action: 'extraction_correction',
+      correctionId: record.id,
+      templateId,
+      actualQuality,
+      correctedFieldCount: normalized.length,
+    });
+
+    res.status(201).json({ correction: record });
+  } catch (err) {
+    logger.error('Failed to submit extraction correction', { error: String(err), templateId });
+    res.status(500).json({ error: 'Failed to submit correction' });
+  }
+});
+
+/**
+ * GET /api/extraction/corrections — list correction index entries
+ */
+router.get('/corrections', authenticate, async (req, res): Promise<void> => {
+  const authReq = req as AuthRequest;
+  const templateId = typeof req.query.templateId === 'string' ? req.query.templateId : undefined;
+  const actualQuality = typeof req.query.actualQuality === 'string' ? req.query.actualQuality : undefined;
+  const limitStr = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+
+  if (actualQuality && !VALID_QUALITY.has(actualQuality)) {
+    res.status(400).json({ error: 'actualQuality filter must be correct, minor_errors, major_errors, or unusable' });
+    return;
+  }
+  const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500) : 50;
+
+  try {
+    // Non-admin users only see their own corrections
+    const submittedBy = authReq.user!.role === 'admin' ? undefined : authReq.user!.username;
+    const entries = await listExtractionCorrections({
+      templateId,
+      actualQuality: actualQuality as ExtractionFeedbackRecord['actualQuality'] | undefined,
+      submittedBy,
+      limit,
+    });
+    res.json({ corrections: entries, total: entries.length });
+  } catch (err) {
+    logger.error('Failed to list extraction corrections', { error: String(err) });
+    res.status(500).json({ error: 'Failed to list corrections' });
+  }
+});
+
+/**
+ * GET /api/extraction/corrections/:templateId/:id — full correction record
+ */
+router.get('/corrections/:templateId/:id', authenticate, async (req, res): Promise<void> => {
+  const authReq = req as AuthRequest;
+  const { templateId, id } = req.params;
+  try {
+    const record = await getExtractionCorrection(id, templateId);
+    if (!record) {
+      res.status(404).json({ error: 'Correction not found' });
+      return;
+    }
+    // Non-admin users can only see their own records
+    if (authReq.user!.role !== 'admin' && record.submittedBy !== authReq.user!.username) {
+      res.status(404).json({ error: 'Correction not found' });
+      return;
+    }
+    res.json({ correction: record });
+  } catch (err) {
+    logger.error('Failed to get extraction correction', { error: String(err), id });
+    res.status(500).json({ error: 'Failed to load correction' });
+  }
+});
+
+/**
+ * GET /api/extraction/corrections/stats — aggregate quality stats (admin only)
+ */
+router.get('/corrections-stats', authenticate, requireAdmin, async (req, res): Promise<void> => {
+  const templateId = typeof req.query.templateId === 'string' ? req.query.templateId : undefined;
+  try {
+    const stats = await getExtractionQualityStats(templateId);
+    res.json({ stats });
+  } catch (err) {
+    logger.error('Failed to compute extraction quality stats', { error: String(err) });
+    res.status(500).json({ error: 'Failed to compute stats' });
+  }
 });
 
 export default router;

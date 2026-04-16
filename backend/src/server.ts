@@ -46,6 +46,8 @@ import { startSourceMonitor } from './services/sourceMonitor';
 import { startJobCleanup, loadPersistedJobs, flushJobs } from './services/jobQueue';
 import { startOrphanCleanup } from './services/orphanCleanup';
 import { startRetentionScheduler } from './services/dataRetention';
+import { setMalwareScanAlertHandler } from './utils/malwareScan';
+import { sendOperationalAlert } from './services/alertService';
 import documentRoutes from './routes/documents';
 import queryRoutes from './routes/query';
 import feedbackRoutes from './routes/feedback';
@@ -62,6 +64,8 @@ import ppdRoutes from './routes/ppd';
 import accountCreationRoutes from './routes/accountCreation';
 import papAccountCreationRoutes from './routes/papAccountCreation';
 import productImageRoutes from './routes/productImages';
+import formDraftsRoutes from './routes/formDrafts';
+import evalRoutes from './routes/eval';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -138,8 +142,10 @@ app.use((req, res, next) => {
 
   // Only enforce on state-changing methods
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-    // Skip CSRF check for exempt paths (login, health)
-    if (!CSRF_EXEMPT_PATHS.some(p => req.path === p || req.path.startsWith(p))) {
+    // H1: Exact-match exemption list. The old `startsWith` prefix match would
+    // have silently exempted any future route starting with an exempt path
+    // (e.g. `/api/auth/login-sso` inheriting `/api/auth/login`'s exemption).
+    if (!CSRF_EXEMPT_PATHS.includes(req.path)) {
       const headerToken = req.headers[CSRF_HEADER] as string | undefined;
       if (!headerToken || headerToken !== csrfToken) {
         res.status(403).json({ error: 'CSRF token missing or invalid' });
@@ -198,6 +204,21 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,  // 15 minutes
   max: 10,                     // 10 attempts per window
   message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  ...(rateLimitStore && { store: rateLimitStore }),
+});
+
+// H2: Dedicated rate limit on MFA verify. An authenticated user or stolen
+// access token can otherwise brute-force TOTP (~1M combinations) or recovery
+// codes (~10) through the MFA verify endpoint, which previously only sat
+// behind the global 120/min apiLimiter. 10 verify attempts per 15 min per
+// user is enough for legitimate setup/re-setup traffic and forces an
+// attacker into ~15min-per-10-codes territory.
+const mfaVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many MFA verification attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
   ...(rateLimitStore && { store: rateLimitStore }),
@@ -322,7 +343,7 @@ app.post('/api/auth/reset-password', loginLimiter, resetPasswordWithCodeHandler)
 
 // MFA routes
 app.post('/api/auth/mfa/setup', authenticate, (req, res) => mfaSetupHandler(req as AuthRequest, res));
-app.post('/api/auth/mfa/verify', authenticate, (req, res) => mfaVerifyHandler(req as AuthRequest, res));
+app.post('/api/auth/mfa/verify', authenticate, mfaVerifyLimiter, (req, res) => mfaVerifyHandler(req as AuthRequest, res));
 app.post('/api/auth/mfa/disable', authenticate, (req, res) => mfaDisableHandler(req as AuthRequest, res));
 
 // Document routes
@@ -365,6 +386,12 @@ app.use('/api/account-creation', accountCreationRoutes);
 
 // PAP Account Creation routes
 app.use('/api/pap-account', papAccountCreationRoutes);
+
+// Form drafts — partial save/resume for PPD, PMD Account, PAP Account
+app.use('/api/form-drafts', formDraftsRoutes);
+
+// Gold-standard RAG eval dataset (read-only admin view)
+app.use('/api/eval', evalRoutes);
 
 // Product images (S3-backed)
 app.use('/api/products', productImageRoutes);
@@ -471,6 +498,11 @@ async function start() {
 
     // Start data retention cleanup scheduler (HIPAA-compliant expiration at ~3 AM daily)
     startRetentionScheduler();
+
+    // Route malware-scanner unavailability to operational alerting (throttled to 1/hr per category).
+    setMalwareScanAlertHandler((subject, details) => {
+      void sendOperationalAlert('malware_scan_unavailable', subject, details);
+    });
 
     const server = app.listen(PORT, () => {
       logger.info(`UMS Knowledge Base server running on port ${PORT}`);

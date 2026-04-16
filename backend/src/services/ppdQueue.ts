@@ -16,7 +16,27 @@ import { s3Client, S3_BUCKET, S3_PREFIXES } from '../config/aws';
 import { logger } from '../utils/logger';
 import { redactPhi } from '../utils/phiRedactor';
 import { v4 as uuidv4 } from 'uuid';
+import { createMutex } from '../utils/asyncMutex';
 import { PpdResponse, PmdRecommendation, PPD_FORM_VERSION } from './ppdQuestionnaire';
+
+// H6: Per-submission mutex so two admins transitioning the same PPD
+// submission in parallel cannot race on the read-validate-write cycle.
+// Without this, Admin A and Admin B both read the same `pending` record,
+// both compute a valid transition, and the second save clobbers the
+// first — the earlier action's reviewer/notes/timestamp are lost.
+//
+// In-process only; multi-instance deploys would need a Redis lock or
+// S3 conditional writes (IfMatch on ETag). Current architecture is
+// single-instance so the in-memory mutex suffices.
+const transitionMutexesById = new Map<string, ReturnType<typeof createMutex>>();
+function getTransitionMutex(id: string): ReturnType<typeof createMutex> {
+  let m = transitionMutexesById.get(id);
+  if (!m) {
+    m = createMutex();
+    transitionMutexesById.set(id, m);
+  }
+  return m;
+}
 
 const PPD_QUEUE_PREFIX = `${S3_PREFIXES.metadata}ppd-queue/`;
 const PPD_INDEX_KEY = `${S3_PREFIXES.metadata}ppd-queue-index.json`;
@@ -184,44 +204,51 @@ export async function updatePpdStatus(
     returnReason?: string;
   }
 ): Promise<PpdSubmissionRecord | null> {
-  const record = await getPpdSubmission(id);
-  if (!record) return null;
+  // H6: Serialize per-submission read-modify-write so two reviewers
+  // racing on the same ID cannot both read `pending` and both write
+  // over each other. Validation + write happen atomically under the lock.
+  return getTransitionMutex(id)(async () => {
+    const record = await getPpdSubmission(id);
+    if (!record) return null;
 
-  // Validate state machine transition
-  if (!isValidTransition(record.status, update.status)) {
-    throw new Error(
-      `Invalid status transition: ${record.status} → ${update.status}. ` +
-      `Allowed: ${VALID_TRANSITIONS[record.status].join(', ') || 'none (terminal state)'}`
-    );
-  }
+    // Validate state machine transition against the freshly-read record —
+    // if another admin already moved it, this validation will fail and we
+    // surface that as a 409 at the route layer instead of silently clobbering.
+    if (!isValidTransition(record.status, update.status)) {
+      throw new Error(
+        `Invalid status transition: ${record.status} → ${update.status}. ` +
+        `Allowed: ${VALID_TRANSITIONS[record.status].join(', ') || 'none (terminal state)'}`
+      );
+    }
 
-  record.status = update.status;
-  record.reviewedBy = update.reviewedBy;
-  record.reviewedAt = new Date().toISOString();
-  if (update.reviewNotes) record.reviewNotes = update.reviewNotes;
-  if (update.returnReason) record.returnReason = update.returnReason;
+    record.status = update.status;
+    record.reviewedBy = update.reviewedBy;
+    record.reviewedAt = new Date().toISOString();
+    if (update.reviewNotes) record.reviewNotes = update.reviewNotes;
+    if (update.returnReason) record.returnReason = update.returnReason;
 
-  // Save updated record
-  await s3Client.send(new PutObjectCommand({
-    Bucket: S3_BUCKET,
-    Key: `${PPD_QUEUE_PREFIX}${id}.json`,
-    Body: JSON.stringify(record, null, 2),
-    ContentType: 'application/json',
-    ServerSideEncryption: 'AES256',
-  }));
+    // Save updated record
+    await s3Client.send(new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: `${PPD_QUEUE_PREFIX}${id}.json`,
+      Body: JSON.stringify(record, null, 2),
+      ContentType: 'application/json',
+      ServerSideEncryption: 'AES256',
+    }));
 
-  // Update index
-  const index = await loadIndex();
-  const idx = index.findIndex(e => e.id === id);
-  if (idx >= 0) {
-    index[idx].status = update.status;
-    index[idx].reviewedBy = update.reviewedBy;
-    index[idx].reviewedAt = record.reviewedAt;
-    await saveIndex(index);
-  }
+    // Update index
+    const index = await loadIndex();
+    const idx = index.findIndex(e => e.id === id);
+    if (idx >= 0) {
+      index[idx].status = update.status;
+      index[idx].reviewedBy = update.reviewedBy;
+      index[idx].reviewedAt = record.reviewedAt;
+      await saveIndex(index);
+    }
 
-  logger.info('PPD status updated', { id, status: update.status, reviewedBy: update.reviewedBy, patientInfo: redactPhi(record.patientInfo).text });
-  return record;
+    logger.info('PPD status updated', { id, status: update.status, reviewedBy: update.reviewedBy, patientInfo: redactPhi(record.patientInfo).text });
+    return record;
+  });
 }
 
 export async function deletePpdSubmission(id: string): Promise<boolean> {

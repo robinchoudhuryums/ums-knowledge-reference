@@ -212,4 +212,15 @@ export interface MonitoredSource {
   lastError?: string;
   /** HTTP status from last check */
   lastHttpStatus?: number;
+  /**
+   * Expected cadence for content changes, in days. When set, the source
+   * monitor alerts if content hasn't changed in this many days —
+   * distinguishing "fetched OK but silently stale" from "genuinely unchanged".
+   * Typical values: 90 for CMS LCDs, 30 for fee schedules, 365 for static policies.
+   */
+  expectedUpdateCadenceDays?: number;
+  /** ISO timestamp when content last actually changed (not just when we checked) */
+  lastContentChangeAt?: string;
+  /** ISO timestamp when we last alerted about staleness (prevents alert spam) */
+  lastStalenessAlertAt?: string;
 }

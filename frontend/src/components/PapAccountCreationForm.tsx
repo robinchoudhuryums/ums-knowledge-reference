@@ -7,6 +7,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { InsuranceCardUpload } from './InsuranceCardUpload';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
+import { useFormDraft } from '../hooks/useFormDraft';
+import { FormDraftBanner } from './FormDraftBanner';
+import type { FormDraft } from '../services/api';
 
 interface PapQuestion {
   id: string;
@@ -156,6 +159,40 @@ export function PapAccountCreationForm() {
     }
   };
 
+  // Server-side draft for cross-device resume.
+  const draftPayload = useMemo(
+    () => ({ responses, lang, sendTo }),
+    [responses, lang, sendTo],
+  );
+  const draft = useFormDraft({
+    formType: 'pap-account',
+    payload: draftPayload,
+    label: patientName.trim() || undefined,
+    completionPercent: progressPct,
+    enabled: patientName.trim().length > 0 && !success,
+  });
+
+  const handleResumeDraft = useCallback((rec: FormDraft) => {
+    const p = rec.payload as {
+      responses?: Record<string, string>;
+      lang?: Lang;
+      sendTo?: string;
+    } | null;
+    if (!p) return;
+    if (p.responses && typeof p.responses === 'object') setResponses(p.responses);
+    if (p.lang === 'en' || p.lang === 'es') setLang(p.lang);
+    if (typeof p.sendTo === 'string') setSendTo(p.sendTo);
+  }, []);
+
+  const handleStartOverDraft = useCallback(async () => {
+    await draft.discardCurrent();
+    setResponses({});
+    setSendTo('');
+    setSuccess('');
+    setError('');
+    if (patientName) sessionStorage.removeItem(storageKey(patientName));
+  }, [draft, patientName]);
+
   const translateGroup = (group: string): string => {
     const map: Record<string, string> = { 'Demographics': 'Datos Demográficos', 'Insurance': 'Seguro', 'Clinical Information': 'Información Clínica', 'PAP Details': 'Detalles de PAP/máquina' };
     return map[group] || group;
@@ -180,6 +217,18 @@ export function PapAccountCreationForm() {
           <button type="button" style={langBtn(lang === 'es')} onClick={() => setLang('es')}>ES</button>
         </div>
       </div>
+
+      <FormDraftBanner
+        formType="pap-account"
+        currentDraftId={draft.currentDraftId}
+        lastSavedAt={draft.lastSavedAt}
+        saving={draft.saving}
+        error={draft.error}
+        resume={draft.resume}
+        onResume={handleResumeDraft}
+        onStartOver={handleStartOverDraft}
+        currentLabel={patientName.trim() || undefined}
+      />
 
       <div style={sty.progressRing}>
         <svg width="60" height="60" viewBox="0 0 60 60">

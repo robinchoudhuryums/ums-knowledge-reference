@@ -15,7 +15,7 @@ import { addChunksToStore, removeDocumentChunks } from './vectorStore';
 import { logAuditEvent } from './audit';
 import { logger } from '../utils/logger';
 import { createMutex } from '../utils/asyncMutex';
-import { stripImageMetadata } from '../utils/stripMetadata';
+import { stripDocumentMetadata } from '../utils/stripMetadata';
 import { withSpan } from '../utils/traceSpan';
 
 // Allowed file extensions for uploaded documents
@@ -105,15 +105,17 @@ export async function ingestDocument(
   let chunksAddedToStore = false;
 
   try {
-    // Step 0.5: Strip image metadata (EXIF, IPTC, XMP) — HIPAA defense-in-depth.
-    // Camera phones embed GPS, timestamps, and device info that could identify patients.
-    // Visible image content (pixels) is preserved; only hidden metadata is removed.
-    const stripResult = await stripImageMetadata(fileBuffer, mimeType, originalName);
+    // Step 0.5: Strip metadata from uploaded documents — HIPAA defense-in-depth (M10).
+    //   - Images: EXIF/IPTC/XMP/ICC (camera GPS, device, timestamps that could identify patients)
+    //   - PDFs: /Author, /Producer, /Creator, /Title, /Subject, /Keywords info-dict entries
+    // Visible content (pixels, text, forms) is preserved byte-identically — only hidden
+    // metadata is removed. DOCX/XLSX are not yet covered.
+    const stripResult = await stripDocumentMetadata(fileBuffer, mimeType, originalName);
     if (stripResult.stripped && stripResult.metadataFound) {
       fileBuffer = stripResult.buffer;
       document.sizeBytes = stripResult.strippedSize;
-      logger.info('Ingestion: Image metadata stripped before storage', {
-        documentId, originalSize: stripResult.originalSize, strippedSize: stripResult.strippedSize,
+      logger.info('Ingestion: Document metadata stripped before storage', {
+        documentId, mimeType, originalSize: stripResult.originalSize, strippedSize: stripResult.strippedSize,
       });
     }
 

@@ -18,6 +18,28 @@ import { logger } from '../utils/logger';
 import { generateMfaSecret, verifyMfaCode, generateRecoveryCodes, verifyRecoveryCode } from '../services/mfa';
 import { logAuditEvent } from '../services/audit';
 import { sendEmail, isEmailConfigured } from '../services/emailService';
+import { createMutex } from '../utils/asyncMutex';
+
+// Per-username mutex so concurrent login attempts for the same user
+// (e.g. two MFA-recovery-code submissions within milliseconds) are
+// serialized. Without this, two logins could both read the same
+// users snapshot, both splice the same recovery code, and both succeed
+// — breaking the single-use guarantee (C2).
+//
+// Map entries are keyed by case-normalized username and live for the
+// process lifetime; the memory footprint is negligible (one closure per
+// active user). A distributed deployment would need Redis-backed
+// locking, but the current architecture is single-instance.
+const loginMutexesByUser = new Map<string, ReturnType<typeof createMutex>>();
+function getLoginMutex(username: string): ReturnType<typeof createMutex> {
+  const key = username.toLowerCase();
+  let m = loginMutexesByUser.get(key);
+  if (!m) {
+    m = createMutex();
+    loginMutexesByUser.set(key, m);
+  }
+  return m;
+}
 
 // Re-export from sub-modules so existing callers don't break
 export {
@@ -138,73 +160,103 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const users = await getUsers();
-  const user = users.find(u => u.username === username);
+  // Serialize per-username so concurrent login attempts cannot race on
+  // MFA recovery-code consumption (C2) or on failedLoginAttempts counter
+  // updates. All read-modify-write of the users list runs inside this
+  // lock; response emission happens outside.
+  type LoginOutcome =
+    | { kind: 'locked' }
+    | { kind: 'invalid_credentials' }
+    | { kind: 'mfa_required' }
+    | { kind: 'invalid_mfa' }
+    | { kind: 'ok'; user: User };
 
-  if (user && isAccountLocked(user)) {
-    // Log without timing details — revealing remaining lockout time aids brute-force timing attacks
-    logger.warn('Login attempt on locked account', { username });
+  const outcome: LoginOutcome = await getLoginMutex(username)(async () => {
+    const users = await getUsers();
+    const user = users.find(u => u.username === username);
+
+    if (user && isAccountLocked(user)) {
+      // Log without timing details — revealing remaining lockout time aids brute-force timing attacks
+      logger.warn('Login attempt on locked account', { username });
+      return { kind: 'locked' };
+    }
+
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      if (user) {
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+        if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+          user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
+          logger.warn('Account locked due to failed attempts', {
+            username,
+            attempts: user.failedLoginAttempts,
+            lockedUntil: user.lockedUntil,
+          });
+        }
+        await saveUsers(users);
+      }
+      return { kind: 'invalid_credentials' };
+    }
+
+    // MFA check: if user has MFA enabled, require a valid TOTP code
+    if (user.mfaEnabled && user.mfaSecret) {
+      if (!mfaCode) {
+        // Password correct but MFA code not provided — tell frontend to prompt for it
+        return { kind: 'mfa_required' };
+      }
+      // Try TOTP code first, then recovery code
+      let mfaValid = verifyMfaCode(user.mfaSecret, mfaCode);
+
+      if (!mfaValid && user.mfaRecoveryCodes && user.mfaRecoveryCodes.length > 0) {
+        // Check if it's a recovery code (format: XXXX-XXXX)
+        const recoveryIdx = await verifyRecoveryCode(mfaCode, user.mfaRecoveryCodes);
+        if (recoveryIdx >= 0) {
+          // Atomic consume: splice + save inside the mutex guarantees
+          // a recovery code authenticates at most one concurrent login.
+          user.mfaRecoveryCodes.splice(recoveryIdx, 1);
+          mfaValid = true;
+          logger.info('MFA login via recovery code', { userId: user.id, remainingCodes: user.mfaRecoveryCodes.length });
+          logAuditEvent(user.id, user.username, 'login', {
+            action: 'mfa_recovery_code_used',
+            remainingCodes: user.mfaRecoveryCodes.length,
+          }).catch((err) => { logger.error('Failed to write MFA recovery audit event', { error: String(err) }); });
+        }
+      }
+
+      if (!mfaValid) {
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+        if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+          user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
+        }
+        await saveUsers(users);
+        return { kind: 'invalid_mfa' };
+      }
+    }
+
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = undefined;
+    user.lastLogin = new Date().toISOString();
+    await saveUsers(users);
+    return { kind: 'ok', user };
+  });
+
+  if (outcome.kind === 'locked') {
     res.status(423).json({ error: 'Account is locked due to too many failed attempts. Please try again later.' });
     return;
   }
-
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    if (user) {
-      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-      if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
-        user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
-        logger.warn('Account locked due to failed attempts', {
-          username,
-          attempts: user.failedLoginAttempts,
-          lockedUntil: user.lockedUntil,
-        });
-      }
-      await saveUsers(users);
-    }
+  if (outcome.kind === 'invalid_credentials') {
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
-
-  // MFA check: if user has MFA enabled, require a valid TOTP code
-  if (user.mfaEnabled && user.mfaSecret) {
-    if (!mfaCode) {
-      // Password correct but MFA code not provided — tell frontend to prompt for it
-      res.status(200).json({ mfaRequired: true });
-      return;
-    }
-    // Try TOTP code first, then recovery code
-    let mfaValid = verifyMfaCode(user.mfaSecret, mfaCode);
-
-    if (!mfaValid && user.mfaRecoveryCodes && user.mfaRecoveryCodes.length > 0) {
-      // Check if it's a recovery code (format: XXXX-XXXX)
-      const recoveryIdx = await verifyRecoveryCode(mfaCode, user.mfaRecoveryCodes);
-      if (recoveryIdx >= 0) {
-        // Consume the recovery code (single-use)
-        user.mfaRecoveryCodes.splice(recoveryIdx, 1);
-        mfaValid = true;
-        logger.info('MFA login via recovery code', { userId: user.id, remainingCodes: user.mfaRecoveryCodes.length });
-        logAuditEvent(user.id, user.username, 'login', {
-          action: 'mfa_recovery_code_used',
-          remainingCodes: user.mfaRecoveryCodes.length,
-        }).catch((err) => { logger.error('Failed to write MFA recovery audit event', { error: String(err) }); });
-      }
-    }
-
-    if (!mfaValid) {
-      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-      if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
-        user.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
-      }
-      await saveUsers(users);
-      res.status(401).json({ error: 'Invalid MFA code or recovery code' });
-      return;
-    }
+  if (outcome.kind === 'mfa_required') {
+    res.status(200).json({ mfaRequired: true });
+    return;
+  }
+  if (outcome.kind === 'invalid_mfa') {
+    res.status(401).json({ error: 'Invalid MFA code or recovery code' });
+    return;
   }
 
-  user.failedLoginAttempts = 0;
-  user.lockedUntil = undefined;
-  user.lastLogin = new Date().toISOString();
-  await saveUsers(users);
+  const user = outcome.user;
 
   const jti = crypto.randomUUID();
   const token = createToken({ id: user.id, username: user.username, role: user.role, jti });

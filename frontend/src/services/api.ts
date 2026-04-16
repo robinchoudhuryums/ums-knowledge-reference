@@ -25,6 +25,29 @@ export function getCsrfToken(): string | null {
 }
 
 /**
+ * Custom event name dispatched when the user's session has definitively
+ * expired (refresh failed). `useAuth` listens for this and transitions
+ * back to the LoginForm without a full-page reload — preserving React
+ * state, unsaved form drafts, and any in-flight work.
+ *
+ * Previously these code paths called window.location.reload(), which
+ * discarded a clinician's in-progress 45-question PPD interview and
+ * forced Redux-like state to be rebuilt from scratch. See H7.
+ */
+export const SESSION_EXPIRED_EVENT = 'ums:session-expired';
+
+function dispatchSessionExpired(): void {
+  try {
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+  } catch { /* localStorage may be disabled — ignore */ }
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+  }
+}
+
+/**
  * Attempt to refresh the access token using the refresh token cookie.
  * Returns true if refresh succeeded, false if the refresh token is also expired/revoked.
  */
@@ -90,10 +113,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         // Retry the original request with the new access token
         return request(path, options);
       }
-      localStorage.removeItem('isLoggedIn');
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      window.location.reload();
+      dispatchSessionExpired();
       throw new Error('Session expired. Please log in again.');
     }
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
@@ -413,9 +433,8 @@ export async function queryKnowledgeBaseStream(
           onTraceId, onProductImages, responseStyle,
         );
       }
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+      dispatchSessionExpired();
+      onError('Session expired. Please log in again.');
       return;
     }
     const err = await response.json().catch(() => ({ error: 'Request failed' }));
@@ -675,9 +694,7 @@ export async function downloadAnnotatedPdf(file: File): Promise<Blob> {
 
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+      dispatchSessionExpired();
       throw new Error('Session expired');
     }
     const err = await response.json().catch(() => ({ error: 'Download failed' }));
@@ -705,9 +722,7 @@ export async function downloadOriginalPdf(file: File): Promise<Blob> {
 
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+      dispatchSessionExpired();
       throw new Error('Session expired');
     }
     const err = await response.json().catch(() => ({ error: 'Download failed' }));
@@ -737,9 +752,7 @@ export async function reviewFormBatch(files: File[]): Promise<BatchFormReviewRes
 
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.reload();
+      dispatchSessionExpired();
       throw new Error('Session expired');
     }
     const err = await response.json().catch(() => ({ error: 'Batch review failed' }));
@@ -927,6 +940,192 @@ export async function extractDocument(file: File, templateId: string): Promise<{
 
 export async function getExtractionModel(): Promise<{ model: string }> {
   return request('/extraction/model');
+}
+
+// ─── Human-in-the-Loop extraction correction ─────────────────────────────────
+
+export type ExtractionActualQuality = 'correct' | 'minor_errors' | 'major_errors' | 'unusable';
+export type ExtractionReportedConfidence = 'high' | 'medium' | 'low';
+
+export interface CorrectedField {
+  key: string;
+  originalValue: string | number | boolean | null;
+  correctedValue: string | number | boolean | null;
+}
+
+export interface ExtractionCorrection {
+  id: string;
+  templateId: string;
+  templateName: string;
+  modelUsed: string;
+  reportedConfidence: ExtractionReportedConfidence;
+  actualQuality: ExtractionActualQuality;
+  correctedFields: CorrectedField[];
+  reviewerNote?: string;
+  submittedBy: string;
+  submittedAt: string;
+  filename?: string;
+}
+
+export interface ExtractionCorrectionIndexEntry {
+  id: string;
+  templateId: string;
+  actualQuality: ExtractionActualQuality;
+  reportedConfidence: ExtractionReportedConfidence;
+  correctedFieldCount: number;
+  submittedBy: string;
+  submittedAt: string;
+}
+
+export async function submitExtractionCorrection(input: {
+  templateId: string;
+  reportedConfidence: ExtractionReportedConfidence;
+  actualQuality: ExtractionActualQuality;
+  correctedFields: CorrectedField[];
+  reviewerNote?: string;
+  filename?: string;
+}): Promise<{ correction: ExtractionCorrection }> {
+  return request('/extraction/correct', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listExtractionCorrections(filters?: {
+  templateId?: string;
+  actualQuality?: ExtractionActualQuality;
+  limit?: number;
+}): Promise<{ corrections: ExtractionCorrectionIndexEntry[]; total: number }> {
+  const params = new URLSearchParams();
+  if (filters?.templateId) params.set('templateId', filters.templateId);
+  if (filters?.actualQuality) params.set('actualQuality', filters.actualQuality);
+  if (filters?.limit) params.set('limit', String(filters.limit));
+  const qs = params.toString();
+  return request(`/extraction/corrections${qs ? `?${qs}` : ''}`);
+}
+
+export interface ExtractionQualityStats {
+  templateId?: string;
+  total: number;
+  byActualQuality: Record<ExtractionActualQuality, number>;
+  accuracyRate: number;
+  overconfidenceRate: number;
+  totalFieldsCorrected: number;
+}
+
+export async function getExtractionQualityStats(templateId?: string): Promise<{ stats: ExtractionQualityStats }> {
+  const qs = templateId ? `?templateId=${encodeURIComponent(templateId)}` : '';
+  return request(`/extraction/corrections-stats${qs}`);
+}
+
+// ─── Form drafts (partial save/resume) ───────────────────────────────────────
+
+export type FormDraftType = 'ppd' | 'pmd-account' | 'pap-account';
+
+export interface FormDraft {
+  id: string;
+  formType: FormDraftType;
+  payload: unknown;
+  label?: string;
+  formVersion?: string;
+  completionPercent?: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FormDraftIndexEntry {
+  id: string;
+  formType: FormDraftType;
+  label?: string;
+  completionPercent?: number;
+  formVersion?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listFormDrafts(formType?: FormDraftType): Promise<{ drafts: FormDraftIndexEntry[]; total: number }> {
+  const qs = formType ? `?formType=${encodeURIComponent(formType)}` : '';
+  return request(`/form-drafts${qs}`);
+}
+
+export async function upsertFormDraft(input: {
+  id?: string;
+  formType: FormDraftType;
+  payload: unknown;
+  label?: string;
+  formVersion?: string;
+  completionPercent?: number;
+}): Promise<{ draft: FormDraft }> {
+  return request('/form-drafts', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function loadFormDraft(formType: FormDraftType, id: string): Promise<{ draft: FormDraft }> {
+  return request(`/form-drafts/${encodeURIComponent(formType)}/${encodeURIComponent(id)}`);
+}
+
+export async function discardFormDraft(formType: FormDraftType, id: string): Promise<{ removed: boolean }> {
+  return request(`/form-drafts/${encodeURIComponent(formType)}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+// ─── Source staleness (admin) ────────────────────────────────────────────────
+
+export interface SourceStalenessEntry {
+  sourceId: string;
+  name: string;
+  url: string;
+  expectedCadenceDays: number;
+  daysSinceLastChange: number;
+  lastContentChangeAt?: string;
+  lastCheckedAt?: string;
+  lastStalenessAlertAt?: string;
+  isStale: boolean;
+}
+
+export async function listSourceStaleness(): Promise<{ sources: SourceStalenessEntry[]; staleCount: number }> {
+  return request('/sources/staleness');
+}
+
+export async function runSourceStalenessAudit(): Promise<{
+  stale: Array<{
+    sourceId: string;
+    name: string;
+    url: string;
+    expectedCadenceDays: number;
+    daysSinceLastChange: number;
+    alertedNow: boolean;
+  }>;
+  total: number;
+}> {
+  return request('/sources/audit-staleness', { method: 'POST' });
+}
+
+// ─── Gold-standard RAG eval dataset (admin read-only view) ──────────────────
+
+export interface GoldPair {
+  question: string;
+  category: string;
+  expectedKeywords: string[];
+  expectedCodes: string[];
+}
+
+export interface EvalDataset {
+  version: string;
+  description: string;
+  lastUpdated: string;
+  totalPairs: number;
+  categories: Array<{ name: string; count: number }>;
+  pairs: GoldPair[];
+}
+
+export async function getEvalDataset(): Promise<EvalDataset> {
+  return request('/eval/dataset');
 }
 
 // Query log (admin) — downloads CSV as a blob and triggers browser download

@@ -190,7 +190,10 @@ async function invokeModel(
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: 4096,
-      system: [{ type: 'text', text: systemPrompt }],
+      // cache_control per INV-05 — the same systemPrompt is sent on both
+      // baseline + test invocations for every A/B run, so caching it is a
+      // strict cost win.
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
       messages: messages.map(m => ({ role: m.role, content: m.content })),
       temperature: 0.15,
     }),

@@ -12,6 +12,10 @@
  *   - audit_write_failed: Audit log entry permanently lost after retries
  *   - reindex_failed: Document re-index failed, stale content may be served
  *   - ingestion_failed: Source monitor ingestion failed
+ *   - source_stale: A monitored source hasn't changed in longer than its
+ *     expected update cadence — may indicate a broken upstream URL
+ *   - malware_scan_unavailable: ClamAV daemon unreachable; uploads being
+ *     rejected (fail-closed) or silently passed (fail-open — dev only)
  */
 
 import { sendEmail, isEmailConfigured } from './emailService';
@@ -22,7 +26,7 @@ import { escapeHtml } from '../utils/htmlEscape';
 const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const lastAlertTime = new Map<string, number>();
 
-type AlertCategory = 'audit_write_failed' | 'reindex_failed' | 'ingestion_failed';
+type AlertCategory = 'audit_write_failed' | 'reindex_failed' | 'ingestion_failed' | 'source_stale' | 'malware_scan_unavailable';
 
 /**
  * Send an operational alert email if not throttled.

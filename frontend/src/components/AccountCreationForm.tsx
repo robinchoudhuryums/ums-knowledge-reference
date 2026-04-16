@@ -7,6 +7,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { InsuranceCardUpload } from './InsuranceCardUpload';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
+import { useFormDraft } from '../hooks/useFormDraft';
+import { FormDraftBanner } from './FormDraftBanner';
+import type { FormDraft } from '../services/api';
 
 interface AcQuestion {
   id: string;
@@ -180,6 +183,40 @@ export function AccountCreationForm() {
     }
   };
 
+  // Server-side draft: complements sessionStorage for cross-device resume.
+  const draftPayload = useMemo(
+    () => ({ responses, lang, sendTo }),
+    [responses, lang, sendTo],
+  );
+  const draft = useFormDraft({
+    formType: 'pmd-account',
+    payload: draftPayload,
+    label: patientName.trim() || undefined,
+    completionPercent: progressPct,
+    enabled: patientName.trim().length > 0 && !success,
+  });
+
+  const handleResumeDraft = useCallback((rec: FormDraft) => {
+    const p = rec.payload as {
+      responses?: Record<string, string>;
+      lang?: Lang;
+      sendTo?: string;
+    } | null;
+    if (!p) return;
+    if (p.responses && typeof p.responses === 'object') setResponses(p.responses);
+    if (p.lang === 'en' || p.lang === 'es') setLang(p.lang);
+    if (typeof p.sendTo === 'string') setSendTo(p.sendTo);
+  }, []);
+
+  const handleStartOverDraft = useCallback(async () => {
+    await draft.discardCurrent();
+    setResponses({});
+    setSendTo('');
+    setSuccess('');
+    setError('');
+    if (patientName) sessionStorage.removeItem(storageKey(patientName));
+  }, [draft, patientName]);
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ums-text-muted)' }}>Loading form...</div>;
   if (fetchError) return <div style={sty.error}>Failed to load form: {fetchError}</div>;
 
@@ -204,6 +241,19 @@ export function AccountCreationForm() {
           </div>
         </div>
       </div>
+
+      {/* Server-side draft status */}
+      <FormDraftBanner
+        formType="pmd-account"
+        currentDraftId={draft.currentDraftId}
+        lastSavedAt={draft.lastSavedAt}
+        saving={draft.saving}
+        error={draft.error}
+        resume={draft.resume}
+        onResume={handleResumeDraft}
+        onStartOver={handleStartOverDraft}
+        currentLabel={patientName.trim() || undefined}
+      />
 
       {/* Progress ring */}
       <div style={sty.progressRing}>

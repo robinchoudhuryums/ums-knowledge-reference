@@ -134,4 +134,48 @@ describe('PHI Redactor', () => {
       expect(result.redactionCount).toBe(0);
     });
   });
+
+  // M1: the original regex only matched ASCII names. These cases must now
+  // all be redacted — Spanish/Portuguese accents, Irish/Scottish apostrophes,
+  // French hyphenation, and middle initials.
+  describe('Unicode and non-ASCII patient names (M1)', () => {
+    it('redacts Spanish accented names', () => {
+      const result = redactPhi('patient José García is scheduled');
+      expect(result.text).toContain('[NAME]');
+      expect(result.text).not.toContain('José');
+      expect(result.text).not.toContain('García');
+    });
+
+    it('redacts Irish/Scottish apostrophe names', () => {
+      const result = redactPhi('patient Mary O\'Brien');
+      expect(result.text).toContain('[NAME]');
+      expect(result.text).not.toContain('Mary');
+      expect(result.text).not.toContain('Brien');
+    });
+
+    it('redacts French hyphenated names', () => {
+      const result = redactPhi('patient Jean-Paul Martin');
+      expect(result.text).toContain('[NAME]');
+      expect(result.text).not.toContain('Jean-Paul');
+    });
+
+    it('redacts middle-initial forms', () => {
+      const result = redactPhi('patient John Q Public');
+      expect(result.text).toContain('[NAME]');
+      expect(result.text).not.toContain('John');
+      expect(result.text).not.toContain('Public');
+    });
+
+    it('still redacts under the title prefix (Dr./Mrs./etc)', () => {
+      const result = redactPhi('Dr. María Fernández-López reviewed the case');
+      expect(result.text).toContain('[NAME]');
+    });
+
+    it('does not over-redact: lowercase tokens after prefix are not treated as names', () => {
+      // "patient the condition" — "the" is lowercase and should not match \p{Lu}
+      const result = redactPhi('patient the condition improved');
+      expect(result.text).toBe('patient the condition improved');
+      expect(result.redactionCount).toBe(0);
+    });
+  });
 });

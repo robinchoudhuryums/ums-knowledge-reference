@@ -26,7 +26,7 @@
 ### Retrieval Quality
 - [ ] **Cross-encoder re-ranking** — replace heuristic re-ranking with learned cross-encoder (e.g., MS MARCO MiniLM)
 - [ ] **Query routing** — classify queries as structured-data-only, RAG, or hybrid to reduce unnecessary LLM calls
-- [ ] **Retrieval evaluation framework** — build gold-standard Q&A test set (50+ pairs), automate recall@K and MRR measurement
+- [x] **Retrieval evaluation framework** — gold-standard Q&A test set (51 pairs, `backend/src/evalData/goldStandardRag.json`) with automated recall@K + MRR measurement via `scripts/evalRag.ts` (emits JUnit XML + results.json with configurable thresholds)
 - [ ] **HNSW index migration** — switch pgvector from IVFFlat to HNSW for better recall at scale
 
 ### Generation Quality
@@ -44,12 +44,12 @@
 
 ### Data Protection
 - [ ] **Field-level encryption** — encrypt PHI columns (SSN, DOB, member ID) at application layer before storage
-- [ ] **Audit log immutability** — enable S3 Object Lock (WORM) for compliance-grade audit trail
+- [x] **Audit log immutability** — S3 Object Lock COMPLIANCE-mode retention available via `AUDIT_OBJECT_LOCK=true` + `AUDIT_RETENTION_YEARS` (implemented in `services/audit.ts:209-216`)
 - [ ] **PHI discovery scan** — retroactive scan of stored data for unredacted PHI
 - [ ] **BAA compliance checklist endpoint** — API endpoint listing compliance status for auditors
 
 ### Infrastructure Security
-- [ ] **SAST/secret scanning in CI** — add truffleHog or similar to prevent credential leaks
+- [x] **SAST/secret scanning in CI** — TruffleHog secret scanning (diff-scoped, non-blocking) in `.github/workflows/ci.yml`
 - [ ] **SCA (Software Composition Analysis)** — automated vulnerability scanning beyond npm audit
 - [ ] **EC2 env-file hardening** — verify file permissions in deploy script
 
@@ -107,7 +107,7 @@
 - [ ] **Critical path coverage** — 90%+ on auth, PHI redaction, data retention
 
 ### Observability
-- [ ] **OpenTelemetry tracing** — distributed tracing across services
+- [x] **OpenTelemetry tracing** — implemented in `backend/src/tracing.ts`; enable with `OTEL_ENABLED=true`, exports to `OTEL_EXPORTER_OTLP_ENDPOINT`
 - [ ] **Alerting** — CloudWatch alarms on error rate, latency, and health check failures
 - [ ] **Dashboard** — Grafana or CloudWatch dashboard for key metrics
 

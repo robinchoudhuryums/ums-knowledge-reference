@@ -10,6 +10,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 - **Conversation memory** — Follow-up questions are reformulated into standalone queries. Older turns are summarized automatically.
 - **Hybrid search** — Cosine similarity + dynamically-normalized BM25 keyword scoring (adapts to corpus) with medical-term-aware tokenizer and post-retrieval re-ranking. Semantic dedup with length-ratio pre-check optimization. Embedding dimension validation prevents silent failures on model changes.
 - **A/B model testing** — Compare Bedrock models (e.g., Haiku vs Sonnet) on RAG answer quality. Same query runs through both models with shared retrieval context. Welch's t-test for statistical significance on aggregate latency/cost. Batch testing (up to 20 questions). Automated recommendation based on cost/latency tradeoffs.
+- **Gold-standard RAG evaluation harness** — 51 curated Q&A pairs across coverage, clinical, equipment, billing, and forms categories. CLI harness (`scripts/evalRag.ts`) emits JUnit XML + JSON summary and exits non-zero when average recall@10 or MRR falls below configurable thresholds. Admin dashboard view lets operators preview dataset coverage.
 
 ### DME Reference Data (integrated into RAG)
 - **HCPCS code lookup** — 332 real DME codes across 25 categories (power wheelchairs, oxygen, CPAP supplies, catheters, incontinence, ventilators, bed/wheelchair accessories, respiratory supplies).
@@ -27,11 +28,13 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 - **PMD Account Creation** — Sales lead intake form for power mobility patients (demographics, insurance, clinical, scheduling).
 - **PAP Account Creation** — CPAP/BiPAP sales lead intake with conditional formatting (sleep study status, equipment age).
 - **Insurance card OCR** — Upload card photo → Textract + Claude extracts insurance name, member ID, group #, plan type. Auto-fills form fields and flags mismatches.
+- **Server-side form drafts** — Partial save/resume for PPD, PMD Account, and PAP Account. Debounced 2s auto-save writes to S3; resume across devices via a "Resume draft…" banner at the top of each form. Complements existing per-form sessionStorage.
 
 ### Document Management
 - **Structured extraction** — Extract data using templates (PPD Seating Evaluation, CMN, Prior Auth, General).
+- **Human-in-the-loop correction** — Reviewers submit per-field corrections and an overall quality rating after editing extraction results. S3-backed append-only audit record; admin dashboard shows aggregate accuracy and LLM overconfidence rate.
 - **Clinical note extraction** — Upload physician notes → extract ICD-10 codes, test results, medical necessity, map to CMN fields.
-- **Document source monitoring** — Track external URLs (CMS LCDs, policies) for changes and auto-reingest. 8 LCD sources pre-configured.
+- **Document source monitoring** — Track external URLs (CMS LCDs, policies) for changes and auto-reingest. 8 LCD sources pre-configured. Staleness audit alerts when a source hasn't changed in longer than its expected cadence — distinguishes "healthy + unchanged" from "broken upstream."
 - **Form review** — CMN form type auto-detection with required-field rules and confidence-based PDF annotations.
 
 ### HIPAA Compliance
@@ -127,7 +130,7 @@ docker run -p 3001:3001 --env-file backend/.env ums-knowledge
 ### Production Deployment (EC2)
 
 The app auto-deploys to EC2 via GitHub Actions when code is pushed to `main`:
-1. CI runs (lint, type-check, 725 tests)
+1. CI runs (lint, type-check, 964 tests)
 2. SSHes into EC2 → `git pull` → `docker build` → restart container
 3. Health check verification at `/api/health`
 
@@ -145,7 +148,7 @@ docker run -d --name ums-knowledge --restart unless-stopped --env-file ~/ums-kno
 # Type-check
 cd backend && npx tsc --noEmit
 
-# Run tests (725 tests across 49 test files)
+# Run tests (964 tests across 62 test files)
 cd backend && npm test
 
 # Lint
@@ -175,6 +178,12 @@ The IAM role/user needs:
 | GET | `/api/documents` | List documents |
 | POST | `/api/documents/clinical-extract` | Extract clinical data from notes |
 | POST | `/api/extraction/extract` | Structured extraction with template |
+| POST | `/api/extraction/correct` | Submit reviewer correction (human-in-the-loop) |
+| GET | `/api/extraction/corrections-stats` | Aggregate extraction accuracy (admin) |
+| CRUD | `/api/form-drafts/*` | Partial save/resume for PPD, PMD, PAP forms |
+| GET | `/api/sources/staleness` | Sources past their expected update cadence (admin) |
+| POST | `/api/sources/audit-staleness` | Run staleness audit + alert (admin) |
+| GET | `/api/eval/dataset` | Gold-standard RAG evaluation dataset (admin) |
 | GET | `/api/hcpcs/search?q=` | Search HCPCS codes |
 | GET | `/api/icd10/for-diagnosis/:code` | ICD-10 → HCPCS crosswalk |
 | GET | `/api/coverage/checklist/:code` | LCD coverage checklist |

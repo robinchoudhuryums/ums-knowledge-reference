@@ -16,6 +16,11 @@
  *     expected update cadence — may indicate a broken upstream URL
  *   - malware_scan_unavailable: ClamAV daemon unreachable; uploads being
  *     rejected (fail-closed) or silently passed (fail-open — dev only)
+ *   - admin_role_granted: A new admin was created or an existing user was
+ *     elevated to admin. Subject to the same 1/hour throttle as other
+ *     categories — clustered admin creations collapse to one email, but the
+ *     audit log still captures every event. Operators should investigate
+ *     any alert in this category promptly (L2)
  */
 
 import { sendEmail, isEmailConfigured } from './emailService';
@@ -26,7 +31,7 @@ import { escapeHtml } from '../utils/htmlEscape';
 const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const lastAlertTime = new Map<string, number>();
 
-type AlertCategory = 'audit_write_failed' | 'reindex_failed' | 'ingestion_failed' | 'source_stale' | 'malware_scan_unavailable';
+type AlertCategory = 'audit_write_failed' | 'reindex_failed' | 'ingestion_failed' | 'source_stale' | 'malware_scan_unavailable' | 'admin_role_granted';
 
 /**
  * Send an operational alert email if not throttled.

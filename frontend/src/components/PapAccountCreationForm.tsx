@@ -293,10 +293,10 @@ export function PapAccountCreationForm() {
                         {q.required && <span style={{ color: '#dc3545', marginLeft: 3 }}>*</span>}
                       </label>
                       {q.type === 'text' && (
-                        <input style={sty.textInput} value={val} onChange={e => setResponse(q.id, e.target.value)} />
+                        <input style={sty.textInput} value={val} onChange={e => setResponse(q.id, e.target.value)} maxLength={500} />
                       )}
                       {q.type === 'textarea' && (
-                        <textarea style={sty.textarea} value={val} onChange={e => setResponse(q.id, e.target.value)} />
+                        <textarea style={sty.textarea} value={val} onChange={e => setResponse(q.id, e.target.value)} maxLength={5000} />
                       )}
                       {q.type === 'select' && q.options && (
                         <div>

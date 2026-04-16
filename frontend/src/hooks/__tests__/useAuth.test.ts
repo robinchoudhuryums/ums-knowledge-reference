@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useAuth } from '../useAuth';
 
-// Mock the API module
+// Mock the API module. SESSION_EXPIRED_EVENT must be exported because
+// useAuth imports it for the "silent logout on refresh failure" path (H7).
 vi.mock('../../services/api', () => ({
   login: vi.fn(),
   logoutServer: vi.fn().mockResolvedValue(undefined),
   cancelActiveStream: vi.fn(),
+  SESSION_EXPIRED_EVENT: 'ums:session-expired',
 }));
 
 describe('useAuth', () => {

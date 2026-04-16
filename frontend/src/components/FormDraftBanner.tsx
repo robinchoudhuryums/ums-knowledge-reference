@@ -129,7 +129,7 @@ export function FormDraftBanner({
             >
               <span style={styles.dropdownLabel}>{d.label || '(unlabeled)'}</span>
               <span style={styles.dropdownMeta}>
-                {d.completionPercent != null ? `${Math.round(d.completionPercent)}% · ` : ''}
+                {d.completionPercent !== undefined && d.completionPercent !== null ? `${Math.round(d.completionPercent)}% · ` : ''}
                 {timeAgo(new Date(d.updatedAt))}
               </span>
             </button>

@@ -11,7 +11,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Key services** (`backend/src/services/`):
   - `ingestion.ts` — Full pipeline: upload to S3 → extract text → vision describe images → chunk → embed → store in vector store. Mutex-protected index updates, chunk rollback on failure, content-hash deduplication (race-safe verified check inside mutex), file extension whitelist.
   - `textExtractor.ts` — Extracts text from PDFs (pdf-parse + conditional Textract OCR based on word count), DOCX, XLSX, CSV, HTML
-  - `visionExtractor.ts` — Sends PDFs to Haiku 4.5 via Bedrock Converse API to describe images/diagrams
+  - `visionExtractor.ts` — Sends PDFs to Haiku 4.5 via Bedrock Converse API to describe images/diagrams. All structured-log filenames pass through `safeFilename` → `redactPhi` so user-uploaded names like "john-doe-mri-scan.pdf" don't leak PHI to log aggregators (M2). Descriptions themselves are never logged.
   - `ocr.ts` — AWS Textract OCR (sync for images, async for multi-page PDFs). 5-minute hard timeout, transient error retry (3 attempts), 100ms pagination delay.
   - `chunker.ts` — Splits text into overlapping chunks with section header detection and table preservation
   - `embeddings.ts` — Embedding facade (delegates to `EmbeddingProvider`), batch support (parallel batches of 20), retry with exponential backoff
@@ -19,7 +19,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `titanEmbeddingProvider.ts` — Amazon Titan Embed V2 implementation of `EmbeddingProvider`
   - `vectorStore.ts` — Hybrid vector store: routes to pgvector (PostgreSQL) when DATABASE_URL is configured, falls back to in-memory S3 JSON. Cosine similarity + IDF-enhanced BM25 keyword boosting + re-ranking. Medical-term-aware tokenizer preserves short tokens (IV, O2, 5mg). NaN guards, dimension validation. Embedding model mismatch detection on init with reindex migration path (`reindexAllEmbeddings`).
   - `s3Storage.ts` — S3 operations for documents, vectors. Size guards (50MB metadata, 500MB vector index).
-  - `jobQueue.ts` — Async job queue with S3 persistence (survives restarts), status polling, auto-cleanup
+  - `jobQueue.ts` — Async job queue with S3 persistence (survives restarts), status polling, auto-cleanup. Creates and status transitions persist immediately (bypass debounce); progress-only updates still go through the debounced path so a crash in the debounce window can't lose queued jobs (M7).
   - `audit.ts` — HIPAA audit logging with HMAC-SHA256 hash chaining (keyed with app secret — attacker with DB access cannot recompute), mutex-protected writes, deep PHI redaction (recursive traversal of nested objects/arrays), S3 write retry with backoff
   - `usage.ts` — Per-user daily query limits with rollback on failed queries
   - `queryLog.ts` — Query analytics with CSV export
@@ -44,7 +44,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `referenceEnrichment.ts` — Auto-detects HCPCS/ICD-10 codes and coverage keywords in queries, injects structured reference data into RAG context
   - `ppdQuestionnaire.ts` — PPD (Patient Provided Data) questionnaire (45 questions EN/ES) for Power Mobility Device orders. Weight range validation (70-700 lbs), clinical-context spasticity detection.
   - `pmdCatalog.ts` — PMD product catalog (22 products) with images, brochures, weight capacities, seat types
-  - `ppdQueue.ts` — S3-backed PPD submission queue with status workflow (pending → in_review → completed/returned)
+  - `ppdQueue.ts` — S3-backed PPD submission queue with status workflow (pending → in_review → completed/returned). Per-submission mutex on `updatePpdStatus` prevents two admins racing on the same ID from clobbering each other's review action (H6; in-process only, multi-instance deploys would need Redis).
   - `seatingEvaluation.ts` — Auto-fills 2-page Seating Evaluation form from PPD responses (10 sections mapped). Numeric armStrength comparison, word-boundary MRADL classification, cognitive status inference from diagnoses.
   - `accountCreation.ts` — PMD Account Creation questionnaire (25 questions EN/ES) for sales lead intake
   - `papAccountCreation.ts` — PAP/CPAP Account Creation questionnaire (24 questions EN/ES) with conditional formatting
@@ -58,12 +58,13 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `waf.ts` — Application-level WAF: 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF patterns, IP blocklist (permanent + temporary), anomaly scoring with sliding window + auto-block, input truncation (4KB) prevents regex DoS
 - **Utilities** (`backend/src/utils/`):
   - `sentry.ts` — Sentry error tracking with PHI-safe scrubbing (8 patterns). Strips request bodies, cookies, query strings. No-op when SENTRY_DSN not set
-  - `stripMetadata.ts` — EXIF/IPTC/XMP metadata stripping from image uploads using sharp. Removes GPS, timestamps, device info. Visible content (pixels) preserved for OCR
+  - `stripMetadata.ts` — Document metadata stripping. Images (EXIF/IPTC/XMP/ICC via sharp) remove GPS, timestamps, device info. PDFs (via pdf-lib) clear the info dictionary: /Author, /Creator, /Producer, /Title, /Subject, /Keywords. `stripDocumentMetadata` dispatcher routes by MIME type; DOCX/XLSX currently pass through unchanged. Visible content (pixels, text, form fields) preserved byte-identically.
   - `logger.ts` — Structured JSON logging with AsyncLocalStorage correlation IDs
   - `correlationId.ts` — AsyncLocalStorage per-request tracing
   - `phiRedactor.ts` — PHI redaction (14 HIPAA identifiers) with deep recursive traversal
   - `htmlEscape.ts` — HTML entity escaping for safe email template interpolation
   - `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention)
+  - `rateLimitKey.ts` — `resolveRateLimitKey(req)` for express-rate-limit keyGenerators; resolves `user.id → req.ip → SHA-256(XFF + User-Agent) → per-request UUID`. Never returns `'unknown'` so distinct clients cannot pool into one bucket (H3). Logs a throttled warning on any fallback past req.ip so broken trust-proxy setups are visible.
   - `resilience.ts` — shared retry with jitter, circuit breaker, timeout
   - `metrics.ts` — in-memory request metrics with per-route latency percentiles
   - `textractPoller.ts` — shared Textract async job polling + pagination with transient error retry
@@ -90,7 +91,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
 - **Migrations** (`backend/migrations/`): `001_initial_schema.sql` (13 tables: users, documents, collections, audit_logs, query_logs, rag_traces, feedback, jobs, ppd_submissions, monitored_sources, usage_records, usage_daily_totals, schema_migrations), `002_pgvector_chunks.sql` (chunks table with vector(1024) column, IVFFlat index), `003_add_fk_indexes.sql` (indexes on FK columns: usage_records, audit_logs, query_logs, feedback, jobs by user_id + partial index on documents where status='ready'), `004_add_foreign_keys.sql` (FK constraints on 12 columns across 9 tables: RESTRICT on audit/log tables for HIPAA preservation, CASCADE on chunks/usage/jobs), `005_fix_user_id_default.sql` (replaces predictable timestamp-based user ID default with `gen_random_uuid()`), `005_add_mfa_columns.sql` (MFA secret, enabled flag), `006_audit_chain_state.sql` (DB-backed audit hash chain for multi-instance), `007_add_user_email.sql` (email column for password reset), `008_add_mfa_recovery_codes.sql` (recovery codes array), `009_hnsw_index.sql.manual` (replaces IVFFlat with HNSW — MANUAL migration, not auto-applied on startup because non-concurrent CREATE INDEX on a populated chunks table would exceed the deploy health-check timeout. Run steps manually via `psql "$DATABASE_URL"` using `CREATE INDEX CONCURRENTLY`)
 - **Storage abstraction** (`backend/src/storage/`): `interfaces.ts` (MetadataStore, DocumentStore, VectorStore interfaces with RDS/pgvector migration documentation), `s3MetadataStore.ts`, `s3DocumentStore.ts`, `index.ts`
 - **Cache abstraction** (`backend/src/cache/`): `interfaces.ts` (CacheProvider, SetProvider), `memoryCache.ts` (in-memory with TTL and LRU eviction), `index.ts` — swap to Redis for horizontal scaling
-- **Tests** (`backend/src/__tests__/`): 979 total tests across 66 test files (vitest). Covers vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, extraction feedback, form drafts, gold-standard eval dataset + scoring, source staleness auditing + alerting, malware scan fail-closed, token revocation (INV-12), MFA recovery code TOCTOU regression, ingestion lifecycle (real chunker + rollback + dedup), orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
+- **Tests** (`backend/src/__tests__/`): 997 total tests across 67 test files (vitest). Covers vector store, PHI redaction (incl. Unicode patient names — Spanish, Irish, French, hyphenated), URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, extraction feedback, form drafts, gold-standard eval dataset + scoring, source staleness auditing + alerting, malware scan fail-closed, token revocation (INV-12), MFA recovery code TOCTOU regression, ingestion lifecycle (real chunker + rollback + dedup), rate-limit key resolution (H3), zero-width prompt-injection bypass (H4), orphan cleanup, job queue, ingestion pipeline, audit service, embeddings, embedding dimension validation, OCR, email service, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, and route-level tests for documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, and s3Storage.
 - **Eval data** (`backend/src/evalData/`): `goldStandardRag.json` (51 Q&A pairs across coverage, clinical, equipment, billing, forms categories) + `loader.ts` (validating loader — fails fast on malformed entries). Consumed by `scripts/evalRag.ts` (CI harness) and `scripts/evalEmbeddings.ts` (embedding-model comparison).
 - **Scripts** (`backend/src/scripts/`): `reset-admin.ts` — Admin password reset utility for when initial random password is lost or account is locked. Works with both PostgreSQL and S3 storage backends. Usage: `cd backend && npx tsx src/scripts/reset-admin.ts [password]`. `reembed.ts` — Re-embed all chunks with the current embedding model (migration path for model changes). `evalEmbeddings.ts` — Embedding model comparison (Titan vs Cohere) against the gold-standard dataset. `evalRag.ts` — Gold-standard RAG eval harness; emits `eval-output/junit.xml` + `results.json` and exits non-zero when recall/MRR fall below configured thresholds. Not in `npm test` because it requires Bedrock + a populated index.
 
@@ -277,7 +278,7 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/auth/reset-password` | None | Reset password with code (rate-limited) |
 | POST | `/api/auth/refresh` | None | Refresh access token using refresh cookie |
 | POST | `/api/auth/mfa/setup` | User | Initialize MFA TOTP setup |
-| POST | `/api/auth/mfa/verify` | User | Verify MFA code and enable |
+| POST | `/api/auth/mfa/verify` | User | Verify MFA code and enable (rate-limited: 10 attempts / 15 min) |
 | POST | `/api/auth/mfa/disable` | User | Disable MFA |
 | POST | `/api/query` | User | RAG query (non-streaming) |
 | POST | `/api/query/stream` | User | RAG query (streaming SSE) |
@@ -386,7 +387,7 @@ services/ragTrace.ts, services/queryLog.ts, services/faqAnalytics.ts, services/u
 config/aws.ts, config/database.ts, config/migrate.ts, db/index.ts, db/users.ts, db/documents.ts, cache/interfaces.ts, cache/memoryCache.ts, cache/redisCache.ts, cache/index.ts, storage/interfaces.ts, storage/s3DocumentStore.ts, storage/s3MetadataStore.ts, storage/index.ts, types/index.ts, types/declarations.d.ts
 
 ## Infrastructure — Server & Utilities:
-server.ts, tracing.ts, utils/logger.ts, utils/correlationId.ts, utils/resilience.ts, utils/envValidation.ts, utils/urlValidation.ts, utils/fileValidation.ts, utils/asyncMutex.ts, utils/textractPoller.ts, utils/sentry.ts, utils/traceSpan.ts, scripts/reset-admin.ts, scripts/reembed.ts, scripts/migrateProductImages.ts
+server.ts, tracing.ts, utils/logger.ts, utils/correlationId.ts, utils/resilience.ts, utils/envValidation.ts, utils/urlValidation.ts, utils/fileValidation.ts, utils/asyncMutex.ts, utils/rateLimitKey.ts, utils/textractPoller.ts, utils/sentry.ts, utils/traceSpan.ts, scripts/reset-admin.ts, scripts/reembed.ts, scripts/migrateProductImages.ts
 
 ## Frontend — Core & Shared:
 App.tsx, main.tsx, types/index.ts, hooks/useAuth.ts, hooks/useIdleTimeout.ts, hooks/useUnsavedChanges.ts, hooks/useFormDraft.ts, services/api.ts, services/errorReporting.ts, components/LoginForm.tsx, components/ChangePasswordForm.tsx, components/ErrorBoundary.tsx, components/Toast.tsx, components/ConfirmDialog.tsx, components/LoadingSkeleton.tsx, components/PopoutButton.tsx, components/FormDraftBanner.tsx
@@ -405,7 +406,7 @@ INV-07 | On ingestion failure after chunks written, chunks must be rolled back (
 INV-08 | Content-hash deduplication must reject identical SHA-256 uploads in same collection | Subsystem: Ingestion
 INV-09 | HIPAA retention floors enforced via Math.max (audit >= 6yr) even if env vars set lower | Subsystem: HIPAA Compliance
 INV-10 | All URL downloads must validate via SSRF prevention (block private IPs, localhost, metadata) | Subsystem: Server & Utilities
-INV-11 | CSRF double-submit cookie enforced on all POST/PUT/DELETE except login, forgot-password, reset-password, refresh, and health | Subsystem: Server & Utilities
+INV-11 | CSRF double-submit cookie enforced on all POST/PUT/DELETE except login, forgot-password, reset-password, refresh, and health. Exempt list is exact-match only (no prefix matching) so a future route like `/api/auth/login-sso` cannot inherit an exemption | Subsystem: Server & Utilities
 INV-12 | revokeAllUserTokens() must be called on password reset to invalidate existing sessions | Subsystem: Auth & Security
 INV-13 | JWT jti claims must use crypto.randomUUID(), never predictable values | Subsystem: Auth & Security
 INV-14 | Extraction route error messages must not expose internal AWS/Bedrock details | Subsystem: Extraction
@@ -415,7 +416,7 @@ INV-17 | Seating eval armStrength uses numeric comparison with NaN guard | Subsy
 INV-18 | Spasticity detection uses negation check + clinical context, not bare keyword match | Subsystem: Forms & Workflows
 INV-19 | SSL rejectUnauthorized=true enforced in production regardless of env var | Subsystem: Infrastructure
 INV-20 | JWT_SECRET fail-fast in production if default/weak | Subsystem: Server & Utilities
-INV-21 | Prompt injection detection includes NFKD normalization + HTML entity decode | Subsystem: RAG Pipeline
+INV-21 | Prompt injection detection includes NFKD normalization + HTML entity decode + zero-width/invisible character stripping (U+200B-200D, FEFF, 2060, 00AD, 180E, 2061-2064) prior to normalization | Subsystem: RAG Pipeline
 INV-22 | Output guardrails detect system prompt leakage in generated responses | Subsystem: RAG Pipeline
 INV-23 | Conversation history enforces 20-turn and 50K-char budgets | Subsystem: RAG Pipeline
 INV-24 | S3 object size guards: 50MB metadata, 500MB vector index | Subsystem: Ingestion
@@ -424,6 +425,8 @@ INV-26 | Successful logins must call logAuditEvent with action 'login' | Subsyst
 INV-27 | Combined search scores must have NaN guard in both S3 and pgvector paths | Subsystem: RAG Pipeline
 INV-28 | Concurrent login attempts for the same username must be serialized so MFA recovery code consumption is atomic (single-use) | Subsystem: Auth & Security
 INV-29 | Malware scanning must fail-closed when MALWARE_SCAN_ENABLED=true and the ClamAV daemon is unreachable (reject upload, do not silently pass) | Subsystem: HIPAA Compliance
+INV-30 | All express-rate-limit keyGenerators must go through `resolveRateLimitKey(req)`; direct fallback to `req.ip \|\| 'unknown'` is forbidden because distinct clients would pool into a single shared bucket (H3) | Subsystem: Server & Utilities
+INV-31 | PPD submission status transitions must run under the per-submission mutex so two concurrent reviewer actions cannot clobber each other (H6) | Subsystem: Forms & Workflows
 
 ## Policy Configuration
 Policy threshold: 5/10

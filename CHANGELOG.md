@@ -14,7 +14,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Semantic dedup length-ratio pre-check** — fast `minSize/maxSize` check before O(n) Jaccard intersection
 - **Medical-term-aware tokenizer** — preserves hyphenated terms, short tokens (IV, O2, 5mg)
 - **Section header detection** — ALL CAPS, markdown, colon-terminated, numbered headers as chunk metadata
-- **Prompt injection detection** — 15+ patterns, NFKD normalization, HTML entity decode, Cyrillic look-alikes, 10KB truncation
+- **Prompt injection detection** — 15+ patterns, NFKD normalization, HTML entity decode, Cyrillic look-alikes, 10KB truncation, zero-width / invisible character stripping (U+200B-200D, FEFF, 2060, 00AD, 180E, 2061-2064) prior to normalization so hidden code points can't split trigger words (H4, INV-21)
 - **Output guardrails** — detect system prompt leakage and role deviation in generated responses
 - **Conversation history validation** — 20-turn and 50K-char budgets
 - **Conversation memory with summarization** — older turns summarized, recent 4 kept verbatim
@@ -49,7 +49,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 ## Document Extraction & Analysis
 
 - **Structured extraction** — templates (PPD, CMN, Prior Auth, General) with Claude Sonnet via Bedrock
-- **Async extraction** — job queue with S3 persistence, status polling, auto-cleanup after 1 hour
+- **Async extraction** — job queue with S3 persistence, status polling, auto-cleanup after 1 hour. Job creation and status transitions persist immediately (`persistNow()`); progress-only updates still debounced. Closes a 30s crash-window that could silently drop a queued job (M7)
 - **Clinical note extraction** — Claude Sonnet extracts ICD-10, test results, medical necessity, HCPCS
 - **Form review** — CMN auto-detection, blank detection, confidence categories, template caching, batch review
 - **PDF annotation editor** — client-side PDF.js viewer with SVG overlay, drag/move, undo/redo, color choices
@@ -65,15 +65,17 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Password history** — prevents reuse of last 5 passwords
 - **MFA (TOTP)** — with recovery codes
 - **MFA recovery code TOCTOU fix** — per-username login mutex in `auth.ts` serializes read-modify-save of the users list during login; two concurrent login attempts can no longer both consume the same recovery code (regression test in `__tests__/mfaRecoveryTocTou.test.ts`). In-process only — multi-instance deploys would need Redis (INV-28)
+- **MFA verify rate limit** — dedicated `mfaVerifyLimiter` (10 attempts / 15 min per user) on `/api/auth/mfa/verify`. Previously sat only behind the 120/min global apiLimiter, allowing TOTP / recovery-code brute-force through a stolen access token (H2)
 - **JWT jti** — `crypto.randomUUID()` (not predictable values)
 - **Token revocation** — `revokeAllUserTokens()` called on all password reset paths (admin reset, self-service reset via code, password change) per INV-12
 - **Refresh tokens** — 7-day httpOnly refresh cookie (`ums_refresh_token`, scoped to `/api/auth/refresh`), silent 401 retry on frontend (both request() and SSE streaming), `POST /api/auth/refresh` endpoint
 - **Revocation persistence** — S3-backed save/restore of revocation state on graceful shutdown/startup (skipped when Redis configured). User-level revocation TTL extended to 7 days for refresh token coverage
 - **Service-to-service auth** — X-API-Key with timing-safe comparison for CallAnalyzer
 - **WAF middleware** — 13 SQLi + 13 XSS + 7 path traversal + 4 CRLF patterns, IP blocklist, anomaly scoring
-- **CSRF** — double-submit cookie on all state-changing endpoints
+- **CSRF** — double-submit cookie on all state-changing endpoints. Exempt list is **exact-match only** (no prefix matching) so a future route like `/api/auth/login-sso` cannot silently inherit a login-path exemption (H1, INV-11)
 - **SSRF prevention** — `urlValidation.ts` blocks private IPs, localhost, cloud metadata
 - **Rate limiting** — per-endpoint limits (query 30/15min, forms 10/15min, email 5/15min)
+- **Rate-limit key resolution** — `utils/rateLimitKey.ts` `resolveRateLimitKey(req)` replaces all previous `req.ip || 'unknown'` fallbacks across 10 route files. Resolves user.id → req.ip → SHA-256(XFF + User-Agent) → per-request UUID. Never pools distinct clients into one bucket (H3, INV-30)
 - **Session-expired event (no-reload logout)** — frontend 401 handler dispatches a `SESSION_EXPIRED_EVENT` instead of calling `window.location.reload()`; `useAuth` listens and transitions to LoginForm without losing React state or in-memory form drafts (H7)
 - **Vulnerability scanner** — daily automated security audits
 - **Incident response plan** — HIPAA 164.308, 7-phase lifecycle, escalation contacts
@@ -84,12 +86,12 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Audit log HMAC chain** — HMAC-SHA256 with app secret (not raw SHA-256), mutex-protected writes, S3 write retry with backoff (F-11)
 - **Audit log immutability** — optional S3 Object Lock COMPLIANCE mode (`AUDIT_OBJECT_LOCK=true`), 6-year HIPAA minimum retention floor enforced via `Math.max`
 - **Login audit trail** — successful logins logged via `logAuditEvent` (HIPAA §164.308(a)(5)(ii)(C)) (F-04)
-- **PHI redaction** — 14 HIPAA identifiers, deep recursive traversal, applied to query logs/traces/feedback/audit
+- **PHI redaction** — 14 HIPAA identifiers, deep recursive traversal, applied to query logs/traces/feedback/audit. Name regex uses Unicode property escapes (`\p{Lu}` + `\p{L}`) + apostrophe/hyphen/period support so Spanish ("José García"), Irish ("Mary O'Brien"), French ("Jean-Paul"), and middle-initial ("John Q. Public") names are all redacted (M1)
 - **Data retention** — automated cleanup (audit 7yr, query logs 1yr, traces 90d), HIPAA floor enforcement via Math.max
 - **JWT_SECRET fail-fast** — production refuses to start with default/weak secret
 - **HTTPS enforcement** — HSTS 1-year max-age
 - **SSL hardening** — `rejectUnauthorized: true` enforced in production
-- **Image metadata stripping** — EXIF/IPTC/XMP removal before S3 storage
+- **Document metadata stripping** — Images (EXIF/IPTC/XMP/ICC via sharp) and PDFs (info dictionary: /Author, /Creator, /Producer, /Title, /Subject, /Keywords via pdf-lib) are scrubbed before S3 storage. `stripDocumentMetadata` dispatcher routes by MIME type. Visible content preserved byte-identically (M10)
 - **Sentry integration** — PHI-safe error tracking (8 scrubbing patterns)
 - **Insurance card OCR audit trail** — immediate rawText redaction after extraction
 - **Frontend idle timeout** — 15-min auto-logout with 2-min warning, full-viewport overlay
@@ -112,7 +114,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **PPD questionnaire** — 45 questions (EN/ES), API-driven, phone interview workflow
 - **PMD recommendation engine** — weight-class routing, solid seat logic, stroke/hemiplegia, neuro/SPO/MPO, oxygen conflict, substitution rules
 - **Seating evaluation auto-fill** — maps 45 PPD answers to 10-section form, generates printable HTML
-- **PPD submission queue** — S3-backed, status workflow (pending/in_review/completed/returned)
+- **PPD submission queue** — S3-backed, status workflow (pending/in_review/completed/returned). `updatePpdStatus` runs under a per-submission mutex so two admins racing on the same ID cannot clobber each other's review action (H6, INV-31)
 - **PMD Account Creation** — 25 questions, 4 sections, EN/ES toggle
 - **PAP Account Creation** — 24 questions, 4 sections, conditional formatting badges
 - **Insurance card OCR** — Textract + Claude extracts structured fields, auto-fill, mismatch detection
@@ -163,6 +165,7 @@ Consolidated history of improvements, grouped by category. For architectural det
 - **Idle timeout** — 15-min auto-logout with full-viewport interaction blocker
 - **Silent token refresh** — 401 responses trigger automatic refresh token exchange before login redirect (both request() and SSE streaming paths), with coalesced concurrent attempts
 - **Auto-logout** on 401 responses (after refresh failure), SSE stream cancellation on logout
+- **Error report URL scrub** — `safeLocationHref()` in `errorReporting.ts` strips query strings and hash fragments before reporting to `/api/errors/report` so PHI in URL parameters (e.g. `?patientId=123`) never reaches error logs or Sentry (M9)
 - **Healthcare blue palette** — hexagonal/molecular background pattern
 - **Loading skeletons** — shimmer animation, search hints, empty states
 - **Toast notifications** — Heroicons with semantic CSS variable theming
@@ -173,4 +176,4 @@ Consolidated history of improvements, grouped by category. For architectural det
 
 ## Test Coverage
 
-979 tests across 66 files (vitest). Recent additions: malware fail-closed (`malwareScan.test.ts`), token revocation + INV-12 integration (`tokenRevocation.test.ts`), MFA recovery code TOCTOU regression (`mfaRecoveryTocTou.test.ts`), real-chunker ingestion lifecycle with dedup + rollback (`ingestionLifecycle.test.ts`), extraction feedback store (`extractionFeedback.test.ts`), form drafts service (`formDrafts.test.ts`), source staleness audit + alerting (`sourceStaleness.test.ts`), gold-standard eval dataset shape + scoring (`goldStandardEval.test.ts`). Ongoing coverage: vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion, audit, embeddings, dimension validation, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, RAG evaluation metrics, E2E auth (supertest: login/cookies/CSRF/refresh/revocation/logout), and route-level tests (documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, s3Storage). CI thresholds: 50% lines, 40% branches.
+997 tests across 67 files (vitest). Recent additions: rate-limit key resolution (`rateLimitKey.test.ts`), zero-width prompt-injection bypass coverage, Unicode patient-name redaction (Spanish / Irish / French / middle-initial), malware fail-closed (`malwareScan.test.ts`), token revocation + INV-12 integration (`tokenRevocation.test.ts`), MFA recovery code TOCTOU regression (`mfaRecoveryTocTou.test.ts`), real-chunker ingestion lifecycle with dedup + rollback (`ingestionLifecycle.test.ts`), extraction feedback store (`extractionFeedback.test.ts`), form drafts service (`formDrafts.test.ts`), source staleness audit + alerting (`sourceStaleness.test.ts`), gold-standard eval dataset shape + scoring (`goldStandardEval.test.ts`). Ongoing coverage: vector store, PHI redaction, URL validation, auth flows, usage tracking, HIPAA compliance, extraction templates, document extractor, orphan cleanup, job queue, ingestion, audit, embeddings, dimension validation, OCR, email, data retention, metrics, seating evaluation, PPD questionnaire, integration tests, HTML escaping, HCPCS lookup, ICD-10 mapping, PMD catalog, coverage checklists, form rules, account creation, PAP account creation, reference enrichment, FAQ analytics, RAG evaluation metrics, E2E auth (supertest: login/cookies/CSRF/refresh/revocation/logout), and route-level tests (documents, extraction, HCPCS, ICD-10, coverage, queryLog, PPD, s3Storage). CI thresholds: 50% lines, 40% branches.

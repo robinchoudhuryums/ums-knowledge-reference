@@ -130,7 +130,7 @@ docker run -p 3001:3001 --env-file backend/.env ums-knowledge
 ### Production Deployment (EC2)
 
 The app auto-deploys to EC2 via GitHub Actions when code is pushed to `main`:
-1. CI runs (lint, type-check, 964 tests)
+1. CI runs (lint, type-check, 1019 tests)
 2. SSHes into EC2 → `git pull` → `docker build` → restart container
 3. Health check verification at `/api/health`
 
@@ -148,7 +148,7 @@ docker run -d --name ums-knowledge --restart unless-stopped --env-file ~/ums-kno
 # Type-check
 cd backend && npx tsc --noEmit
 
-# Run tests (964 tests across 62 test files)
+# Run tests (1019 tests across 69 test files)
 cd backend && npm test
 
 # Lint

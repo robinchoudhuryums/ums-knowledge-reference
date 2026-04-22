@@ -640,7 +640,11 @@ function MessageTurn({
           style={{ boxShadow: 'inset -2px 0 0 var(--accent)' }}
         >
           <SectionKicker>You</SectionKicker>
-          <div className="mt-1 whitespace-pre-wrap text-[14px] leading-relaxed text-foreground">
+          <div
+            // break-words wraps long URLs / unbroken tokens that would
+            // otherwise overflow the narrow (420px) embed-mode drawer.
+            className="mt-1 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-foreground"
+          >
             {turn.content}
           </div>
         </div>
@@ -704,7 +708,7 @@ function MessageTurn({
         </div>
       </div>
 
-      <div className="markdown-content prose prose-sm mt-2 max-w-none text-foreground prose-p:text-foreground prose-strong:text-foreground prose-headings:text-foreground prose-code:text-foreground prose-code:bg-muted prose-code:rounded-sm prose-code:px-1 prose-a:text-[var(--accent)]">
+      <div className="markdown-content prose prose-sm mt-2 max-w-none break-words overflow-x-auto text-foreground prose-p:text-foreground prose-strong:text-foreground prose-headings:text-foreground prose-code:text-foreground prose-code:bg-muted prose-code:rounded-sm prose-code:px-1 prose-a:text-[var(--accent)] prose-pre:max-w-full">
         <ReactMarkdown skipHtml>{turn.content}</ReactMarkdown>
       </div>
 
@@ -794,7 +798,7 @@ function StreamingTurn({
       </div>
 
       {streamingText ? (
-        <div className="markdown-content prose prose-sm mt-2 max-w-none text-foreground prose-p:text-foreground prose-strong:text-foreground prose-headings:text-foreground prose-code:text-foreground prose-code:bg-muted prose-code:rounded-sm prose-code:px-1 prose-a:text-[var(--accent)]">
+        <div className="markdown-content prose prose-sm mt-2 max-w-none break-words overflow-x-auto text-foreground prose-p:text-foreground prose-strong:text-foreground prose-headings:text-foreground prose-code:text-foreground prose-code:bg-muted prose-code:rounded-sm prose-code:px-1 prose-a:text-[var(--accent)] prose-pre:max-w-full">
           <ReactMarkdown skipHtml>{streamingText}</ReactMarkdown>
         </div>
       ) : (

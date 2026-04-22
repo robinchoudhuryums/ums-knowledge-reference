@@ -1,42 +1,66 @@
+/**
+ * ToolsTab — Container for ad-hoc document tools with sub-navigation
+ * (structured extraction, OCR scan, intake / clinical autofill).
+ */
+
 import { useState } from 'react';
+import { DocumentTextIcon, CameraIcon } from '@heroicons/react/24/outline';
+import { Stethoscope } from 'lucide-react';
 import { DocumentExtractor } from './DocumentExtractor';
 import { OcrTool } from './OcrTool';
 import { IntakeAutoFill } from './IntakeAutoFill';
-import {
-  DocumentTextIcon,
-  CameraIcon,
-} from '@heroicons/react/24/outline';
-import { Stethoscope } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 type ToolSubTab = 'extract' | 'ocr' | 'intake';
 
-const subTabs: { key: ToolSubTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: 'extract', label: 'Extract Data', icon: DocumentTextIcon },
-  { key: 'ocr', label: 'OCR Scan', icon: CameraIcon },
-  { key: 'intake', label: 'Intake / Clinical', icon: Stethoscope },
+const SUB_TABS: {
+  key: ToolSubTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { key: 'extract', label: 'Extract data', icon: DocumentTextIcon },
+  { key: 'ocr', label: 'OCR scan', icon: CameraIcon },
+  { key: 'intake', label: 'Intake / clinical', icon: Stethoscope },
 ];
 
 export function ToolsTab() {
   const [active, setActive] = useState<ToolSubTab>('extract');
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={styles.subNav}>
-        {subTabs.map(t => {
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      {/* Sub-nav — matches FormsTab accent-underline pattern */}
+      <div className="flex shrink-0 items-center gap-0 border-b border-border bg-card px-4 sm:px-7">
+        {SUB_TABS.map((t) => {
           const Icon = t.icon;
+          const isActive = active === t.key;
           return (
             <button
               key={t.key}
+              type="button"
               onClick={() => setActive(t.key)}
-              style={active === t.key ? styles.subTabActive : styles.subTab}
+              aria-pressed={isActive}
+              className={cn(
+                'relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] transition-colors',
+                isActive
+                  ? 'font-semibold text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="h-4 w-4" />
               {t.label}
+              {isActive && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 bottom-0 h-0.5"
+                  style={{ background: 'var(--accent)' }}
+                />
+              )}
             </button>
           );
         })}
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
+
+      <div className="min-h-0 flex-1 overflow-auto">
         {active === 'extract' && <DocumentExtractor />}
         {active === 'ocr' && <OcrTool />}
         {active === 'intake' && <IntakeAutoFill />}
@@ -44,42 +68,3 @@ export function ToolsTab() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  subNav: {
-    display: 'flex',
-    gap: '2px',
-    padding: '8px 16px',
-    borderBottom: '1px solid var(--ums-border)',
-    background: 'var(--ums-bg-surface)',
-    flexShrink: 0,
-  },
-  subTab: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 14px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--ums-text-muted)',
-    background: 'transparent',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-  },
-  subTabActive: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 14px',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--ums-brand-text)',
-    background: 'var(--ums-bg-active)',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    boxShadow: 'inset 0 0 0 1px rgba(27, 111, 201, 0.15)',
-  },
-};

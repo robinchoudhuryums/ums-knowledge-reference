@@ -11,27 +11,27 @@ describe('ChangePasswordForm', () => {
 
   it('renders all three password fields', () => {
     render(<ChangePasswordForm onPasswordChanged={mockOnPasswordChanged} />);
-    expect(screen.getByLabelText('Current Password')).toBeInTheDocument();
-    expect(screen.getByLabelText('New Password')).toBeInTheDocument();
-    expect(screen.getByLabelText('Confirm New Password')).toBeInTheDocument();
+    expect(screen.getByLabelText('Current password')).toBeInTheDocument();
+    expect(screen.getByLabelText('New password')).toBeInTheDocument();
+    expect(screen.getByLabelText('Confirm new password')).toBeInTheDocument();
   });
 
   it('shows validation errors on blur when fields are empty', () => {
     render(<ChangePasswordForm onPasswordChanged={mockOnPasswordChanged} />);
-    fireEvent.blur(screen.getByLabelText('Current Password'));
+    fireEvent.blur(screen.getByLabelText('Current password'));
     expect(screen.getByText('Current password is required')).toBeInTheDocument();
   });
 
   it('sets aria-invalid on empty current password after blur', () => {
     render(<ChangePasswordForm onPasswordChanged={mockOnPasswordChanged} />);
-    const input = screen.getByLabelText('Current Password');
+    const input = screen.getByLabelText('Current password');
     fireEvent.blur(input);
     expect(input).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('shows password requirements when new password field is touched', () => {
     render(<ChangePasswordForm onPasswordChanged={mockOnPasswordChanged} />);
-    const newPwdInput = screen.getByLabelText('New Password');
+    const newPwdInput = screen.getByLabelText('New password');
     fireEvent.blur(newPwdInput);
 
     // Requirements list renders inside the aria-live region
@@ -45,20 +45,20 @@ describe('ChangePasswordForm', () => {
 
   it('shows password mismatch error on submit', async () => {
     render(<ChangePasswordForm onPasswordChanged={mockOnPasswordChanged} />);
-    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'OldPass1!' } });
-    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'NewPass1!' } });
-    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'Different1!' } });
-    fireEvent.submit(screen.getByLabelText('Current Password').closest('form')!);
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'OldPass1!' } });
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'NewPass1!' } });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'Different1!' } });
+    fireEvent.submit(screen.getByLabelText('Current password').closest('form')!);
 
     expect(await screen.findByText('Passwords do not match')).toBeInTheDocument();
   });
 
   it('shows minimum length error on submit', async () => {
     render(<ChangePasswordForm onPasswordChanged={mockOnPasswordChanged} />);
-    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'Old' } });
-    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'Short' } });
-    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'Short' } });
-    fireEvent.submit(screen.getByLabelText('Current Password').closest('form')!);
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'Old' } });
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'Short' } });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'Short' } });
+    fireEvent.submit(screen.getByLabelText('Current password').closest('form')!);
 
     expect(await screen.findByText('Password must be at least 8 characters')).toBeInTheDocument();
   });
@@ -71,10 +71,10 @@ describe('ChangePasswordForm', () => {
     });
 
     render(<ChangePasswordForm onPasswordChanged={mockOnPasswordChanged} />);
-    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'OldPass1!' } });
-    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'NewPass1!' } });
-    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'NewPass1!' } });
-    fireEvent.submit(screen.getByLabelText('Current Password').closest('form')!);
+    fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'OldPass1!' } });
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'NewPass1!' } });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'NewPass1!' } });
+    fireEvent.submit(screen.getByLabelText('Current password').closest('form')!);
 
     await waitFor(() => {
       expect(changePassword).toHaveBeenCalledWith('OldPass1!', 'NewPass1!');
@@ -84,7 +84,7 @@ describe('ChangePasswordForm', () => {
 
   it('password requirements list has aria-live for screen readers', () => {
     render(<ChangePasswordForm onPasswordChanged={mockOnPasswordChanged} />);
-    fireEvent.blur(screen.getByLabelText('New Password'));
+    fireEvent.blur(screen.getByLabelText('New password'));
 
     const reqList = document.getElementById('chpwd-new-requirements');
     expect(reqList).toHaveAttribute('aria-live', 'polite');

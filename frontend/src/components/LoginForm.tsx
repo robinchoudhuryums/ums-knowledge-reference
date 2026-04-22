@@ -1,11 +1,28 @@
-import { useState, FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Brain } from 'lucide-react';
 import { forgotPassword, resetPasswordWithCode } from '../services/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 interface Props {
   onLogin: (username: string, password: string, mfaCode?: string) => Promise<void>;
   mfaRequired?: boolean;
   onMfaSubmit?: (code: string) => Promise<void>;
+}
+
+function FieldError({ id, children }: { id: string; children: React.ReactNode }) {
+  return (
+    <div
+      id={id}
+      role="alert"
+      className="mt-1 text-[12px]"
+      style={{ color: 'var(--warm-red)' }}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
@@ -63,124 +80,225 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
     }
   };
 
+  const subtitle =
+    forgotMode === 'request' ? 'Enter your username to receive a reset code via email'
+    : forgotMode === 'code' ? 'Enter the reset code and your new password'
+    : forgotMode === 'done' ? 'Password reset complete'
+    : mfaRequired ? 'Enter the code from your authenticator app'
+    : 'Sign in to access the knowledge base';
+
+  const errorHeading =
+    error.includes('locked') ? 'Account locked'
+    : error.includes('MFA') ? 'Invalid code'
+    : 'Sign-in failed';
+
+  const submitLabel =
+    loading ? 'Verifying…'
+    : forgotMode === 'request' ? 'Send reset code'
+    : forgotMode === 'code' ? 'Reset password'
+    : mfaRequired ? 'Verify code'
+    : 'Sign in';
+
   return (
-    <div style={styles.container} className="hex-pattern-strong">
-      <div style={styles.card}>
-        <div style={styles.logoMark}><Brain size={28} /></div>
-        <h1 style={styles.title}>UMS Knowledge Base</h1>
-        <p style={styles.subtitle}>
-          {forgotMode === 'request' ? 'Enter your username to receive a reset code via email' :
-           forgotMode === 'code' ? 'Enter the reset code and your new password' :
-           forgotMode === 'done' ? 'Password reset complete' :
-           mfaRequired ? 'Enter the code from your authenticator app' :
-           'Sign in to access the knowledge base'}
-        </p>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10 text-foreground">
+      <div className="w-full max-w-[420px] rounded-sm border border-border bg-card p-8 sm:p-10 shadow-sm">
+        {/* Brand mark — accent dot + display title (warm-paper pattern) */}
+        <div className="mb-6 flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-block',
+              width: 2,
+              height: 28,
+              backgroundColor: 'var(--accent)',
+              borderRadius: 1,
+            }}
+          />
+          <Brain size={22} className="text-foreground" />
+          <div>
+            <div
+              className="font-mono uppercase text-muted-foreground"
+              style={{ fontSize: 10, letterSpacing: '0.12em' }}
+            >
+              UMS Knowledge
+            </div>
+            <h1
+              className="font-display font-medium text-foreground"
+              style={{ fontSize: 22, lineHeight: 1.1, letterSpacing: '-0.3px' }}
+            >
+              Sign in
+            </h1>
+          </div>
+        </div>
+
+        <p className="mb-6 text-sm text-muted-foreground">{subtitle}</p>
+
         {forgotMessage && (
-          <div style={{ padding: '10px 14px', background: 'var(--ums-success-light)', color: 'var(--ums-success-text)', borderRadius: '10px', border: '1px solid var(--ums-success-border)', fontSize: '13px', marginBottom: '8px' }}>
+          <div
+            role="status"
+            className="mb-4 rounded-sm border px-3 py-2 text-[13px]"
+            style={{
+              background: 'var(--sage-soft)',
+              borderColor: 'var(--sage)',
+              color: 'var(--sage)',
+            }}
+          >
             {forgotMessage}
           </div>
         )}
-        <form onSubmit={handleSubmit} style={styles.form}>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {forgotMode === 'done' ? (
-            <button type="button" onClick={() => { setForgotMode('off'); setForgotMessage(''); setError(''); }} style={styles.button}>
-              Back to Sign In
-            </button>
+            <Button
+              type="button"
+              onClick={() => { setForgotMode('off'); setForgotMessage(''); setError(''); }}
+              className="w-full"
+            >
+              Back to sign in
+            </Button>
           ) : forgotMode === 'request' ? (
-            <>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Username</label>
-                <input type="text" placeholder="Enter your username" value={username} onChange={e => setUsername(e.target.value)} style={styles.input} required />
-              </div>
-            </>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="login-username-fr">Username</Label>
+              <Input
+                id="login-username-fr"
+                type="text"
+                placeholder="Enter your username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
           ) : forgotMode === 'code' ? (
             <>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Reset Code</label>
-                <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder="6-digit code from email" value={resetCode} onChange={e => setResetCode(e.target.value.replace(/\D/g, ''))} style={{ ...styles.input, textAlign: 'center', fontSize: '20px', letterSpacing: '6px', fontWeight: 600 }} autoFocus required />
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="login-reset-code">Reset code</Label>
+                <Input
+                  id="login-reset-code"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  placeholder="6-digit code from email"
+                  value={resetCode}
+                  onChange={(e) => setResetCode(e.target.value.replace(/\D/g, ''))}
+                  className="text-center font-mono text-[20px] font-semibold tracking-[6px]"
+                  autoFocus
+                  required
+                />
               </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>New Password</label>
-                <input type="password" placeholder="Min 8 chars, upper+lower+number" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={styles.input} required />
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="login-new-pwd">New password</Label>
+                <Input
+                  id="login-new-pwd"
+                  type="password"
+                  placeholder="Min 8 chars, upper+lower+number"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                />
               </div>
             </>
           ) : !mfaRequired ? (
             <>
-              <div style={styles.inputGroup}>
-                <label style={styles.label} htmlFor="login-username">Username</label>
-                <input
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="login-username">Username</Label>
+                <Input
                   id="login-username"
                   type="text"
                   placeholder="Enter your username"
                   value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  onBlur={() => setTouched(prev => ({ ...prev, username: true }))}
-                  style={styles.input}
+                  onChange={(e) => setUsername(e.target.value)}
+                  onBlur={() => setTouched((prev) => ({ ...prev, username: true }))}
                   required
                   aria-invalid={touched.username && !username}
                   aria-describedby={touched.username && !username ? 'login-username-error' : undefined}
                 />
                 {touched.username && !username && (
-                  <div id="login-username-error" role="alert" style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Username is required</div>
+                  <FieldError id="login-username-error">Username is required</FieldError>
                 )}
               </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label} htmlFor="login-password">Password</label>
-                <input
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="login-password">Password</Label>
+                <Input
                   id="login-password"
                   type="password"
                   placeholder="Enter your password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  onBlur={() => setTouched(prev => ({ ...prev, password: true }))}
-                  style={styles.input}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
                   required
                   aria-invalid={touched.password && !password}
                   aria-describedby={touched.password && !password ? 'login-password-error' : undefined}
                 />
                 {touched.password && !password && (
-                  <div id="login-password-error" role="alert" style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Password is required</div>
+                  <FieldError id="login-password-error">Password is required</FieldError>
                 )}
               </div>
             </>
           ) : (
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Authenticator Code</label>
-              <input
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="login-mfa">Authenticator code</Label>
+              <Input
+                id="login-mfa"
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 maxLength={6}
                 placeholder="6-digit code"
                 value={mfaCode}
-                onChange={e => setMfaCode(e.target.value.replace(/\D/g, ''))}
-                style={{ ...styles.input, textAlign: 'center', fontSize: '24px', letterSpacing: '8px', fontWeight: 600 }}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                className="text-center font-mono text-[24px] font-semibold tracking-[8px]"
                 autoFocus
                 required
               />
             </div>
           )}
+
           {error && (
-            <div style={styles.error} role="alert">
-              <strong style={{ display: 'block', marginBottom: '2px' }}>
-                {error.includes('locked') ? 'Account Locked' : error.includes('MFA') ? 'Invalid Code' : 'Login Failed'}
-              </strong>
+            <div
+              role="alert"
+              className="rounded-sm border px-3 py-2 text-[13px] leading-snug"
+              style={{
+                background: 'var(--warm-red-soft)',
+                borderColor: 'var(--warm-red)',
+                color: 'var(--warm-red)',
+              }}
+            >
+              <strong className="mb-0.5 block font-semibold">{errorHeading}</strong>
               {error}
             </div>
           )}
-          <button type="submit" disabled={loading} style={styles.button}>
-            {loading ? 'Verifying...' :
-             forgotMode === 'request' ? 'Send Reset Code' :
-             forgotMode === 'code' ? 'Reset Password' :
-             mfaRequired ? 'Verify Code' : 'Sign In'}
-          </button>
+
+          <Button type="submit" disabled={loading} className="w-full">
+            {submitLabel}
+          </Button>
+
           {forgotMode === 'off' && !mfaRequired && (
-            <button type="button" onClick={() => { setForgotMode('request'); setError(''); setForgotMessage(''); }} style={styles.forgotLink}>
-              Forgot Password?
+            <button
+              type="button"
+              onClick={() => { setForgotMode('request'); setError(''); setForgotMessage(''); }}
+              className={cn(
+                'w-full bg-transparent py-1 text-[13px] text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Forgot password?
             </button>
           )}
+
           {(forgotMode === 'request' || forgotMode === 'code') && (
-            <button type="button" onClick={() => { setForgotMode('off'); setError(''); setForgotMessage(''); setResetCode(''); setNewPassword(''); }} style={styles.forgotLink}>
-              Back to Sign In
+            <button
+              type="button"
+              onClick={() => {
+                setForgotMode('off');
+                setError('');
+                setForgotMessage('');
+                setResetCode('');
+                setNewPassword('');
+              }}
+              className="w-full bg-transparent py-1 text-[13px] text-muted-foreground hover:text-foreground"
+            >
+              Back to sign in
             </button>
           )}
         </form>
@@ -188,108 +306,3 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100vh',
-    background: 'var(--ums-bg-app)',
-  },
-  card: {
-    backgroundColor: 'var(--ums-bg-surface)',
-    backdropFilter: 'blur(16px)',
-    borderRadius: '20px',
-    padding: '48px 40px',
-    boxShadow: 'var(--ums-shadow-md)',
-    border: '1px solid var(--ums-border-light)',
-    width: '100%',
-    maxWidth: '420px',
-    transition: 'background-color 0.2s ease',
-  },
-  logoMark: {
-    width: '52px',
-    height: '52px',
-    borderRadius: '14px',
-    background: 'var(--ums-brand-gradient)',
-    color: 'white',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '24px',
-    fontWeight: 700,
-    margin: '0 auto 16px',
-  },
-  title: {
-    margin: '0 0 6px',
-    fontSize: '22px',
-    fontWeight: 700,
-    color: 'var(--ums-text-primary)',
-    textAlign: 'center' as const,
-    letterSpacing: '-0.3px',
-  },
-  subtitle: {
-    margin: '0 0 28px',
-    color: 'var(--ums-text-muted)',
-    textAlign: 'center' as const,
-    fontSize: '14px',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '16px',
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '6px',
-  },
-  label: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--ums-text-muted)',
-  },
-  input: {
-    padding: '11px 14px',
-    border: '1px solid var(--ums-border)',
-    borderRadius: '10px',
-    fontSize: '14px',
-    backgroundColor: 'var(--ums-bg-input)',
-    color: 'var(--ums-text-secondary)',
-    transition: 'all 0.15s ease',
-  },
-  button: {
-    padding: '12px',
-    background: 'var(--ums-brand-gradient)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    marginTop: '4px',
-    boxShadow: '0 2px 8px rgba(27, 111, 201, 0.3)',
-    letterSpacing: '0.2px',
-  },
-  error: {
-    color: 'var(--ums-error-text)',
-    fontSize: '13px',
-    textAlign: 'center' as const,
-    padding: '12px 16px',
-    background: 'var(--ums-error-light)',
-    borderRadius: '10px',
-    border: '1px solid var(--ums-error-border)',
-    lineHeight: '1.4',
-  },
-  forgotLink: {
-    background: 'none',
-    border: 'none',
-    color: 'var(--ums-brand-text)',
-    fontSize: '13px',
-    cursor: 'pointer',
-    textAlign: 'center' as const,
-    padding: '4px',
-    width: '100%',
-  },
-};

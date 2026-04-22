@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { downloadQueryLogCsv } from '../services/api';
 
 export function QueryLogViewer() {
@@ -19,57 +21,53 @@ export function QueryLogViewer() {
   };
 
   return (
-    <div style={styles.container}>
-      <h3 style={styles.title}>Query Log Export</h3>
-      <p style={styles.description}>
-        Download a CSV of all queries, responses, and confidence levels for a given date.
-        Includes agent username, question, answer (truncated), confidence, and source documents.
+    <div className="max-w-xl p-7">
+      <div
+        className="font-mono uppercase text-muted-foreground"
+        style={{ fontSize: 10, letterSpacing: '0.14em' }}
+      >
+        Audit
+      </div>
+      <h2
+        className="mt-1 font-display font-medium text-foreground"
+        style={{ fontSize: 20, lineHeight: 1.15, letterSpacing: '-0.3px' }}
+      >
+        Query log export
+      </h2>
+      <p className="mt-2 mb-5 text-[13px] leading-relaxed text-muted-foreground">
+        Download a CSV of all queries, responses, and confidence levels for a given
+        date. Includes agent username, question, answer (truncated), confidence, and
+        source documents.
       </p>
 
-      <div style={styles.row}>
-        <label style={styles.label}>
-          Date:
-          <input
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-muted-foreground">
+          Date
+          <Input
             type="date"
             value={date}
-            onChange={e => setDate(e.target.value)}
-            style={styles.dateInput}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-48"
           />
         </label>
-        <button
-          onClick={handleDownload}
-          disabled={downloading}
-          style={{
-            ...styles.downloadButton,
-            opacity: downloading ? 0.6 : 1,
-          }}
-        >
-          {downloading ? 'Downloading...' : 'Download CSV'}
-        </button>
+        <Button type="button" onClick={handleDownload} disabled={downloading}>
+          {downloading ? 'Downloading…' : 'Download CSV'}
+        </Button>
       </div>
 
-      {error && <div style={styles.error}>{error}</div>}
+      {error && (
+        <div
+          role="alert"
+          className="mt-4 rounded-sm border px-3 py-2 text-[13px]"
+          style={{
+            background: 'var(--warm-red-soft)',
+            borderColor: 'var(--warm-red)',
+            color: 'var(--warm-red)',
+          }}
+        >
+          {error}
+        </div>
+      )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', maxWidth: '620px' },
-  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
-  description: { margin: '0 0 20px', fontSize: '14px', color: 'var(--ums-text-muted)', lineHeight: '1.5' },
-  row: { display: 'flex', alignItems: 'center', gap: '12px' },
-  label: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--ums-text-muted)', fontWeight: 500 },
-  dateInput: { padding: '9px 14px', border: '1px solid var(--ums-border)', borderRadius: '10px', fontSize: '14px', background: 'var(--ums-bg-surface-alt)' },
-  downloadButton: {
-    padding: '9px 22px',
-    background: 'var(--ums-brand-gradient)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)',
-  },
-  error: { marginTop: '16px', padding: '12px 16px', background: '#fef2f2', color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca' },
-};

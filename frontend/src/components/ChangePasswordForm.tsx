@@ -1,8 +1,27 @@
-import { useState, FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
+import { LockClosedIcon } from '@heroicons/react/24/outline';
 import { changePassword } from '../services/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface Props {
   onPasswordChanged: (token: string, user: { id: string; username: string; role: 'admin' | 'user' }) => void;
+}
+
+interface PasswordRule {
+  label: string;
+  met: boolean;
+}
+
+function RuleRow({ rule }: { rule: PasswordRule }) {
+  const tone = rule.met ? 'var(--sage)' : 'var(--muted-foreground)';
+  return (
+    <div className="flex items-center gap-1.5 text-[12px]" style={{ color: tone }}>
+      <span aria-hidden="true">{rule.met ? '✓' : '•'}</span>
+      <span>{rule.label}</span>
+    </div>
+  );
 }
 
 export function ChangePasswordForm({ onPasswordChanged }: Props) {
@@ -38,86 +57,124 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
     }
   }
 
-  return (
-    <div style={styles.overlay}>
-      <div style={styles.card}>
-        <div style={styles.iconWrap}>
-          <div style={styles.icon}>🔒</div>
-        </div>
-        <h2 style={styles.title}>Password Change Required</h2>
-        <p style={styles.subtitle}>
-          For security, you must change your password before continuing.
-        </p>
+  const rules: PasswordRule[] = [
+    { label: 'At least 8 characters', met: newPassword.length >= 8 },
+    { label: 'At least one uppercase letter', met: /[A-Z]/.test(newPassword) },
+    { label: 'At least one lowercase letter', met: /[a-z]/.test(newPassword) },
+    { label: 'At least one number', met: /[0-9]/.test(newPassword) },
+  ];
 
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <div style={styles.field}>
-            <label style={styles.label} htmlFor="chpwd-current">Current Password</label>
-            <input
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10 text-foreground">
+      <div className="w-full max-w-[440px] rounded-sm border border-border bg-card p-8 sm:p-10 shadow-sm">
+        <div className="mb-6 flex items-start gap-3">
+          <div
+            aria-hidden="true"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm"
+            style={{ background: 'var(--copper-soft)', color: 'var(--accent)' }}
+          >
+            <LockClosedIcon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div
+              className="font-mono uppercase text-muted-foreground"
+              style={{ fontSize: 10, letterSpacing: '0.12em' }}
+            >
+              Security
+            </div>
+            <h2
+              className="font-display font-medium text-foreground"
+              style={{ fontSize: 20, lineHeight: 1.15, letterSpacing: '-0.3px' }}
+            >
+              Password change required
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              For security, you must change your password before continuing.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="chpwd-current">Current password</Label>
+            <Input
               id="chpwd-current"
               type="password"
               value={currentPassword}
-              onChange={e => setCurrentPassword(e.target.value)}
-              onBlur={() => setTouched(prev => ({ ...prev, currentPassword: true }))}
-              style={styles.input}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              onBlur={() => setTouched((prev) => ({ ...prev, currentPassword: true }))}
               required
               autoFocus
               aria-invalid={touched.currentPassword && !currentPassword}
               aria-describedby={touched.currentPassword && !currentPassword ? 'chpwd-current-error' : undefined}
             />
             {touched.currentPassword && !currentPassword && (
-              <div id="chpwd-current-error" role="alert" style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Current password is required</div>
+              <div
+                id="chpwd-current-error"
+                role="alert"
+                className="mt-1 text-[12px]"
+                style={{ color: 'var(--warm-red)' }}
+              >
+                Current password is required
+              </div>
             )}
           </div>
-          <div style={styles.field}>
-            <label style={styles.label} htmlFor="chpwd-new">New Password</label>
-            <input
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="chpwd-new">New password</Label>
+            <Input
               id="chpwd-new"
               type="password"
               value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              onBlur={() => setTouched(prev => ({ ...prev, newPassword: true }))}
-              style={styles.input}
+              onChange={(e) => setNewPassword(e.target.value)}
+              onBlur={() => setTouched((prev) => ({ ...prev, newPassword: true }))}
               required
               minLength={8}
               aria-describedby="chpwd-new-requirements"
             />
             {touched.newPassword && (
-              <div id="chpwd-new-requirements" aria-live="polite" style={{ marginTop: '4px' }}>
-                {[
-                  { label: 'At least 8 characters', met: newPassword.length >= 8 },
-                  { label: 'At least one uppercase letter', met: /[A-Z]/.test(newPassword) },
-                  { label: 'At least one lowercase letter', met: /[a-z]/.test(newPassword) },
-                  { label: 'At least one number', met: /[0-9]/.test(newPassword) },
-                ].map(rule => (
-                  <div key={rule.label} style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    <span style={{ color: rule.met ? 'var(--ums-success-text)' : 'var(--ums-error-text)' }}>{rule.met ? '\u2713' : '\u2717'}</span>
-                    <span style={{ color: rule.met ? 'var(--ums-success-text)' : 'var(--ums-error-text)' }}>{rule.label}</span>
-                  </div>
+              <div id="chpwd-new-requirements" aria-live="polite" className="mt-1 flex flex-col gap-0.5">
+                {rules.map((rule) => (
+                  <RuleRow key={rule.label} rule={rule} />
                 ))}
               </div>
             )}
           </div>
-          <div style={styles.field}>
-            <label style={styles.label} htmlFor="chpwd-confirm">Confirm New Password</label>
-            <input
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="chpwd-confirm">Confirm new password</Label>
+            <Input
               id="chpwd-confirm"
               type="password"
               value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              onBlur={() => setTouched(prev => ({ ...prev, confirmPassword: true }))}
-              style={styles.input}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              onBlur={() => setTouched((prev) => ({ ...prev, confirmPassword: true }))}
               required
               aria-invalid={touched.confirmPassword && confirmPassword !== newPassword}
               aria-describedby={touched.confirmPassword && confirmPassword !== newPassword ? 'chpwd-confirm-error' : undefined}
             />
             {touched.confirmPassword && confirmPassword && newPassword !== confirmPassword && (
-              <div style={{ fontSize: '12px', color: 'var(--ums-error-text)', marginTop: '4px' }}>Passwords do not match</div>
+              <div
+                id="chpwd-confirm-error"
+                role="alert"
+                className="mt-1 text-[12px]"
+                style={{ color: 'var(--warm-red)' }}
+              >
+                Passwords do not match
+              </div>
             )}
           </div>
 
-          <div style={styles.requirements}>
-            <div style={styles.reqTitle}>Password requirements:</div>
-            <ul style={styles.reqList}>
+          {/* Static requirements panel — redundant with live checklist above,
+              but useful as a reference before the user starts typing. */}
+          <div className="rounded-sm border border-border bg-muted px-3 py-2">
+            <div
+              className="font-mono uppercase text-muted-foreground"
+              style={{ fontSize: 10, letterSpacing: '0.08em' }}
+            >
+              Password requirements
+            </div>
+            <ul className="mt-1 list-disc pl-4 text-[12px] leading-relaxed text-muted-foreground">
               <li>At least 8 characters</li>
               <li>At least one uppercase letter</li>
               <li>At least one lowercase letter</li>
@@ -125,112 +182,25 @@ export function ChangePasswordForm({ onPasswordChanged }: Props) {
             </ul>
           </div>
 
-          {error && <div style={styles.error}>{error}</div>}
+          {error && (
+            <div
+              role="alert"
+              className="rounded-sm border px-3 py-2 text-[13px]"
+              style={{
+                background: 'var(--warm-red-soft)',
+                borderColor: 'var(--warm-red)',
+                color: 'var(--warm-red)',
+              }}
+            >
+              {error}
+            </div>
+          )}
 
-          <button type="submit" disabled={loading} style={styles.button}>
-            {loading ? 'Changing...' : 'Change Password'}
-          </button>
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? 'Changing…' : 'Change password'}
+          </Button>
         </form>
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100vh',
-    background: 'var(--ums-bg-surface-alt)',
-  },
-  card: {
-    background: 'var(--ums-bg-surface)',
-    borderRadius: '16px',
-    padding: '40px',
-    width: '400px',
-    maxWidth: '90vw',
-    boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-    border: '1px solid var(--ums-border-light)',
-  },
-  iconWrap: {
-    textAlign: 'center' as const,
-    marginBottom: '16px',
-  },
-  icon: {
-    fontSize: '40px',
-  },
-  title: {
-    margin: '0 0 8px',
-    fontSize: '22px',
-    fontWeight: 700,
-    color: 'var(--ums-text-primary)',
-    textAlign: 'center' as const,
-  },
-  subtitle: {
-    margin: '0 0 24px',
-    fontSize: '14px',
-    color: 'var(--ums-text-muted)',
-    textAlign: 'center' as const,
-    lineHeight: '1.5',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '16px',
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-  },
-  label: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--ums-text-secondary)',
-  },
-  input: {
-    padding: '10px 12px',
-    border: '1px solid var(--ums-border)',
-    borderRadius: '8px',
-    fontSize: '14px',
-    outline: 'none',
-  },
-  requirements: {
-    background: 'var(--ums-bg-surface-alt)',
-    borderRadius: '8px',
-    padding: '12px 16px',
-    border: '1px solid var(--ums-border-light)',
-  },
-  reqTitle: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: 'var(--ums-text-muted)',
-    marginBottom: '4px',
-  },
-  reqList: {
-    margin: 0,
-    paddingLeft: '18px',
-    fontSize: '12px',
-    color: 'var(--ums-text-muted)',
-    lineHeight: '1.8',
-  },
-  error: {
-    padding: '10px 14px',
-    background: 'var(--ums-error-light)',
-    border: '1px solid var(--ums-error-border)',
-    borderRadius: '8px',
-    color: 'var(--ums-error-text)',
-    fontSize: '13px',
-  },
-  button: {
-    padding: '12px',
-    background: 'var(--ums-brand-gradient)',
-    color: 'var(--ums-bg-surface)',
-    border: 'none',
-    borderRadius: '10px',
-    fontSize: '15px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-};

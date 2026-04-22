@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { FormDraft, FormDraftType } from '../services/api';
+import type { FormDraft, FormDraftType } from '../services/api';
 import { useAvailableDrafts } from '../hooks/useFormDraft';
+import { cn } from '@/lib/utils';
 
 interface Props {
   formType: FormDraftType;
@@ -53,7 +54,7 @@ export function FormDraftBanner({
   const [resuming, setResuming] = useState(false);
   const [startingOver, setStartingOver] = useState(false);
 
-  const otherDrafts = drafts.filter(d => d.id !== currentDraftId);
+  const otherDrafts = drafts.filter((d) => d.id !== currentDraftId);
 
   const handleResume = async (id: string) => {
     setResuming(true);
@@ -79,28 +80,41 @@ export function FormDraftBanner({
     }
   };
 
+  const statusText = saving
+    ? 'Saving draft…'
+    : lastSavedAt
+      ? `Draft saved ${timeAgo(lastSavedAt)}`
+      : currentDraftId
+        ? 'Draft attached'
+        : 'Not saved yet';
+
   return (
-    <div style={styles.container}>
-      <div style={styles.leftGroup}>
-        <span style={styles.statusDot(saving)} aria-hidden="true" />
-        <span style={styles.statusText}>
-          {saving
-            ? 'Saving draft…'
-            : lastSavedAt
-              ? `Draft saved ${timeAgo(lastSavedAt)}`
-              : currentDraftId
-                ? 'Draft attached'
-                : 'Not saved yet'}
-        </span>
-        {currentLabel && <span style={styles.labelChip}>{currentLabel}</span>}
+    <div className="relative mb-3 flex flex-wrap items-center gap-3 rounded-sm border border-border bg-muted px-3 py-2 text-[12px]">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ background: saving ? 'var(--amber)' : 'var(--sage)' }}
+        />
+        <span className="whitespace-nowrap text-muted-foreground">{statusText}</span>
+        {currentLabel && (
+          <span
+            className="max-w-[220px] truncate rounded-sm border border-border bg-card px-2 py-0.5 text-[11px] text-foreground"
+          >
+            {currentLabel}
+          </span>
+        )}
       </div>
-      <div style={styles.rightGroup}>
+      <div className="flex gap-1.5">
         {otherDrafts.length > 0 && (
           <button
             type="button"
-            onClick={() => { setExpanded(e => !e); void refresh(); }}
-            style={styles.resumeBtn}
+            onClick={() => {
+              setExpanded((e) => !e);
+              void refresh();
+            }}
             aria-expanded={expanded}
+            className="rounded-sm border border-border bg-card px-2.5 py-1 text-[12px] text-foreground hover:bg-muted"
           >
             Resume draft… ({otherDrafts.length})
           </button>
@@ -110,7 +124,8 @@ export function FormDraftBanner({
             type="button"
             onClick={handleStartOver}
             disabled={startingOver}
-            style={styles.startOverBtn}
+            className="rounded-sm border bg-card px-2.5 py-1 text-[12px] disabled:opacity-50"
+            style={{ borderColor: 'var(--warm-red)', color: 'var(--warm-red)' }}
           >
             {startingOver ? 'Clearing…' : 'Start over'}
           </button>
@@ -118,18 +133,25 @@ export function FormDraftBanner({
       </div>
 
       {expanded && otherDrafts.length > 0 && (
-        <div style={styles.dropdown}>
-          {otherDrafts.map(d => (
+        <div className="absolute right-3 top-full z-10 mt-1 max-h-[280px] min-w-[260px] overflow-y-auto rounded-sm border border-border bg-card shadow-md">
+          {otherDrafts.map((d) => (
             <button
               key={d.id}
               type="button"
               onClick={() => void handleResume(d.id)}
               disabled={resuming}
-              style={styles.dropdownItem}
+              className={cn(
+                'block w-full border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-muted',
+                resuming && 'opacity-50',
+              )}
             >
-              <span style={styles.dropdownLabel}>{d.label || '(unlabeled)'}</span>
-              <span style={styles.dropdownMeta}>
-                {d.completionPercent !== undefined && d.completionPercent !== null ? `${Math.round(d.completionPercent)}% · ` : ''}
+              <span className="block text-[13px] font-medium text-foreground">
+                {d.label || '(unlabeled)'}
+              </span>
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                {d.completionPercent !== undefined && d.completionPercent !== null
+                  ? `${Math.round(d.completionPercent)}% · `
+                  : ''}
                 {timeAgo(new Date(d.updatedAt))}
               </span>
             </button>
@@ -137,107 +159,18 @@ export function FormDraftBanner({
         </div>
       )}
 
-      {error && <div style={styles.errorBar}>{error}</div>}
+      {error && (
+        <div
+          className="basis-full rounded-sm border px-2 py-1 text-[11px]"
+          style={{
+            background: 'var(--warm-red-soft)',
+            borderColor: 'var(--warm-red)',
+            color: 'var(--warm-red)',
+          }}
+        >
+          {error}
+        </div>
+      )}
     </div>
   );
 }
-
-const styles = {
-  container: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    alignItems: 'center',
-    gap: 12,
-    padding: '8px 12px',
-    margin: '0 0 12px',
-    background: 'var(--ums-bg-app, #f9fafb)',
-    border: '1px solid var(--ums-border-light, #e5e7eb)',
-    borderRadius: 6,
-    fontSize: 12,
-    position: 'relative' as const,
-  } as React.CSSProperties,
-  leftGroup: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 } as React.CSSProperties,
-  statusDot: (saving: boolean): React.CSSProperties => ({
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    background: saving ? '#f59e0b' : '#10b981',
-    flexShrink: 0,
-  }),
-  statusText: { color: 'var(--ums-text-muted, #6b7280)', whiteSpace: 'nowrap' as const },
-  labelChip: {
-    padding: '2px 8px',
-    background: 'var(--ums-bg-surface, #ffffff)',
-    border: '1px solid var(--ums-border-light, #e5e7eb)',
-    borderRadius: 999,
-    fontSize: 11,
-    color: 'var(--ums-text-primary, #111827)',
-    maxWidth: 220,
-    overflow: 'hidden' as const,
-    textOverflow: 'ellipsis' as const,
-    whiteSpace: 'nowrap' as const,
-  },
-  rightGroup: { display: 'flex', gap: 6 },
-  resumeBtn: {
-    padding: '4px 10px',
-    background: 'var(--ums-bg-surface, #ffffff)',
-    border: '1px solid var(--ums-border-light, #e5e7eb)',
-    borderRadius: 4,
-    cursor: 'pointer',
-    fontSize: 12,
-    color: 'var(--ums-text-primary, #111827)',
-  },
-  startOverBtn: {
-    padding: '4px 10px',
-    background: 'var(--ums-bg-surface, #ffffff)',
-    border: '1px solid #fca5a5',
-    color: '#b91c1c',
-    borderRadius: 4,
-    cursor: 'pointer',
-    fontSize: 12,
-  },
-  dropdown: {
-    position: 'absolute' as const,
-    top: '100%',
-    right: 12,
-    marginTop: 4,
-    minWidth: 260,
-    maxHeight: 280,
-    overflowY: 'auto' as const,
-    background: 'var(--ums-bg-surface, #ffffff)',
-    border: '1px solid var(--ums-border-light, #e5e7eb)',
-    borderRadius: 6,
-    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-    zIndex: 10,
-  },
-  dropdownItem: {
-    display: 'block',
-    width: '100%',
-    padding: '8px 12px',
-    background: 'transparent',
-    border: 'none',
-    borderBottom: '1px solid var(--ums-border-light, #e5e7eb)',
-    cursor: 'pointer',
-    textAlign: 'left' as const,
-  } as React.CSSProperties,
-  dropdownLabel: {
-    display: 'block',
-    fontWeight: 500,
-    color: 'var(--ums-text-primary, #111827)',
-    fontSize: 13,
-  },
-  dropdownMeta: {
-    display: 'block',
-    color: 'var(--ums-text-muted, #6b7280)',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  errorBar: {
-    flexBasis: '100%',
-    padding: '4px 8px',
-    background: '#fef2f2',
-    color: '#b91c1c',
-    borderRadius: 4,
-    fontSize: 11,
-  } as React.CSSProperties,
-};

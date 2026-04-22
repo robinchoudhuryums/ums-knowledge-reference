@@ -18,6 +18,44 @@ describe('LoginForm', () => {
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
   });
 
+  it('shows "Sign in with CallAnalyzer" when SSO config is enabled and hides the local form', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          sso: {
+            enabled: true,
+            loginUrl: 'https://umscallanalyzer.com/auth',
+            provider: 'callanalyzer',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    render(<LoginForm onLogin={mockOnLogin} />);
+    expect(
+      await screen.findByRole('button', { name: /sign in with callanalyzer/i }),
+    ).toBeInTheDocument();
+    // Local form should be hidden under SSO panel
+    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  });
+
+  it('falls back to local form when SSO fetch fails', async () => {
+    const fetchSpy = vi
+      .spyOn(global, 'fetch')
+      .mockRejectedValue(new Error('network'));
+    render(<LoginForm onLogin={mockOnLogin} />);
+    // After the effect settles, the local form is still there.
+    await waitFor(() => {
+      expect(screen.getByLabelText('Username')).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole('button', { name: /sign in with callanalyzer/i }),
+    ).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  });
+
   it('shows validation errors on blur when fields are empty', async () => {
     render(<LoginForm onLogin={mockOnLogin} />);
     const usernameInput = screen.getByLabelText('Username');
@@ -46,7 +84,7 @@ describe('LoginForm', () => {
 
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Secret1234!' } });
-    fireEvent.submit(screen.getByText('Sign In').closest('form')!);
+    fireEvent.submit(screen.getByRole('button', { name: 'Sign in' }).closest('form')!);
 
     await waitFor(() => {
       expect(mockOnLogin).toHaveBeenCalledWith('admin', 'Secret1234!');
@@ -60,7 +98,7 @@ describe('LoginForm', () => {
 
     await user.type(screen.getByLabelText('Username'), 'admin');
     await user.type(screen.getByLabelText('Password'), 'wrong');
-    await user.click(screen.getByText('Sign In'));
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByText(/Invalid credentials/)).toBeInTheDocument();
   });
@@ -73,11 +111,11 @@ describe('LoginForm', () => {
 
     await user.type(screen.getByLabelText('Username'), 'admin');
     await user.type(screen.getByLabelText('Password'), 'pass');
-    await user.click(screen.getByText('Sign In'));
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Verifying...')).toBeInTheDocument();
-      expect(screen.getByText('Verifying...').closest('button')).toBeDisabled();
+      expect(screen.getByText('Verifying…')).toBeInTheDocument();
+      expect(screen.getByText('Verifying…').closest('button')).toBeDisabled();
     });
   });
 

@@ -17,7 +17,8 @@ export async function dbGetUsers(): Promise<User[]> {
   const result = await pool.query(`
     SELECT id, username, password_hash, role, created_at, last_login,
            must_change_password, failed_login_attempts, locked_until,
-           password_history, allowed_collections, mfa_secret, mfa_enabled, email, mfa_recovery_codes
+           password_history, allowed_collections, mfa_secret, mfa_enabled, email, mfa_recovery_codes,
+           sso_sub, sso_source
     FROM users ORDER BY created_at
   `);
 
@@ -39,8 +40,9 @@ export async function dbSaveUsers(users: User[]): Promise<void> {
       await client.query(`
         INSERT INTO users (id, username, password_hash, role, created_at, last_login,
                           must_change_password, failed_login_attempts, locked_until,
-                          password_history, allowed_collections, mfa_secret, mfa_enabled, email, mfa_recovery_codes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                          password_history, allowed_collections, mfa_secret, mfa_enabled, email, mfa_recovery_codes,
+                          sso_sub, sso_source)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT (id) DO UPDATE SET
           username = EXCLUDED.username,
           password_hash = EXCLUDED.password_hash,
@@ -54,7 +56,9 @@ export async function dbSaveUsers(users: User[]): Promise<void> {
           mfa_secret = EXCLUDED.mfa_secret,
           mfa_enabled = EXCLUDED.mfa_enabled,
           email = EXCLUDED.email,
-          mfa_recovery_codes = EXCLUDED.mfa_recovery_codes
+          mfa_recovery_codes = EXCLUDED.mfa_recovery_codes,
+          sso_sub = EXCLUDED.sso_sub,
+          sso_source = EXCLUDED.sso_source
       `, [
         user.id,
         user.username,
@@ -71,6 +75,8 @@ export async function dbSaveUsers(users: User[]): Promise<void> {
         user.mfaEnabled || false,
         user.email || null,
         user.mfaRecoveryCodes || [],
+        user.ssoSub || null,
+        user.ssoSource || null,
       ]);
     }
 
@@ -118,5 +124,7 @@ function mapRowToUser(row: Record<string, unknown>): User {
     mfaRecoveryCodes: (row.mfa_recovery_codes as string[])?.length > 0
       ? row.mfa_recovery_codes as string[]
       : undefined,
+    ssoSub: row.sso_sub as string | undefined,
+    ssoSource: row.sso_source as string | undefined,
   };
 }

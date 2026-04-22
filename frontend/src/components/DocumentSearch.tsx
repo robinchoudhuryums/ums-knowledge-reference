@@ -1,11 +1,29 @@
 import { useState, useRef } from 'react';
-import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
-import { Collection } from '../types';
-import { searchDocuments, DocumentSearchResult } from '../services/api';
+import {
+  MagnifyingGlassIcon,
+  DocumentTextIcon,
+  ChevronRightIcon,
+  ChevronDownIcon,
+} from '@heroicons/react/24/outline';
+import type { Collection } from '../types';
+import { searchDocuments, type DocumentSearchResult } from '../services/api';
 import { LoadingSkeleton } from './LoadingSkeleton';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 interface Props {
   collections: Collection[];
+}
+
+function SectionKicker({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="font-mono uppercase text-muted-foreground"
+      style={{ fontSize: 10, letterSpacing: '0.14em' }}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function DocumentSearch({ collections }: Props) {
@@ -33,146 +51,176 @@ export function DocumentSearch({ collections }: Props) {
     }
   };
 
-  const highlightMatch = (text: string, query: string) => {
-    const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+  const highlightMatch = (text: string, q: string) => {
+    const terms = q.toLowerCase().split(/\s+/).filter((t) => t.length > 1);
     if (terms.length === 0) return text;
-
-    // Find first occurrence of any term and show context around it
     const textLower = text.toLowerCase();
     let earliest = text.length;
     for (const term of terms) {
       const idx = textLower.indexOf(term);
       if (idx !== -1 && idx < earliest) earliest = idx;
     }
-
     const start = Math.max(0, earliest - 80);
     const end = Math.min(text.length, earliest + 300);
-    const snippet = (start > 0 ? '...' : '') + text.slice(start, end) + (end < text.length ? '...' : '');
-
-    return snippet;
+    return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Search Documents</h2>
-        <p style={styles.subtitle}>Search directly through document content by keyword</p>
+    <div className="min-h-full bg-background">
+      {/* App bar breadcrumb */}
+      <div className="flex items-center gap-3 border-b border-border bg-card px-4 py-3 sm:px-7">
+        <span
+          className="font-mono uppercase text-muted-foreground"
+          style={{ fontSize: 11, letterSpacing: '0.04em' }}
+        >
+          UMS Knowledge › Documents › <span className="text-foreground">Search</span>
+        </span>
       </div>
 
-      <form onSubmit={handleSearch} style={styles.searchForm}>
-        <div style={styles.searchRow}>
-          <input
+      {/* Page header */}
+      <header className="border-b border-border bg-background px-4 pb-4 pt-6 sm:px-7">
+        <SectionKicker>Full-text</SectionKicker>
+        <h2
+          className="mt-1 font-display font-medium text-foreground"
+          style={{ fontSize: 22, lineHeight: 1.15, letterSpacing: '-0.4px' }}
+        >
+          Search documents
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Search directly through document content by keyword.
+        </p>
+      </header>
+
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-7">
+        <form onSubmit={handleSearch} className="mb-6 flex flex-wrap gap-2">
+          <Input
             ref={inputRef}
             type="text"
             value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search document contents..."
-            style={styles.searchInput}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search document contents…"
+            className="min-w-[240px] flex-1"
+            aria-label="Search query"
           />
           {collections.length > 0 && (
             <select
               value={collectionFilter}
-              onChange={e => setCollectionFilter(e.target.value)}
-              style={styles.collectionSelect}
+              onChange={(e) => setCollectionFilter(e.target.value)}
+              className="min-w-[180px] rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground"
+              aria-label="Filter by collection"
             >
-              <option value="">All Collections</option>
-              {collections.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+              <option value="">All collections</option>
+              {collections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
             </select>
           )}
-          <button type="submit" disabled={loading || !query.trim()} style={styles.searchButton}>
-            {loading ? 'Searching...' : 'Search'}
-          </button>
-        </div>
-      </form>
+          <Button type="submit" disabled={loading || !query.trim()}>
+            {loading ? 'Searching…' : 'Search'}
+          </Button>
+        </form>
 
-      <div style={styles.results}>
         {loading && (
-          <div style={styles.loadingContainer}>
+          <div className="py-6">
             <LoadingSkeleton rows={5} />
           </div>
         )}
 
         {!loading && !searched && results.length === 0 && (
-          <div style={styles.emptyState}>
-            <MagnifyingGlassIcon style={styles.emptyIcon} />
-            <p style={styles.emptyTitle}>Search your documents</p>
-            <p style={styles.emptyHint}>Enter a keyword or phrase above to find matching passages across all uploaded documents.</p>
-          </div>
+          <EmptyState
+            title="Search your documents"
+            hint="Enter a keyword or phrase above to find matching passages across all uploaded documents."
+          />
         )}
 
         {!loading && searched && results.length === 0 && (
-          <div style={styles.emptyState}>
-            <MagnifyingGlassIcon style={styles.emptyIcon} />
-            <p style={styles.emptyTitle}>No matching passages found</p>
-            <p style={styles.emptyHint}>Try different keywords or check that relevant documents have been uploaded.</p>
-          </div>
+          <EmptyState
+            title="No matching passages found"
+            hint="Try different keywords or check that relevant documents have been uploaded."
+          />
         )}
 
-        {!loading && results.map(result => (
-          <div key={result.documentId} style={styles.resultCard}>
-            <button
-              onClick={() => setExpandedDoc(expandedDoc === result.documentId ? null : result.documentId)}
-              style={styles.resultHeader}
-            >
-              <span style={styles.docIcon}>&#128196;</span>
-              <span style={styles.docName}>{result.documentName}</span>
-              <span style={styles.matchCount}>{result.matches.length} match{result.matches.length !== 1 ? 'es' : ''}</span>
-              <span style={styles.expandArrow}>{expandedDoc === result.documentId ? '\u25BC' : '\u25B6'}</span>
-            </button>
+        {!loading &&
+          results.map((result) => {
+            const isOpen = expandedDoc === result.documentId;
+            return (
+              <div
+                key={result.documentId}
+                className="mb-2.5 overflow-hidden rounded-sm border border-border bg-card"
+              >
+                <button
+                  type="button"
+                  onClick={() => setExpandedDoc(isOpen ? null : result.documentId)}
+                  aria-expanded={isOpen}
+                  className="flex w-full items-center gap-2.5 px-4 py-3 text-left hover:bg-muted"
+                >
+                  <DocumentTextIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate text-[14px] font-medium text-foreground">
+                    {result.documentName}
+                  </span>
+                  <span
+                    className="font-mono text-[11px] text-muted-foreground"
+                    style={{ letterSpacing: '0.04em' }}
+                  >
+                    {result.matches.length} match{result.matches.length !== 1 ? 'es' : ''}
+                  </span>
+                  {isOpen ? (
+                    <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
 
-            {expandedDoc === result.documentId && (
-              <div style={styles.matchesList}>
-                {result.matches.map((match, i) => (
-                  <div key={i} style={styles.matchItem}>
-                    <div style={styles.matchMeta}>
-                      {match.pageNumber !== null && match.pageNumber !== undefined && <span style={styles.matchBadge}>Page {match.pageNumber}</span>}
-                      <span style={styles.matchBadge}>Chunk {match.chunkIndex + 1}</span>
-                    </div>
-                    <div style={styles.matchText}>
-                      {highlightMatch(match.text, query)}
-                    </div>
+                {isOpen && (
+                  <div className="border-t border-border">
+                    {result.matches.map((match, i) => (
+                      <div
+                        key={i}
+                        className="border-b border-border px-4 py-3 last:border-b-0"
+                      >
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {match.pageNumber !== null && match.pageNumber !== undefined && (
+                            <MatchBadge>Page {match.pageNumber}</MatchBadge>
+                          )}
+                          <MatchBadge>Chunk {match.chunkIndex + 1}</MatchBadge>
+                        </div>
+                        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
+                          {highlightMatch(match.text, query)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
-        ))}
+            );
+          })}
       </div>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', height: '100%', overflowY: 'auto', background: 'var(--ums-bg-surface)' },
-  header: { marginBottom: '24px' },
-  title: { margin: '0 0 4px', fontSize: '20px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.3px' },
-  subtitle: { margin: 0, fontSize: '14px', color: 'var(--ums-text-muted)' },
+function MatchBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-sm border border-border bg-muted px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      {children}
+    </span>
+  );
+}
 
-  searchForm: { marginBottom: '24px' },
-  searchRow: { display: 'flex', gap: '10px' },
-  searchInput: { flex: 1, padding: '11px 16px', border: '1px solid var(--ums-border)', borderRadius: '10px', fontSize: '14px', outline: 'none', background: 'var(--ums-bg-surface-alt)' },
-  collectionSelect: { padding: '11px 14px', border: '1px solid var(--ums-border)', borderRadius: '10px', fontSize: '13px', background: 'var(--ums-bg-surface)', outline: 'none', minWidth: '160px', color: 'var(--ums-text-muted)' },
-  searchButton: { padding: '11px 24px', background: 'var(--ums-brand-gradient)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap', fontWeight: 500, boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)' },
-
-  results: {},
-  loadingContainer: { padding: '24px 0' },
-  emptyState: { textAlign: 'center' as const, padding: '48px 24px', color: 'var(--ums-text-muted)' },
-  emptyIcon: { width: '48px', height: '48px', margin: '0 auto 16px', color: 'var(--ums-text-placeholder)', display: 'block' },
-  emptyTitle: { margin: '0 0 6px', fontSize: '16px', fontWeight: 600, color: 'var(--ums-text-primary)' },
-  emptyHint: { margin: 0, fontSize: '13px', color: 'var(--ums-text-muted)', maxWidth: '400px', marginLeft: 'auto', marginRight: 'auto', lineHeight: '1.5' },
-
-  resultCard: { border: '1px solid var(--ums-border)', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
-  resultHeader: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px 18px', border: 'none', background: 'var(--ums-bg-surface)', cursor: 'pointer', fontSize: '14px', textAlign: 'left' },
-  docIcon: { fontSize: '18px', flexShrink: 0 },
-  docName: { flex: 1, fontWeight: 500, color: 'var(--ums-text-primary)' },
-  matchCount: { fontSize: '12px', color: 'var(--ums-brand-primary)', background: 'var(--ums-brand-light)', padding: '3px 10px', borderRadius: '6px', fontWeight: 500 },
-  expandArrow: { fontSize: '11px', color: 'var(--ums-text-muted)' },
-
-  matchesList: { borderTop: '1px solid var(--ums-border)' },
-  matchItem: { padding: '14px 18px', borderBottom: '1px solid var(--ums-bg-surface-alt)' },
-  matchMeta: { display: 'flex', gap: '6px', marginBottom: '8px' },
-  matchBadge: { fontSize: '11px', color: 'var(--ums-brand-primary)', border: '1px solid var(--ums-border)', borderRadius: '6px', padding: '2px 8px', background: 'var(--ums-brand-light)', fontWeight: 500 },
-  matchText: { fontSize: '13px', lineHeight: '1.7', color: 'var(--ums-text-muted)', whiteSpace: 'pre-wrap' },
-};
+function EmptyState({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="flex flex-col items-center px-6 py-12 text-center">
+      <div
+        aria-hidden="true"
+        className="mb-4 flex h-12 w-12 items-center justify-center rounded-sm"
+        style={{ background: 'var(--copper-soft)', color: 'var(--accent)' }}
+      >
+        <MagnifyingGlassIcon className="h-6 w-6" />
+      </div>
+      <p className="mb-1 text-[15px] font-medium text-foreground">{title}</p>
+      <p className="max-w-[400px] text-[13px] leading-relaxed text-muted-foreground">{hint}</p>
+    </div>
+  );
+}

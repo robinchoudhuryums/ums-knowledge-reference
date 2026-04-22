@@ -71,6 +71,11 @@ export interface User {
   mfaEnabled?: boolean;
   /** Bcrypt-hashed one-time recovery codes for MFA backup (consumed on use). */
   mfaRecoveryCodes?: string[];
+  /** SSO subject from the upstream IdP (e.g. CA's user.id). Populated on first
+   *  SSO login; unique across users. Absent on break-glass local accounts. */
+  ssoSub?: string;
+  /** Free-form source tag identifying which IdP owns ssoSub (e.g. 'callanalyzer'). */
+  ssoSource?: string;
 }
 
 export interface SearchResult {

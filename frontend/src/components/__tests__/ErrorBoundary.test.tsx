@@ -77,7 +77,7 @@ describe('ErrorBoundary', () => {
 
     // Fix the error condition, then click retry
     shouldThrow = false;
-    fireEvent.click(screen.getByText('Try Again'));
+    fireEvent.click(screen.getByText('Try again'));
 
     rerender(
       <ErrorBoundary>

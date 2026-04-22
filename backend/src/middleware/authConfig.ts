@@ -29,6 +29,44 @@ if (!process.env.JWT_SECRET) {
   logger.warn('[SECURITY WARNING] JWT_SECRET is shorter than 32 characters — use a stronger secret in production.');
 }
 
+// ─── SSO Config ─────────────────────────────────────────────────────────────
+//
+// Option-A SSO with CallAnalyzer: RAG keeps its own users table but trusts CA
+// as auth authority via cookie introspection. All flags default OFF so
+// introducing the code is a no-op until ops flips them in a coordinated
+// cutover with CA's matching domain/CORS flags.
+
+/** Enable shared-cookie SSO introspection against CA. Off by default. */
+export const ENABLE_SSO = process.env.ENABLE_SSO === 'true';
+
+/** Parent domain for the shared session cookie (e.g. '.umscallanalyzer.com').
+ *  When set, RAG's auth + refresh + csrf cookies scope to this domain so the
+ *  browser sends them across subdomains. Empty string = exact host. */
+export const SHARED_COOKIE_DOMAIN = process.env.SHARED_COOKIE_DOMAIN || '';
+
+/** CA base URL (e.g. 'https://umscallanalyzer.com'). Used for server-side
+ *  /api/auth/sso-verify introspection calls. Required when ENABLE_SSO=true. */
+export const CA_BASE_URL = process.env.CA_BASE_URL || '';
+
+/** Keep RAG's native TOTP MFA gate active. When SSO is on, CA has already
+ *  enforced MFA before the session exists so double-gating adds friction
+ *  without security benefit. Default ON for rollback safety — flip off after
+ *  SSO is stable in prod. */
+export const ENABLE_NATIVE_MFA = process.env.ENABLE_NATIVE_MFA !== 'false';
+
+if (ENABLE_SSO) {
+  if (!CA_BASE_URL) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('FATAL: ENABLE_SSO=true requires CA_BASE_URL to be set.');
+      process.exit(1);
+    }
+    logger.warn('[SSO WARNING] ENABLE_SSO=true but CA_BASE_URL is empty — introspection will fail.');
+  }
+  if (!SHARED_COOKIE_DOMAIN && process.env.NODE_ENV === 'production') {
+    logger.warn('[SSO WARNING] ENABLE_SSO=true in production without SHARED_COOKIE_DOMAIN — the browser will not send CA session cookies to this host.');
+  }
+}
+
 // ─── Password Policy ────────────────────────────────────────────────────────
 
 export const MIN_PASSWORD_LENGTH = 8;

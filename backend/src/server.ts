@@ -71,23 +71,39 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Security middleware
+// When set (e.g. "https://umscallanalyzer.com"), allows that origin to
+// iframe this service. Extends CSP frame-ancestors and disables
+// X-Frame-Options (since CSP supersedes it in modern browsers). Unset =
+// default-deny framing (current behavior). Used by CallAnalyzer to embed
+// RAG's chat interface inline at /?embed=1.
+import {
+  buildCspDirectives,
+  shouldDisableFrameguard,
+  devFrameAncestorsHeader,
+} from './middleware/cspDirectives';
+const embedAllowedOrigin = process.env.EMBED_ALLOWED_ORIGIN || '';
+
 app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],  // React inline styles require unsafe-inline
-      imgSrc: ["'self'", 'data:', 'blob:'],     // data: for base64, blob: for PDF preview
-      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-      connectSrc: ["'self'"],                    // API calls to same origin
-      frameSrc: ["'none'"],
-      objectSrc: ["'none'"],
-      baseUri: ["'self'"],
-      formAction: ["'self'"],
-    },
-  } : false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production'
+    ? { directives: buildCspDirectives(embedAllowedOrigin) }
+    : false,
+  frameguard: shouldDisableFrameguard(embedAllowedOrigin)
+    ? false
+    : { action: 'sameorigin' },
   crossOriginEmbedderPolicy: false,
 }));
+
+// Dev-mode defense-in-depth: helmet's full CSP is off in dev because
+// Vite HMR needs 'unsafe-eval' etc, but that also drops frame-ancestors.
+// Emit ONLY the frame-ancestors directive in dev when the embed is
+// allowed, so a dev instance can't be iframed by arbitrary origins.
+if (process.env.NODE_ENV !== 'production' && embedAllowedOrigin) {
+  const devFrameAncestors = devFrameAncestorsHeader(embedAllowedOrigin);
+  app.use((_req, res, next) => {
+    res.setHeader('Content-Security-Policy', devFrameAncestors);
+    next();
+  });
+}
 
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
 if (corsOrigin === '*') {
@@ -100,6 +116,13 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
+
+// SSO introspection — runs after cookieParser so req.cookies is populated,
+// before WAF + routes so it can bootstrap a RAG session cookie the normal
+// authenticate middleware will then verify. No-op unless ENABLE_SSO=true
+// and the request has a CA `connect.sid` without a RAG `ums_auth_token`.
+import { trySsoIntrospection } from './middleware/sso';
+app.use(trySsoIntrospection);
 
 // Application-level WAF — must be after body parsing (needs parsed JSON)
 // but before CSRF and routes (blocks malicious requests early)
@@ -132,12 +155,20 @@ app.use((req, res, next) => {
   if (!csrfToken) {
     csrfToken = crypto.randomBytes(32).toString('hex');
   }
+  // SHARED_COOKIE_DOMAIN (e.g. ".umscallanalyzer.com") scopes the CSRF cookie
+  // to the parent domain so it rides along with the shared session cookie
+  // across subdomains. Imported via process.env to avoid a circular import
+  // with authConfig; the same flag is consumed there for the auth + refresh
+  // cookies. sameSite:strict is unchanged — strict is about cross-SITE
+  // (registrable domain), not cross-subdomain on the same eTLD+1.
+  const sharedCookieDomain = process.env.SHARED_COOKIE_DOMAIN;
   res.cookie(CSRF_COOKIE, csrfToken, {
     httpOnly: false,  // Frontend JS needs to read this
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     path: '/',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    ...(sharedCookieDomain ? { domain: sharedCookieDomain } : {}),
   });
 
   // Only enforce on state-changing methods
@@ -327,6 +358,61 @@ app.get('/api/health', async (_req, res) => {
 // Metrics endpoint — request counts, latency percentiles, memory usage (admin only)
 app.get('/api/metrics', authenticate, requireAdmin, (_req: express.Request, res: express.Response) => {
   res.json(getMetricsSnapshot());
+});
+
+// Public auth configuration — no auth required. The frontend reads this
+// on page load to decide whether to show the local username/password form
+// or a single "Sign in with CallAnalyzer" button. The SSO URL is derived
+// from CA_BASE_URL (the same env the introspection middleware uses).
+app.get('/api/auth/config', (_req, res) => {
+  const ssoEnabled = process.env.ENABLE_SSO === 'true';
+  const caBase = (process.env.CA_BASE_URL || '').replace(/\/$/, '');
+  res.json({
+    sso: {
+      enabled: ssoEnabled && caBase.length > 0,
+      // Where the frontend should send the user when they click "Sign in".
+      // CA's existing login page — after success the browser lands back on
+      // RAG with the shared session cookie set, and the SSO middleware
+      // bootstraps the RAG session on the next request.
+      loginUrl: ssoEnabled && caBase ? `${caBase}/auth` : null,
+      provider: 'callanalyzer',
+    },
+  });
+});
+
+// Service-to-service: which CA user IDs has RAG actually seen via SSO?
+// Returns { seen: string[] } — an array of every non-null sso_sub in
+// RAG's users table. CA admin calls this to list CA users whose email
+// exists there but who've never logged into RAG (helpful for diagnosing
+// "user reports KB access broken" before RAG admin credentials are
+// reached for). Requires X-Service-Secret so outside callers can't
+// enumerate the user base.
+app.get('/api/auth/sso-seen', async (req, res) => {
+  const configured = process.env.SSO_SHARED_SECRET;
+  if (!configured || configured.length < 32) {
+    res.status(503).json({ error: 'SSO not configured' });
+    return;
+  }
+  const presented = (req.headers['x-service-secret'] as string) || '';
+  const a = Buffer.from(configured);
+  const b = Buffer.from(presented);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    res.status(401).json({ error: 'Invalid service credential' });
+    return;
+  }
+  try {
+    const { getUsers } = await import('./middleware/auth');
+    const users = await getUsers();
+    const seen = users
+      .map((u) => u.ssoSub)
+      .filter((s): s is string => typeof s === 'string' && s.length > 0);
+    res.json({ seen });
+  } catch (err) {
+    logger.warn('sso-seen: failed to list users', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    res.status(500).json({ error: 'Failed to list users' });
+  }
 });
 
 // Auth routes

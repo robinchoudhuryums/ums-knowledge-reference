@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { SourceCitation } from '../types';
+import { XMarkIcon } from '@heroicons/react/24/outline';
+import type { SourceCitation } from '../types';
 
 interface Props {
   source: SourceCitation;
@@ -9,118 +10,124 @@ interface Props {
 export function SourceViewer({ source, onClose }: Props) {
   const modalRef = useRef<HTMLDivElement>(null);
 
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
-    // Focus trap: cycle focus within modal
-    if (e.key === 'Tab' && modalRef.current) {
-      const focusable = modalRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-    }
-  }, [onClose]);
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    },
+    [onClose],
+  );
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
-    // Auto-focus the close button when modal opens
     const closeBtn = modalRef.current?.querySelector<HTMLElement>('button[aria-label="Close"]');
     closeBtn?.focus();
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
   const relevancePct = Math.round(source.score * 100);
-  const relevanceColor = relevancePct >= 70 ? 'var(--ums-success-text, #166534)' : relevancePct >= 40 ? 'var(--ums-warning-text, #c2410c)' : 'var(--ums-text-muted)';
-  const relevanceBg = relevancePct >= 70 ? 'var(--ums-success-light, #dcfce7)' : relevancePct >= 40 ? 'var(--ums-warning-light, #fff7ed)' : 'var(--ums-bg-surface-alt)';
+
+  // Relevance tone maps to confidence aliases set in index.css.
+  const relevanceTone =
+    relevancePct >= 70 ? 'high' : relevancePct >= 40 ? 'partial' : 'low';
+  const tonePalette: Record<'high' | 'partial' | 'low', { fg: string; bg: string; border: string }> = {
+    high: { fg: 'var(--conf-high)', bg: 'var(--conf-high-bg)', border: 'var(--conf-high-border)' },
+    partial: { fg: 'var(--conf-partial)', bg: 'var(--conf-partial-bg)', border: 'var(--conf-partial-border)' },
+    low: { fg: 'var(--conf-low)', bg: 'var(--conf-low-bg)', border: 'var(--conf-low-border)' },
+  };
+  const tone = tonePalette[relevanceTone];
 
   return (
-    <div style={styles.overlay} onClick={onClose} role="dialog" aria-modal="true" aria-label={`Source: ${source.documentName}`}>
-      <div ref={modalRef} style={styles.modal} onClick={e => e.stopPropagation()}>
-        <div style={styles.header}>
-          <div>
-            <h3 style={styles.title}>{source.documentName}</h3>
-            <div style={styles.metaRow}>
+    <div
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Source: ${source.documentName}`}
+      className="fixed inset-0 z-[1000] flex items-center justify-center px-4"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)' }}
+    >
+      <div
+        ref={modalRef}
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[80vh] w-full max-w-[720px] overflow-y-auto rounded-sm border border-border bg-card p-6 shadow-lg sm:p-7"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div
+              className="font-mono uppercase text-muted-foreground"
+              style={{ fontSize: 10, letterSpacing: '0.12em' }}
+            >
+              Source
+            </div>
+            <h3
+              className="mt-1 font-display font-medium text-foreground"
+              style={{ fontSize: 18, lineHeight: 1.2, letterSpacing: '-0.2px' }}
+            >
+              {source.documentName}
+            </h3>
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {source.pageNumber !== null && source.pageNumber !== undefined && (
-                <span style={styles.metaBadge}>Page {source.pageNumber}</span>
+                <MetaBadge>Page {source.pageNumber}</MetaBadge>
               )}
-              {source.sectionHeader && (
-                <span style={styles.metaBadge}>{source.sectionHeader}</span>
-              )}
-              <span style={{ ...styles.metaBadge, color: relevanceColor, background: relevanceBg, borderColor: relevanceColor + '40' }}>
+              {source.sectionHeader && <MetaBadge>{source.sectionHeader}</MetaBadge>}
+              <span
+                className="inline-flex items-center rounded-sm border px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider"
+                style={{ background: tone.bg, borderColor: tone.border, color: tone.fg }}
+              >
                 {relevancePct}% match
               </span>
             </div>
           </div>
-          <button onClick={onClose} style={styles.closeButton} aria-label="Close">&#10005;</button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-border bg-card text-muted-foreground hover:text-foreground"
+          >
+            <XMarkIcon className="h-4 w-4" />
+          </button>
         </div>
-        <div style={styles.divider} />
-        <div style={styles.label}>Extracted Passage</div>
-        <div style={styles.textContent}>{source.text}</div>
-        <div style={styles.footer}>
-          <span style={styles.footerText}>Chunk ID: {source.chunkId.slice(0, 8)}...</span>
+
+        <div className="my-5 h-px bg-border" />
+
+        <div
+          className="font-mono uppercase text-muted-foreground"
+          style={{ fontSize: 10, letterSpacing: '0.14em' }}
+        >
+          Extracted passage
+        </div>
+        <div className="mt-2 whitespace-pre-wrap rounded-sm border border-border bg-muted p-4 text-[14px] leading-relaxed text-foreground">
+          {source.text}
+        </div>
+
+        <div className="mt-3 text-right">
+          <span className="font-mono text-[11px] text-muted-foreground">
+            Chunk ID {source.chunkId.slice(0, 8)}…
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    backdropFilter: 'blur(4px)',
-  },
-  modal: {
-    backgroundColor: 'var(--ums-bg-surface)',
-    borderRadius: '16px',
-    padding: '28px',
-    maxWidth: '720px',
-    width: '92%',
-    maxHeight: '80vh',
-    overflowY: 'auto',
-    boxShadow: '0 25px 60px rgba(0,0,0,0.2)',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: '16px',
-  },
-  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
-  metaRow: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
-  metaBadge: { fontSize: '12px', color: 'var(--ums-brand-primary)', border: '1px solid var(--ums-border)', borderRadius: '6px', padding: '3px 10px', whiteSpace: 'nowrap', background: 'var(--ums-brand-light)', fontWeight: 500 },
-  closeButton: {
-    background: 'var(--ums-bg-surface-alt)',
-    border: '1px solid var(--ums-border-light)',
-    fontSize: '16px',
-    cursor: 'pointer',
-    color: 'var(--ums-text-muted)',
-    padding: '6px 10px',
-    borderRadius: '8px',
-    lineHeight: 1,
-    flexShrink: 0,
-  },
-  divider: { height: '1px', background: 'var(--ums-border-light)', margin: '18px 0' },
-  label: { fontSize: '11px', fontWeight: 600, color: 'var(--ums-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' },
-  textContent: {
-    padding: '18px',
-    backgroundColor: 'var(--ums-bg-surface-alt)',
-    borderRadius: '12px',
-    border: '1px solid var(--ums-border-light)',
-    fontSize: '14px',
-    lineHeight: '1.7',
-    whiteSpace: 'pre-wrap',
-    color: '#3D5A73',
-  },
-  footer: { marginTop: '14px', textAlign: 'right' },
-  footerText: { fontSize: '11px', color: '#B0C4D8' },
-};
+function MetaBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-sm border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+      {children}
+    </span>
+  );
+}

@@ -4,14 +4,36 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { AdminUser, listUsers, createUser, updateUserRole, deleteUser, resetUserPassword, disableUserMfa, updateUserEmail } from '../services/api';
-import { useConfirm } from './ConfirmDialog';
 import {
   UserPlusIcon,
   TrashIcon,
   KeyIcon,
   ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  AdminUser,
+  listUsers,
+  createUser,
+  updateUserRole,
+  deleteUser,
+  resetUserPassword,
+  disableUserMfa,
+  updateUserEmail,
+} from '../services/api';
+import { useConfirm } from './ConfirmDialog';
+
+function formatDate(iso?: string) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export function UserManagement() {
   const { confirm } = useConfirm();
@@ -23,21 +45,14 @@ export function UserManagement() {
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
   const [creating, setCreating] = useState(false);
-  const [actionResult, setActionResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  const [editingEmail, setEditingEmail] = useState<{ userId: string; value: string } | null>(null);
-
-  const handleEmailSave = async (userId: string) => {
-    if (!editingEmail) return;
-    try {
-      await updateUserEmail(userId, editingEmail.value || null);
-      setEditingEmail(null);
-      setActionResult({ type: 'success', message: 'Email updated' });
-      await loadUsers();
-    } catch (err) {
-      setActionResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to update email' });
-    }
-  };
+  const [actionResult, setActionResult] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [editingEmail, setEditingEmail] = useState<{
+    userId: string;
+    value: string;
+  } | null>(null);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -51,7 +66,24 @@ export function UserManagement() {
     }
   }, []);
 
-  useEffect(() => { loadUsers(); }, [loadUsers]);
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  const handleEmailSave = async (userId: string) => {
+    if (!editingEmail) return;
+    try {
+      await updateUserEmail(userId, editingEmail.value || null);
+      setEditingEmail(null);
+      setActionResult({ type: 'success', message: 'Email updated' });
+      await loadUsers();
+    } catch (err) {
+      setActionResult({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to update email',
+      });
+    }
+  };
 
   const handleCreate = async () => {
     if (!newUsername.trim() || !newPassword.trim()) return;
@@ -59,49 +91,67 @@ export function UserManagement() {
     setActionResult(null);
     try {
       await createUser(newUsername.trim(), newPassword, newRole);
-      setActionResult({ type: 'success', message: `User "${newUsername}" created successfully` });
+      setActionResult({
+        type: 'success',
+        message: `User "${newUsername}" created successfully`,
+      });
       setNewUsername('');
       setNewPassword('');
       setNewRole('user');
       setShowCreate(false);
       await loadUsers();
     } catch (err) {
-      setActionResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to create user' });
+      setActionResult({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to create user',
+      });
     } finally {
       setCreating(false);
     }
   };
 
-  const handleRoleChange = async (user: AdminUser, newRole: 'admin' | 'user') => {
+  const handleRoleChange = async (user: AdminUser, role: 'admin' | 'user') => {
     try {
-      await updateUserRole(user.id, newRole);
-      setActionResult({ type: 'success', message: `${user.username} role changed to ${newRole}` });
+      await updateUserRole(user.id, role);
+      setActionResult({
+        type: 'success',
+        message: `${user.username} role changed to ${role}`,
+      });
       await loadUsers();
     } catch (err) {
-      setActionResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to update role' });
+      setActionResult({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to update role',
+      });
     }
   };
 
   const handleResetPassword = async (user: AdminUser) => {
     const ok = await confirm({
-      title: 'Reset Password',
+      title: 'Reset password',
       message: `Generate a new temporary password for "${user.username}"? They will be required to change it on next login.`,
-      confirmLabel: 'Reset Password',
+      confirmLabel: 'Reset password',
       variant: 'danger',
     });
     if (!ok) return;
     try {
       const result = await resetUserPassword(user.id);
-      setActionResult({ type: 'success', message: `Temporary password for ${user.username}: ${result.temporaryPassword}` });
+      setActionResult({
+        type: 'success',
+        message: `Temporary password for ${user.username}: ${result.temporaryPassword}`,
+      });
       await loadUsers();
     } catch (err) {
-      setActionResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to reset password' });
+      setActionResult({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to reset password',
+      });
     }
   };
 
   const handleDelete = async (user: AdminUser) => {
     const ok = await confirm({
-      title: 'Delete User',
+      title: 'Delete user',
       message: `Permanently delete "${user.username}"? This cannot be undone.`,
       confirmLabel: 'Delete',
       variant: 'danger',
@@ -112,7 +162,10 @@ export function UserManagement() {
       setActionResult({ type: 'success', message: `User "${user.username}" deleted` });
       await loadUsers();
     } catch (err) {
-      setActionResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to delete user' });
+      setActionResult({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to delete user',
+      });
     }
   };
 
@@ -129,245 +182,361 @@ export function UserManagement() {
       setActionResult({ type: 'success', message: `MFA disabled for ${user.username}` });
       await loadUsers();
     } catch (err) {
-      setActionResult({ type: 'error', message: err instanceof Error ? err.message : 'Failed to disable MFA' });
+      setActionResult({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to disable MFA',
+      });
     }
   };
 
-  const formatDate = (iso?: string) => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
-
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h3 style={styles.title}>User Management</h3>
-        <button onClick={() => setShowCreate(!showCreate)} style={styles.createButton}>
-          <UserPlusIcon className="w-4 h-4" />
-          {showCreate ? 'Cancel' : 'Create User'}
-        </button>
+    <div className="rounded-sm border border-border bg-card p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="text-[14px] font-semibold text-foreground">User management</h3>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => setShowCreate(!showCreate)}
+        >
+          <UserPlusIcon className="h-4 w-4" />
+          {showCreate ? 'Cancel' : 'Create user'}
+        </Button>
       </div>
 
       {actionResult && (
-        <div style={actionResult.type === 'success' ? styles.successBanner : styles.errorBanner}>
+        <Banner
+          tone={actionResult.type === 'success' ? 'sage' : 'warm-red'}
+          onDismiss={() => setActionResult(null)}
+        >
           {actionResult.message}
-          <button onClick={() => setActionResult(null)} style={styles.dismissButton}>×</button>
-        </div>
+        </Banner>
       )}
 
       {showCreate && (
-        <div style={styles.createForm}>
-          <div style={styles.formRow}>
-            <input
+        <div className="mb-4 rounded-sm border border-border bg-background p-3.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
               type="text"
               placeholder="Username"
               value={newUsername}
-              onChange={e => setNewUsername(e.target.value)}
-              style={styles.input}
+              onChange={(e) => setNewUsername(e.target.value)}
+              className="min-w-[140px] flex-1"
             />
-            <input
+            <Input
               type="password"
-              placeholder="Password (min 8, upper+lower+number)"
+              placeholder="Password (min 8, upper + lower + number)"
               value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              style={{ ...styles.input, flex: 2 }}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="min-w-[220px] flex-[2]"
             />
-            <select value={newRole} onChange={e => setNewRole(e.target.value as 'admin' | 'user')} style={styles.select}>
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value as 'admin' | 'user')}
+              className="h-10 rounded-md border border-border bg-background px-3 text-[14px] text-foreground"
+            >
               <option value="user">User</option>
               <option value="admin">Admin</option>
             </select>
-            <button onClick={handleCreate} disabled={creating || !newUsername.trim() || !newPassword.trim()} style={styles.submitButton}>
-              {creating ? 'Creating...' : 'Create'}
-            </button>
+            <Button
+              type="button"
+              onClick={handleCreate}
+              disabled={creating || !newUsername.trim() || !newPassword.trim()}
+            >
+              {creating ? 'Creating…' : 'Create'}
+            </Button>
           </div>
         </div>
       )}
 
-      {loading && <p style={styles.meta}>Loading users...</p>}
-      {error && <div style={styles.errorBanner}>{error}</div>}
+      {loading && <p className="text-[13px] text-muted-foreground">Loading users…</p>}
+      {error && (
+        <Banner tone="warm-red" onDismiss={() => setError('')}>
+          {error}
+        </Banner>
+      )}
 
       {!loading && (
-        <div style={styles.tableWrap}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Username</th>
-                <th style={styles.th}>Role</th>
-                <th style={styles.th}>Email</th>
-                <th style={styles.th}>MFA</th>
-                <th style={styles.th}>Status</th>
-                <th style={styles.th}>Last Login</th>
-                <th style={styles.th}>Created</th>
-                <th style={styles.th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(user => {
-                const isLocked = user.lockedUntil && new Date(user.lockedUntil) > new Date();
-                return (
-                  <tr key={user.id} style={styles.tr}>
-                    <td style={styles.td}>
-                      <span style={{ fontWeight: 600, color: 'var(--ums-text-primary)' }}>{user.username}</span>
-                      {user.mustChangePassword && <span style={styles.badge}> must change pw</span>}
-                    </td>
-                    <td style={styles.td}>
-                      <select
-                        value={user.role}
-                        onChange={e => handleRoleChange(user, e.target.value as 'admin' | 'user')}
-                        style={styles.roleSelect}
-                      >
-                        <option value="user">user</option>
-                        <option value="admin">admin</option>
-                      </select>
-                    </td>
-                    <td style={styles.td}>
-                      {editingEmail?.userId === user.id ? (
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <input
-                            type="email"
-                            value={editingEmail.value}
-                            onChange={e => setEditingEmail({ userId: user.id, value: e.target.value })}
-                            onKeyDown={e => e.key === 'Enter' && handleEmailSave(user.id)}
-                            style={{ ...styles.roleSelect, width: '160px' }}
-                            placeholder="user@example.com"
-                            autoFocus
-                          />
-                          <button onClick={() => handleEmailSave(user.id)} style={styles.actionBtn} title="Save">&#10003;</button>
-                          <button onClick={() => setEditingEmail(null)} style={styles.actionBtn} title="Cancel">&#10005;</button>
-                        </div>
-                      ) : (
-                        <span
-                          onClick={() => setEditingEmail({ userId: user.id, value: user.email || '' })}
-                          style={{ fontSize: '13px', color: user.email ? 'var(--ums-text-secondary)' : 'var(--ums-text-placeholder)', cursor: 'pointer' }}
-                          title="Click to edit email"
+        <div className="overflow-hidden rounded-sm border border-border">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr className="border-b border-border bg-muted">
+                  <Th>Username</Th>
+                  <Th>Role</Th>
+                  <Th>Email</Th>
+                  <Th>Auth</Th>
+                  <Th>MFA</Th>
+                  <Th>Status</Th>
+                  <Th>Last login</Th>
+                  <Th>Created</Th>
+                  <Th>Actions</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => {
+                  const isLocked =
+                    user.lockedUntil && new Date(user.lockedUntil) > new Date();
+                  return (
+                    <tr
+                      key={user.id}
+                      className="border-b border-border last:border-b-0 align-middle"
+                    >
+                      <Td>
+                        <span className="font-medium text-foreground">
+                          {user.username}
+                        </span>
+                        {user.mustChangePassword && (
+                          <span
+                            className="ml-1.5 inline-block rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider"
+                            style={{
+                              background: 'var(--amber-soft)',
+                              color: 'var(--amber)',
+                            }}
+                          >
+                            must change pw
+                          </span>
+                        )}
+                      </Td>
+                      <Td>
+                        <select
+                          value={user.role}
+                          onChange={(e) =>
+                            handleRoleChange(
+                              user,
+                              e.target.value as 'admin' | 'user',
+                            )
+                          }
+                          className="h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground"
                         >
-                          {user.email || 'Set email...'}
-                        </span>
-                      )}
-                    </td>
-                    <td style={styles.td}>
-                      {user.mfaEnabled ? (
-                        <span style={styles.mfaBadge}>
-                          <ShieldCheckIcon className="w-3.5 h-3.5" /> Enabled
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--ums-text-muted)', fontSize: '13px' }}>Off</span>
-                      )}
-                    </td>
-                    <td style={styles.td}>
-                      {isLocked ? (
-                        <span style={{ color: 'var(--ums-error-text)', fontSize: '13px', fontWeight: 600 }}>Locked</span>
-                      ) : (
-                        <span style={{ color: 'var(--ums-success-text)', fontSize: '13px' }}>Active</span>
-                      )}
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{ fontSize: '13px', color: 'var(--ums-text-muted)' }}>{formatDate(user.lastLogin)}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={{ fontSize: '13px', color: 'var(--ums-text-muted)' }}>{formatDate(user.createdAt)}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button onClick={() => handleResetPassword(user)} style={styles.actionBtn} title="Reset password">
-                          <KeyIcon className="w-4 h-4" />
-                        </button>
-                        {user.mfaEnabled && (
-                          <button onClick={() => handleDisableMfa(user)} style={styles.actionBtn} title="Disable MFA">
-                            <ShieldCheckIcon className="w-4 h-4" />
+                          <option value="user">user</option>
+                          <option value="admin">admin</option>
+                        </select>
+                      </Td>
+                      <Td>
+                        {editingEmail?.userId === user.id ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="email"
+                              value={editingEmail.value}
+                              onChange={(e) =>
+                                setEditingEmail({
+                                  userId: user.id,
+                                  value: e.target.value,
+                                })
+                              }
+                              onKeyDown={(e) =>
+                                e.key === 'Enter' && handleEmailSave(user.id)
+                              }
+                              placeholder="user@example.com"
+                              autoFocus
+                              className="h-8 w-40 text-[12px]"
+                            />
+                            <IconBtn
+                              onClick={() => handleEmailSave(user.id)}
+                              title="Save"
+                            >
+                              ✓
+                            </IconBtn>
+                            <IconBtn
+                              onClick={() => setEditingEmail(null)}
+                              title="Cancel"
+                            >
+                              ✕
+                            </IconBtn>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingEmail({
+                                userId: user.id,
+                                value: user.email || '',
+                              })
+                            }
+                            className="cursor-pointer text-[13px]"
+                            style={{
+                              color: user.email
+                                ? 'var(--foreground)'
+                                : 'var(--muted-foreground)',
+                            }}
+                            title="Click to edit email"
+                          >
+                            {user.email || 'Set email…'}
                           </button>
                         )}
-                        <button onClick={() => handleDelete(user)} style={styles.actionBtnDanger} title="Delete user">
-                          <TrashIcon className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </Td>
+                      <Td>
+                        {user.ssoSub ? (
+                          <span
+                            className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider"
+                            style={{ color: 'var(--accent)' }}
+                            // The raw ssoSub is stable, opaque, and useful
+                            // for compliance audits — show on hover rather
+                            // than in the always-visible row.
+                            title={`SSO: ${user.ssoSource || 'external'} — caUserId=${user.ssoSub}`}
+                          >
+                            SSO
+                          </span>
+                        ) : (
+                          <span
+                            className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                            title="Break-glass: local password auth"
+                          >
+                            Local
+                          </span>
+                        )}
+                      </Td>
+                      <Td>
+                        {user.mfaEnabled ? (
+                          <span
+                            className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider"
+                            style={{ color: 'var(--sage)' }}
+                          >
+                            <ShieldCheckIcon className="h-3.5 w-3.5" />
+                            Enabled
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-muted-foreground">Off</span>
+                        )}
+                      </Td>
+                      <Td>
+                        {isLocked ? (
+                          <span
+                            className="font-mono text-[10px] font-semibold uppercase tracking-wider"
+                            style={{ color: 'var(--warm-red)' }}
+                          >
+                            Locked
+                          </span>
+                        ) : (
+                          <span
+                            className="font-mono text-[10px] font-semibold uppercase tracking-wider"
+                            style={{ color: 'var(--sage)' }}
+                          >
+                            Active
+                          </span>
+                        )}
+                      </Td>
+                      <Td className="text-[12px] text-muted-foreground">
+                        {formatDate(user.lastLogin)}
+                      </Td>
+                      <Td className="text-[12px] text-muted-foreground">
+                        {formatDate(user.createdAt)}
+                      </Td>
+                      <Td>
+                        <div className="flex gap-1">
+                          <IconBtn
+                            onClick={() => handleResetPassword(user)}
+                            title="Reset password"
+                          >
+                            <KeyIcon className="h-4 w-4" />
+                          </IconBtn>
+                          {user.mfaEnabled && (
+                            <IconBtn
+                              onClick={() => handleDisableMfa(user)}
+                              title="Disable MFA"
+                            >
+                              <ShieldCheckIcon className="h-4 w-4" />
+                            </IconBtn>
+                          )}
+                          <IconBtn
+                            onClick={() => handleDelete(user)}
+                            title="Delete user"
+                            tone="warm-red"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </IconBtn>
+                        </div>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    background: 'var(--ums-bg-surface)', borderRadius: '12px',
-    border: '1px solid var(--ums-border)', padding: '20px 24px',
-    boxShadow: 'var(--ums-shadow-sm)',
-  },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  title: { margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--ums-text-primary)' },
-  createButton: {
-    display: 'flex', alignItems: 'center', gap: '6px',
-    padding: '7px 14px', background: 'var(--ums-brand-gradient)', color: '#fff',
-    border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-  },
-  createForm: {
-    padding: '14px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px',
-    border: '1px solid var(--ums-border)', marginBottom: '16px',
-  },
-  formRow: { display: 'flex', gap: '8px', flexWrap: 'wrap' as const, alignItems: 'center' },
-  input: {
-    flex: 1, minWidth: '140px', padding: '8px 12px', border: '1px solid var(--ums-border)',
-    borderRadius: '8px', fontSize: '14px', background: 'var(--ums-bg-input)', color: 'var(--ums-text-primary)',
-  },
-  select: {
-    padding: '8px 12px', border: '1px solid var(--ums-border)', borderRadius: '8px',
-    fontSize: '14px', background: 'var(--ums-bg-input)', color: 'var(--ums-text-primary)',
-  },
-  submitButton: {
-    padding: '8px 18px', background: 'var(--ums-brand-gradient)', color: '#fff',
-    border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-  },
-  meta: { fontSize: '13px', color: 'var(--ums-text-muted)' },
-  successBanner: {
-    padding: '10px 14px', background: 'var(--ums-success-light)', color: 'var(--ums-success-text)',
-    borderRadius: '8px', border: '1px solid var(--ums-success-border)', fontSize: '13px',
-    marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    wordBreak: 'break-all' as const,
-  },
-  errorBanner: {
-    padding: '10px 14px', background: 'var(--ums-error-light)', color: 'var(--ums-error-text)',
-    borderRadius: '8px', border: '1px solid var(--ums-error-border)', fontSize: '13px', marginBottom: '12px',
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  },
-  dismissButton: {
-    background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer',
-    color: 'inherit', padding: '0 4px', lineHeight: 1,
-  },
-  tableWrap: { overflowX: 'auto' as const },
-  table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '14px' },
-  th: {
-    textAlign: 'left' as const, padding: '8px 10px', background: 'var(--ums-bg-surface-alt)',
-    color: 'var(--ums-text-muted)', fontWeight: 600, fontSize: '11px', whiteSpace: 'nowrap' as const,
-    textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid var(--ums-border)',
-  },
-  tr: { borderBottom: '1px solid var(--ums-border-light)' },
-  td: { padding: '8px 10px', verticalAlign: 'middle' as const },
-  badge: {
-    fontSize: '10px', padding: '2px 6px', background: 'var(--ums-warning-light)',
-    color: 'var(--ums-warning-text)', borderRadius: '4px', marginLeft: '6px', fontWeight: 600,
-  },
-  roleSelect: {
-    padding: '4px 8px', border: '1px solid var(--ums-border)', borderRadius: '6px',
-    fontSize: '13px', background: 'var(--ums-bg-input)', color: 'var(--ums-text-primary)',
-  },
-  mfaBadge: {
-    display: 'inline-flex', alignItems: 'center', gap: '3px',
-    fontSize: '12px', color: 'var(--ums-success-text)', fontWeight: 600,
-  },
-  actionBtn: {
-    padding: '5px', background: 'var(--ums-bg-surface-alt)', border: '1px solid var(--ums-border)',
-    borderRadius: '6px', cursor: 'pointer', color: 'var(--ums-text-muted)',
-    display: 'flex', alignItems: 'center',
-  },
-  actionBtnDanger: {
-    padding: '5px', background: 'var(--ums-error-light)', border: '1px solid var(--ums-error-border)',
-    borderRadius: '6px', cursor: 'pointer', color: 'var(--ums-error-text)',
-    display: 'flex', alignItems: 'center',
-  },
-};
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="whitespace-nowrap px-3 py-2 text-left font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      {children}
+    </th>
+  );
+}
+
+function Td({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const cls = ['px-3 py-2 align-middle', className].filter(Boolean).join(' ');
+  return <td className={cls}>{children}</td>;
+}
+
+function IconBtn({
+  onClick,
+  title,
+  tone,
+  children,
+}: {
+  onClick: () => void;
+  title: string;
+  tone?: 'warm-red';
+  children: React.ReactNode;
+}) {
+  const style: React.CSSProperties =
+    tone === 'warm-red'
+      ? {
+          background: 'var(--warm-red-soft)',
+          borderColor: 'var(--warm-red)',
+          color: 'var(--warm-red)',
+        }
+      : {};
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className="flex h-7 w-7 items-center justify-center rounded-sm border border-border bg-background text-muted-foreground hover:text-foreground"
+      style={style}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Banner({
+  tone,
+  children,
+  onDismiss,
+}: {
+  tone: 'sage' | 'warm-red';
+  children: React.ReactNode;
+  onDismiss: () => void;
+}) {
+  const bg = tone === 'sage' ? 'var(--sage-soft)' : 'var(--warm-red-soft)';
+  const fg = tone === 'sage' ? 'var(--sage)' : 'var(--warm-red)';
+  return (
+    <div
+      className="mb-3 flex items-center justify-between break-all rounded-sm border px-3 py-2 text-[13px]"
+      style={{ background: bg, borderColor: fg, color: fg }}
+    >
+      <span>{children}</span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="ml-2 bg-transparent text-[16px] leading-none"
+        style={{ color: 'inherit' }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}

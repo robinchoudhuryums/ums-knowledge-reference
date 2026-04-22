@@ -1,5 +1,24 @@
 import { useState, useEffect } from 'react';
 import { getFaqDashboard, FaqDashboardData } from '../services/api';
+import { cn } from '@/lib/utils';
+
+function confidenceTone(c: string): { fg: string; bg: string } {
+  if (c === 'high') return { fg: 'var(--conf-high)', bg: 'var(--sage-soft)' };
+  if (c === 'partial') return { fg: 'var(--conf-partial)', bg: 'var(--amber-soft)' };
+  return { fg: 'var(--conf-low)', bg: 'var(--warm-red-soft)' };
+}
+
+function ConfChip({ value }: { value: string }) {
+  const tone = confidenceTone(value);
+  return (
+    <span
+      className="inline-flex items-center rounded-sm px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider"
+      style={{ background: tone.bg, color: tone.fg }}
+    >
+      {value}
+    </span>
+  );
+}
 
 export function FaqDashboard() {
   const [data, setData] = useState<FaqDashboardData | null>(null);
@@ -9,6 +28,7 @@ export function FaqDashboard() {
 
   useEffect(() => {
     loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
 
   const loadDashboard = async () => {
@@ -28,38 +48,62 @@ export function FaqDashboard() {
     }
   };
 
-  const confidenceColor = (c: string) => {
-    if (c === 'high') return 'var(--ums-conf-high)';
-    if (c === 'partial') return 'var(--ums-conf-partial)';
-    return 'var(--ums-conf-low)';
-  };
-
-  const confidenceBg = (c: string) => {
-    if (c === 'high') return 'var(--ums-conf-high-bg)';
-    if (c === 'partial') return 'var(--ums-conf-partial-bg)';
-    return 'var(--ums-conf-low-bg)';
-  };
-
   if (loading) {
-    return <div style={styles.container}><p style={styles.loading}>Loading dashboard...</p></div>;
+    return (
+      <div className="p-7 text-[13px] text-muted-foreground">Loading dashboard…</div>
+    );
   }
 
   if (error) {
-    return <div style={styles.container}><p style={styles.error}>{error}</p></div>;
+    return (
+      <div
+        role="alert"
+        className="mx-7 mt-6 rounded-sm border px-3 py-2 text-[13px]"
+        style={{
+          background: 'var(--warm-red-soft)',
+          borderColor: 'var(--warm-red)',
+          color: 'var(--warm-red)',
+        }}
+      >
+        {error}
+      </div>
+    );
   }
 
   if (!data) return null;
 
+  const maxCount = Math.max(...data.queriesByDay.map((x) => x.count), 1);
+
   return (
-    <div style={styles.container}>
-      <div style={styles.headerRow}>
-        <h3 style={styles.title}>FAQ & Analytics Dashboard</h3>
-        <div style={styles.periodSelector}>
-          {[7, 14, 30].map(d => (
+    <div className="max-w-[920px] h-full overflow-y-auto p-6 sm:p-7">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div
+            className="font-mono uppercase text-muted-foreground"
+            style={{ fontSize: 10, letterSpacing: '0.14em' }}
+          >
+            Analytics
+          </div>
+          <h2
+            className="mt-1 font-display font-medium text-foreground"
+            style={{ fontSize: 20, lineHeight: 1.15, letterSpacing: '-0.3px' }}
+          >
+            FAQ & analytics dashboard
+          </h2>
+        </div>
+        <div className="inline-flex rounded-sm border border-border bg-card p-0.5">
+          {[7, 14, 30].map((d) => (
             <button
               key={d}
+              type="button"
               onClick={() => setDays(d)}
-              style={days === d ? styles.periodActive : styles.periodButton}
+              aria-pressed={days === d}
+              className={cn(
+                'rounded-sm px-3 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors',
+                days === d
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
             >
               {d}d
             </button>
@@ -67,247 +111,246 @@ export function FaqDashboard() {
         </div>
       </div>
 
-      <p style={styles.subtitle}>
+      <p className="mt-1 mb-6 text-[12px] text-muted-foreground">
         {data.period.start} to {data.period.end}
       </p>
 
-      {/* Summary cards */}
-      <div style={styles.cardRow}>
-        <div style={styles.card}>
-          <div style={styles.cardValue}>{data.totalQueries}</div>
-          <div style={styles.cardLabel}>Total Queries</div>
-        </div>
-        <div style={styles.card}>
-          <div style={styles.cardValue}>{data.uniqueAgents}</div>
-          <div style={styles.cardLabel}>Active Agents</div>
-        </div>
-        <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-high)' }}>{data.confidenceBreakdown.high}</div>
-          <div style={styles.cardLabel}>High Confidence</div>
-        </div>
-        <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-partial)' }}>{data.confidenceBreakdown.partial}</div>
-          <div style={styles.cardLabel}>Partial</div>
-        </div>
-        <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-low)' }}>{data.confidenceBreakdown.low}</div>
-          <div style={styles.cardLabel}>Low Confidence</div>
-        </div>
+      {/* Summary tiles */}
+      <div className="mb-7 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+        <Tile value={data.totalQueries} label="Total queries" />
+        <Tile value={data.uniqueAgents} label="Active agents" />
+        <Tile
+          value={data.confidenceBreakdown.high}
+          label="High confidence"
+          color="var(--conf-high)"
+        />
+        <Tile
+          value={data.confidenceBreakdown.partial}
+          label="Partial"
+          color="var(--conf-partial)"
+        />
+        <Tile
+          value={data.confidenceBreakdown.low}
+          label="Low confidence"
+          color="var(--conf-low)"
+        />
       </div>
 
-      {/* Daily activity bar chart (simple text-based) */}
+      {/* Daily query volume */}
       {data.queriesByDay.length > 0 && (
-        <div style={styles.section}>
-          <h4 style={styles.sectionTitle}>Daily Query Volume</h4>
-          <div style={styles.barChart}>
-            {data.queriesByDay.map(d => {
-              const maxCount = Math.max(...data.queriesByDay.map(x => x.count), 1);
+        <Section title="Daily query volume">
+          <div className="flex flex-col gap-1">
+            {data.queriesByDay.map((d) => {
               const pct = (d.count / maxCount) * 100;
               return (
-                <div key={d.date} style={styles.barRow}>
-                  <span style={styles.barDate}>{d.date.slice(5)}</span>
-                  <div style={styles.barTrack}>
-                    <div style={{ ...styles.barFill, width: `${Math.max(pct, 2)}%` }} />
+                <div key={d.date} className="flex items-center gap-2.5">
+                  <span className="w-11 text-right font-mono text-[11px] font-medium text-muted-foreground tabular-nums">
+                    {d.date.slice(5)}
+                  </span>
+                  <div className="h-5 flex-1 overflow-hidden rounded-sm bg-muted">
+                    <div
+                      className="h-full transition-all duration-300"
+                      style={{
+                        width: `${Math.max(pct, 2)}%`,
+                        background: 'var(--accent)',
+                      }}
+                    />
                   </div>
-                  <span style={styles.barCount}>{d.count}</span>
+                  <span className="w-8 font-mono text-[11px] font-semibold text-muted-foreground tabular-nums">
+                    {d.count}
+                  </span>
                 </div>
               );
             })}
           </div>
-        </div>
+        </Section>
       )}
 
       {/* Top questions */}
       {data.topQuestions.length > 0 && (
-        <div style={styles.section}>
-          <h4 style={styles.sectionTitle}>Most Frequently Asked Questions</h4>
-          <p style={styles.sectionHint}>
-            Questions asked multiple times indicate topics that could benefit from clearer documentation or a quick-reference guide.
-          </p>
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Question</th>
-                  <th style={{ ...styles.th, width: '60px', textAlign: 'center' }}>Count</th>
-                  <th style={{ ...styles.th, width: '90px', textAlign: 'center' }}>Confidence</th>
-                  <th style={{ ...styles.th, width: '120px' }}>Agents</th>
+        <Section
+          title="Most frequently asked questions"
+          hint="Questions asked multiple times indicate topics that could benefit from clearer documentation or a quick-reference guide."
+        >
+          <DashboardTable>
+            <thead>
+              <tr className="border-b border-border bg-muted">
+                <Th>Question</Th>
+                <Th className="w-16 text-center">Count</Th>
+                <Th className="w-24 text-center">Confidence</Th>
+                <Th className="w-32">Agents</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.topQuestions.map((q, i) => (
+                <tr key={i} className="border-b border-border last:border-b-0">
+                  <Td>{q.question}</Td>
+                  <Td className="text-center font-mono font-semibold tabular-nums text-accent">
+                    {q.frequency}
+                  </Td>
+                  <Td className="text-center">
+                    <ConfChip value={q.avgConfidence} />
+                  </Td>
+                  <Td className="text-muted-foreground">{q.agents.join(', ')}</Td>
                 </tr>
-              </thead>
-              <tbody>
-                {data.topQuestions.map((q, i) => (
-                  <tr key={i}>
-                    <td style={styles.td}>{q.question}</td>
-                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600, color: 'var(--ums-brand-primary)' }}>{q.frequency}</td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
-                      <span style={{
-                        ...styles.badge,
-                        color: confidenceColor(q.avgConfidence),
-                        backgroundColor: confidenceBg(q.avgConfidence),
-                      }}>
-                        {q.avgConfidence}
-                      </span>
-                    </td>
-                    <td style={{ ...styles.td, color: 'var(--ums-text-muted)' }}>{q.agents.join(', ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ))}
+            </tbody>
+          </DashboardTable>
+        </Section>
       )}
 
-      {/* Low confidence questions — areas needing more docs */}
+      {/* Low confidence — knowledge gaps */}
       {data.lowConfidenceQuestions.length > 0 && (
-        <div style={styles.section}>
-          <h4 style={styles.sectionTitle}>Knowledge Gaps (Low Confidence Questions)</h4>
-          <p style={styles.sectionHint}>
-            These questions consistently receive low or partial confidence. Adding documents that address these topics will improve answer quality.
-          </p>
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Question</th>
-                  <th style={{ ...styles.th, width: '60px', textAlign: 'center' }}>Count</th>
-                  <th style={{ ...styles.th, width: '90px', textAlign: 'center' }}>Confidence</th>
+        <Section
+          title="Knowledge gaps (low-confidence questions)"
+          hint="These questions consistently receive low or partial confidence. Adding documents that address these topics will improve answer quality."
+        >
+          <DashboardTable>
+            <thead>
+              <tr className="border-b border-border bg-muted">
+                <Th>Question</Th>
+                <Th className="w-16 text-center">Count</Th>
+                <Th className="w-24 text-center">Confidence</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.lowConfidenceQuestions.map((q, i) => (
+                <tr key={i} className="border-b border-border last:border-b-0">
+                  <Td>{q.question}</Td>
+                  <Td className="text-center font-mono font-semibold tabular-nums text-accent">
+                    {q.frequency}
+                  </Td>
+                  <Td className="text-center">
+                    <ConfChip value={q.avgConfidence} />
+                  </Td>
                 </tr>
-              </thead>
-              <tbody>
-                {data.lowConfidenceQuestions.map((q, i) => (
-                  <tr key={i}>
-                    <td style={styles.td}>{q.question}</td>
-                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600, color: 'var(--ums-brand-primary)' }}>{q.frequency}</td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
-                      <span style={{
-                        ...styles.badge,
-                        color: confidenceColor(q.avgConfidence),
-                        backgroundColor: confidenceBg(q.avgConfidence),
-                      }}>
-                        {q.avgConfidence}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ))}
+            </tbody>
+          </DashboardTable>
+        </Section>
       )}
 
       {/* Agent activity */}
       {data.agentActivity.length > 0 && (
-        <div style={styles.section}>
-          <h4 style={styles.sectionTitle}>Agent Activity</h4>
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Agent</th>
-                  <th style={{ ...styles.th, width: '100px', textAlign: 'center' }}>Queries</th>
-                  <th style={{ ...styles.th, width: '120px', textAlign: 'center' }}>Avg. Confidence</th>
+        <Section title="Agent activity">
+          <DashboardTable>
+            <thead>
+              <tr className="border-b border-border bg-muted">
+                <Th>Agent</Th>
+                <Th className="w-24 text-center">Queries</Th>
+                <Th className="w-32 text-center">Avg. confidence</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.agentActivity.map((a, i) => (
+                <tr key={i} className="border-b border-border last:border-b-0">
+                  <Td>{a.username}</Td>
+                  <Td className="text-center font-mono font-semibold tabular-nums">
+                    {a.queryCount}
+                  </Td>
+                  <Td className="text-center">
+                    <ConfChip value={a.avgConfidence} />
+                  </Td>
                 </tr>
-              </thead>
-              <tbody>
-                {data.agentActivity.map((a, i) => (
-                  <tr key={i}>
-                    <td style={styles.td}>{a.username}</td>
-                    <td style={{ ...styles.td, textAlign: 'center', fontWeight: 600 }}>{a.queryCount}</td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
-                      <span style={{
-                        ...styles.badge,
-                        color: confidenceColor(a.avgConfidence),
-                        backgroundColor: confidenceBg(a.avgConfidence),
-                      }}>
-                        {a.avgConfidence}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ))}
+            </tbody>
+          </DashboardTable>
+        </Section>
       )}
 
       {data.totalQueries === 0 && (
-        <p style={styles.empty}>No queries recorded for this period. The dashboard will populate as agents use the tool.</p>
+        <p className="py-12 text-center text-[14px] text-muted-foreground">
+          No queries recorded for this period. The dashboard will populate as
+          agents use the tool.
+        </p>
       )}
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', maxWidth: '920px', overflowY: 'auto', height: '100%' },
-  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  title: { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.3px' },
-  subtitle: { margin: '4px 0 24px', fontSize: '13px', color: 'var(--ums-text-muted)' },
-  periodSelector: { display: 'flex', gap: '4px' },
-  periodButton: {
-    padding: '6px 14px',
-    background: 'var(--ums-bg-surface-alt)',
-    border: '1px solid var(--ums-border)',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    color: 'var(--ums-text-muted)',
-    fontWeight: 500,
-  },
-  periodActive: {
-    padding: '6px 14px',
-    background: 'var(--ums-brand-gradient)',
-    color: 'white',
-    border: '1px solid var(--ums-brand-primary)',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: 600,
-    boxShadow: '0 2px 6px rgba(27, 111, 201, 0.25)',
-  },
-  loading: { color: 'var(--ums-text-muted)', fontSize: '14px' },
-  error: { color: 'var(--ums-error)', fontSize: '14px', padding: '14px', background: 'var(--ums-error-light)', borderRadius: '10px', border: '1px solid var(--ums-error-border)' },
-  cardRow: { display: 'flex', gap: '12px', flexWrap: 'wrap' as const, marginBottom: '28px' },
-  card: {
-    flex: '1 1 120px',
-    padding: '18px',
-    background: 'var(--ums-bg-surface)',
-    borderRadius: '12px',
-    border: '1px solid var(--ums-border)',
-    textAlign: 'center' as const,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-  },
-  cardValue: { fontSize: '28px', fontWeight: 700, color: 'var(--ums-text-primary)' },
-  cardLabel: { fontSize: '11px', color: 'var(--ums-text-muted)', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.5px', fontWeight: 500 },
-  section: { marginBottom: '32px' },
-  sectionTitle: { margin: '0 0 4px', fontSize: '16px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
-  sectionHint: { margin: '0 0 14px', fontSize: '13px', color: 'var(--ums-text-muted)', lineHeight: '1.4' },
-  tableWrapper: { borderRadius: '12px', border: '1px solid var(--ums-border)', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
-  table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '13px' },
-  th: {
-    textAlign: 'left' as const,
-    padding: '12px 16px',
-    background: 'var(--ums-bg-surface-alt)',
-    color: 'var(--ums-text-muted)',
-    fontSize: '11px',
-    fontWeight: 600,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-    borderBottom: '1px solid var(--ums-border)',
-  },
-  td: { padding: '12px 16px', borderBottom: '1px solid var(--ums-bg-surface-alt)', verticalAlign: 'top' as const, color: 'var(--ums-text-secondary)' },
-  badge: {
-    display: 'inline-block',
-    padding: '3px 10px',
-    borderRadius: '6px',
-    fontSize: '11px',
-    fontWeight: 600,
-    textTransform: 'uppercase' as const,
-  },
-  barChart: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  barRow: { display: 'flex', alignItems: 'center', gap: '10px' },
-  barDate: { width: '45px', fontSize: '12px', color: 'var(--ums-text-muted)', textAlign: 'right' as const, fontWeight: 500 },
-  barTrack: { flex: 1, height: '20px', background: 'var(--ums-border)', borderRadius: '6px', overflow: 'hidden' },
-  barFill: { height: '100%', background: 'linear-gradient(90deg, var(--ums-brand-primary), #64B5F6)', borderRadius: '6px', transition: 'width 0.3s' },
-  barCount: { width: '30px', fontSize: '12px', color: 'var(--ums-text-muted)', fontWeight: 600 },
-  empty: { color: 'var(--ums-text-muted)', fontSize: '14px', textAlign: 'center' as const, padding: '48px 0' },
-};
+function Tile({
+  value,
+  label,
+  color,
+}: {
+  value: string | number;
+  label: string;
+  color?: string;
+}) {
+  return (
+    <div className="rounded-sm border border-border bg-card p-4 text-center shadow-sm">
+      <div
+        className="text-[28px] font-bold tabular-nums text-foreground"
+        style={color ? { color } : undefined}
+      >
+        {value}
+      </div>
+      <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-8">
+      <h3 className="mb-1 text-[15px] font-semibold text-foreground">{title}</h3>
+      {hint && (
+        <p className="mb-3 text-[12px] leading-relaxed text-muted-foreground">{hint}</p>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function DashboardTable({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-sm border border-border shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]">{children}</table>
+      </div>
+    </div>
+  );
+}
+
+function Th({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <th
+      className={cn(
+        'px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-wider text-muted-foreground',
+        className,
+      )}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <td className={cn('px-3 py-2.5 align-top text-foreground', className)}>
+      {children}
+    </td>
+  );
+}

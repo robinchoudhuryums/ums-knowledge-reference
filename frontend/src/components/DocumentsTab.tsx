@@ -1,11 +1,9 @@
 import { useState } from 'react';
+import { FolderOpenIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { DocumentManager } from './DocumentManager';
 import { DocumentSearch } from './DocumentSearch';
-import { Collection } from '../types';
-import {
-  FolderOpenIcon,
-  MagnifyingGlassIcon,
-} from '@heroicons/react/24/outline';
+import type { Collection } from '../types';
+import { cn } from '@/lib/utils';
 
 type DocSubTab = 'manage' | 'search';
 
@@ -19,24 +17,23 @@ export function DocumentsTab({ isAdmin, collections, onCollectionsChange }: Prop
   const [active, setActive] = useState<DocSubTab>('manage');
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={styles.subNav}>
-        <button
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      {/* Sub-nav — mono segmented control */}
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-border bg-card px-4 py-2 sm:px-7">
+        <SubTab
+          active={active === 'manage'}
           onClick={() => setActive('manage')}
-          style={active === 'manage' ? styles.subTabActive : styles.subTab}
-        >
-          <FolderOpenIcon className="w-4 h-4" />
-          Manage
-        </button>
-        <button
+          Icon={FolderOpenIcon}
+          label="Manage"
+        />
+        <SubTab
+          active={active === 'search'}
           onClick={() => setActive('search')}
-          style={active === 'search' ? styles.subTabActive : styles.subTab}
-        >
-          <MagnifyingGlassIcon className="w-4 h-4" />
-          Search
-        </button>
+          Icon={MagnifyingGlassIcon}
+          label="Search"
+        />
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div className="min-h-0 flex-1 overflow-auto">
         {active === 'manage' && (
           <DocumentManager
             isAdmin={isAdmin}
@@ -44,49 +41,37 @@ export function DocumentsTab({ isAdmin, collections, onCollectionsChange }: Prop
             onCollectionsChange={onCollectionsChange}
           />
         )}
-        {active === 'search' && (
-          <DocumentSearch collections={collections} />
-        )}
+        {active === 'search' && <DocumentSearch collections={collections} />}
       </div>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  subNav: {
-    display: 'flex',
-    gap: '2px',
-    padding: '8px 16px',
-    borderBottom: '1px solid var(--ums-border)',
-    background: 'var(--ums-bg-surface)',
-    flexShrink: 0,
-  },
-  subTab: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 14px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--ums-text-muted)',
-    background: 'transparent',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-  },
-  subTabActive: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 14px',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--ums-brand-text)',
-    background: 'var(--ums-bg-active)',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    boxShadow: 'inset 0 0 0 1px rgba(27, 111, 201, 0.15)',
-  },
-};
+function SubTab({
+  active,
+  onClick,
+  Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  Icon: React.ComponentType<{ className?: string }>;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-[13px] transition-colors',
+        active
+          ? 'bg-[var(--copper-soft)] text-foreground font-medium shadow-[inset_2px_0_0_var(--accent)]'
+          : 'text-muted-foreground hover:bg-muted',
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}

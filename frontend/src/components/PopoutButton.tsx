@@ -1,9 +1,11 @@
 import { useCallback } from 'react';
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { Button } from '@/components/ui/button';
 
 /**
  * Button that opens the chat interface in a small pop-out window.
- * The new window loads the app with ?popout=true, which renders
- * only the chat interface in a compact layout.
+ * The new window loads the app with ?popout=true, which renders only
+ * the chat interface in a compact layout.
  */
 export function PopoutButton() {
   const handlePopout = useCallback(() => {
@@ -15,27 +17,22 @@ export function PopoutButton() {
     window.open(
       `${window.location.origin}?popout=true`,
       'ums-chat-popout',
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`,
     );
   }, []);
 
   return (
-    <button onClick={handlePopout} style={styles.button} title="Open chat in a pop-up window" aria-label="Open chat in pop-out window">
-      &#8599; Pop Out
-    </button>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={handlePopout}
+      aria-label="Open chat in pop-out window"
+      title="Open chat in a pop-up window"
+      className="gap-1.5"
+    >
+      <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+      <span>Pop out</span>
+    </Button>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  button: {
-    padding: '6px 14px',
-    background: 'var(--ums-bg-surface-alt)',
-    color: 'var(--ums-brand-primary)',
-    border: '1px solid var(--ums-border)',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    whiteSpace: 'nowrap' as const,
-    fontWeight: 500,
-  },
-};

@@ -5,6 +5,9 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { CameraIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { getCsrfToken } from '../services/api';
+import { cn } from '@/lib/utils';
 
 interface ExtractedFields {
   insuranceName: string | null;
@@ -35,13 +38,23 @@ interface InsuranceCardUploadProps {
   lang: 'en' | 'es';
 }
 
-import { getCsrfToken } from '../services/api';
-function getCsrf(): string { return getCsrfToken() || ''; }
+function getCsrf(): string {
+  return getCsrfToken() || '';
+}
 
-export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enteredMemberId, enteredName, enteredDob, lang }: InsuranceCardUploadProps) {
+export function InsuranceCardUpload({
+  onFieldsExtracted,
+  enteredInsurance,
+  enteredMemberId,
+  enteredName,
+  enteredDob,
+  lang,
+}: InsuranceCardUploadProps) {
   const [images, setImages] = useState<string[]>([]);
   const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<{ fields: ExtractedFields; mismatches: Mismatch[] } | null>(null);
+  const [result, setResult] = useState<{ fields: ExtractedFields; mismatches: Mismatch[] } | null>(
+    null,
+  );
   const [error, setError] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -52,24 +65,30 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
     setTimeout(() => setStatusMsg(''), 2500);
   };
 
-  const addImage = useCallback((dataUrl: string) => {
-    setImages(prev => [...prev, dataUrl]);
-    showStatus(lang === 'en' ? 'Image attached!' : 'Imagen adjuntada!');
-  }, [lang]);
+  const addImage = useCallback(
+    (dataUrl: string) => {
+      setImages((prev) => [...prev, dataUrl]);
+      showStatus(lang === 'en' ? 'Image attached!' : 'Imagen adjuntada!');
+    },
+    [lang],
+  );
 
   const removeImage = (idx: number) => {
-    setImages(prev => prev.filter((_, i) => i !== idx));
+    setImages((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const processFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = (e) => { if (e.target?.result) addImage(e.target.result as string); };
+    reader.onload = (e) => {
+      if (e.target?.result) addImage(e.target.result as string);
+    };
     reader.readAsDataURL(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setDragOver(false);
+    e.preventDefault();
+    setDragOver(false);
     const files = e.dataTransfer.files;
     for (let i = 0; i < files.length; i++) processFile(files[i]);
   };
@@ -84,6 +103,7 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
         e.preventDefault();
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Global paste listener — must use useEffect (not useState) so the cleanup
@@ -95,10 +115,11 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
 
   const handleOcr = async () => {
     if (images.length === 0) return;
-    setProcessing(true); setError(''); setResult(null);
+    setProcessing(true);
+    setError('');
+    setResult(null);
 
     try {
-      // Convert first image data URL to a File/Blob for upload
       const dataUrl = images[0];
       const resp = await fetch(dataUrl);
       const blob = await resp.blob();
@@ -133,24 +154,55 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
     }
   };
 
+  const hasMismatches = result && result.mismatches.length > 0;
+  const hasMatches = result && result.mismatches.length === 0 && (enteredInsurance || enteredMemberId);
+
   return (
-    <div style={sty.container}>
+    <div className="mb-4">
       {/* Drop zone */}
       <div
-        style={{ ...sty.dropZone, ...(dragOver ? sty.dropZoneDragOver : {}) }}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        role="button"
+        tabIndex={0}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
+        className={cn(
+          'flex cursor-pointer items-center justify-center rounded-sm border-2 border-dashed border-border bg-muted px-4 py-3.5 text-center transition-colors',
+          dragOver && 'border-[var(--sage)] bg-[var(--sage-soft)]',
+        )}
       >
         {statusMsg ? (
-          <span style={sty.statusSuccess}>{statusMsg}</span>
+          <span className="font-semibold" style={{ color: 'var(--sage)' }}>
+            {statusMsg}
+          </span>
         ) : (
-          <span style={sty.dropText}>
-            {lang === 'en'
-              ? <>📸 <strong style={sty.uploadTrigger}>Click to Upload</strong>, Drag & Drop, or Paste (Ctrl+V)</>
-              : <>📸 <strong style={sty.uploadTrigger}>Clic para Subir</strong>, Arrastrar, o Pegar (Ctrl+V)</>}
+          <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
+            <CameraIcon className="h-4 w-4" />
+            {lang === 'en' ? (
+              <>
+                <strong className="cursor-pointer underline" style={{ color: 'var(--accent)' }}>
+                  Click to upload
+                </strong>
+                , drag & drop, or paste (Ctrl+V)
+              </>
+            ) : (
+              <>
+                <strong className="cursor-pointer underline" style={{ color: 'var(--accent)' }}>
+                  Clic para subir
+                </strong>
+                , arrastrar, o pegar (Ctrl+V)
+              </>
+            )}
           </span>
         )}
         <input
@@ -158,7 +210,7 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
           type="file"
           accept="image/*"
           multiple
-          style={{ display: 'none' }}
+          className="hidden"
           onChange={(e) => {
             const files = e.target.files;
             if (files) for (let i = 0; i < files.length; i++) processFile(files[i]);
@@ -169,11 +221,29 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
 
       {/* Thumbnail gallery */}
       {images.length > 0 && (
-        <div style={sty.gallery}>
+        <div className="mt-2.5 flex gap-2.5 overflow-x-auto p-0.5">
           {images.map((img, idx) => (
-            <div key={idx} style={sty.thumbWrapper}>
-              <img src={img} alt={`Card ${idx + 1}`} style={sty.thumbImg} />
-              <div style={sty.thumbRemove} onClick={(e) => { e.stopPropagation(); removeImage(idx); }}>&times;</div>
+            <div
+              key={idx}
+              className="relative h-[60px] w-[60px] shrink-0 overflow-hidden rounded-sm border border-border bg-card"
+            >
+              <img
+                src={img}
+                alt={`Card ${idx + 1}`}
+                className="h-full w-full rounded-[3px] object-cover"
+              />
+              <button
+                type="button"
+                aria-label={`Remove image ${idx + 1}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeImage(idx);
+                }}
+                className="absolute -right-1.5 -top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full border font-bold text-white"
+                style={{ background: 'var(--warm-red)', borderColor: 'var(--card)', fontSize: 10 }}
+              >
+                <XMarkIcon className="h-3 w-3" />
+              </button>
             </div>
           ))}
         </div>
@@ -183,52 +253,112 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
       {images.length > 0 && (
         <button
           type="button"
-          style={processing ? sty.ocrBtnDisabled : sty.ocrBtn}
           disabled={processing}
           onClick={handleOcr}
+          className="mt-2.5 rounded-sm px-5 py-2 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          style={{ background: processing ? 'var(--muted-foreground)' : 'var(--sage)' }}
         >
           {processing
-            ? (lang === 'en' ? 'Reading card...' : 'Leyendo tarjeta...')
-            : (lang === 'en' ? 'Read Insurance Card' : 'Leer Tarjeta de Seguro')}
+            ? lang === 'en'
+              ? 'Reading card…'
+              : 'Leyendo tarjeta…'
+            : lang === 'en'
+              ? 'Read insurance card'
+              : 'Leer tarjeta de seguro'}
         </button>
       )}
 
-      {error && <div style={sty.error}>{error}</div>}
+      {error && (
+        <div
+          role="alert"
+          className="mt-2 rounded-sm border px-3 py-2 text-[13px]"
+          style={{
+            background: 'var(--warm-red-soft)',
+            borderColor: 'var(--warm-red)',
+            color: 'var(--warm-red)',
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       {/* Results */}
       {result && (
-        <div style={sty.resultContainer}>
-          <h4 style={sty.resultTitle}>{lang === 'en' ? 'Extracted from Card' : 'Extraído de la Tarjeta'}</h4>
-          <div style={sty.fieldGrid}>
-            {result.fields.insuranceName && <FieldBadge label={lang === 'en' ? 'Insurance' : 'Seguro'} value={result.fields.insuranceName} />}
-            {result.fields.memberId && <FieldBadge label={lang === 'en' ? 'Member ID' : 'ID de Miembro'} value={result.fields.memberId} />}
-            {result.fields.groupNumber && <FieldBadge label={lang === 'en' ? 'Group #' : 'Grupo #'} value={result.fields.groupNumber} />}
-            {result.fields.planType && <FieldBadge label={lang === 'en' ? 'Plan' : 'Plan'} value={result.fields.planType} />}
-            {result.fields.subscriberName && <FieldBadge label={lang === 'en' ? 'Name on Card' : 'Nombre en Tarjeta'} value={result.fields.subscriberName} />}
+        <div
+          className="mt-3 rounded-sm border p-3.5"
+          style={{ background: 'var(--sage-soft)', borderColor: 'var(--sage)' }}
+        >
+          <h4
+            className="mb-2.5 font-semibold"
+            style={{ fontSize: 14, color: 'var(--sage)' }}
+          >
+            {lang === 'en' ? 'Extracted from card' : 'Extraído de la tarjeta'}
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {result.fields.insuranceName && (
+              <FieldBadge label={lang === 'en' ? 'Insurance' : 'Seguro'} value={result.fields.insuranceName} />
+            )}
+            {result.fields.memberId && (
+              <FieldBadge label={lang === 'en' ? 'Member ID' : 'ID de miembro'} value={result.fields.memberId} />
+            )}
+            {result.fields.groupNumber && (
+              <FieldBadge label={lang === 'en' ? 'Group #' : 'Grupo #'} value={result.fields.groupNumber} />
+            )}
+            {result.fields.planType && (
+              <FieldBadge label="Plan" value={result.fields.planType} />
+            )}
+            {result.fields.subscriberName && (
+              <FieldBadge
+                label={lang === 'en' ? 'Name on card' : 'Nombre en tarjeta'}
+                value={result.fields.subscriberName}
+              />
+            )}
             {result.fields.subscriberDob && <FieldBadge label="DOB" value={result.fields.subscriberDob} />}
-            {result.fields.effectiveDate && <FieldBadge label={lang === 'en' ? 'Effective' : 'Vigente'} value={result.fields.effectiveDate} />}
-            {result.fields.phoneNumber && <FieldBadge label={lang === 'en' ? 'Phone' : 'Teléfono'} value={result.fields.phoneNumber} />}
+            {result.fields.effectiveDate && (
+              <FieldBadge label={lang === 'en' ? 'Effective' : 'Vigente'} value={result.fields.effectiveDate} />
+            )}
+            {result.fields.phoneNumber && (
+              <FieldBadge label={lang === 'en' ? 'Phone' : 'Teléfono'} value={result.fields.phoneNumber} />
+            )}
           </div>
 
-          {/* Mismatch warnings */}
-          {result.mismatches.length > 0 && (
-            <div style={sty.mismatchContainer}>
-              <h4 style={sty.mismatchTitle}>
-                {lang === 'en' ? 'Mismatches Found' : 'Discrepancias Encontradas'}
+          {hasMismatches && (
+            <div
+              className="mt-3 rounded-sm border p-3"
+              style={{ background: 'var(--warm-red-soft)', borderColor: 'var(--warm-red)' }}
+            >
+              <h4
+                className="mb-2 font-semibold"
+                style={{ fontSize: 14, color: 'var(--warm-red)' }}
+              >
+                {lang === 'en' ? 'Mismatches found' : 'Discrepancias encontradas'}
               </h4>
               {result.mismatches.map((m, i) => (
-                <div key={i} style={sty.mismatchRow}>
+                <div key={i} className="mb-1.5 text-[13px] leading-snug">
                   <strong>{m.field}:</strong>{' '}
-                  <span style={sty.mismatchExtracted}>{lang === 'en' ? 'Card says' : 'Tarjeta dice'}: &quot;{m.extracted}&quot;</span>{' '}
-                  <span style={sty.mismatchEntered}>{lang === 'en' ? 'You entered' : 'Usted ingresó'}: &quot;{m.entered}&quot;</span>
+                  <span className="font-medium" style={{ color: 'var(--sage)' }}>
+                    {lang === 'en' ? 'Card says' : 'Tarjeta dice'}: &quot;{m.extracted}&quot;
+                  </span>{' '}
+                  <span className="font-medium" style={{ color: 'var(--warm-red)' }}>
+                    {lang === 'en' ? 'You entered' : 'Usted ingresó'}: &quot;{m.entered}&quot;
+                  </span>
                 </div>
               ))}
             </div>
           )}
 
-          {result.mismatches.length === 0 && (enteredInsurance || enteredMemberId) && (
-            <div style={sty.matchSuccess}>
-              {lang === 'en' ? 'All entered fields match the card.' : 'Todos los campos ingresados coinciden con la tarjeta.'}
+          {hasMatches && (
+            <div
+              className="mt-2.5 rounded-sm border px-3 py-2 text-[13px] font-semibold"
+              style={{
+                background: 'var(--sage-soft)',
+                borderColor: 'var(--sage)',
+                color: 'var(--sage)',
+              }}
+            >
+              {lang === 'en'
+                ? 'All entered fields match the card.'
+                : 'Todos los campos ingresados coinciden con la tarjeta.'}
             </div>
           )}
         </div>
@@ -239,37 +369,14 @@ export function InsuranceCardUpload({ onFieldsExtracted, enteredInsurance, enter
 
 function FieldBadge({ label, value }: { label: string; value: string }) {
   return (
-    <div style={sty.fieldBadge}>
-      <span style={sty.fieldLabel}>{label}</span>
-      <span style={sty.fieldValue}>{value}</span>
+    <div
+      className="inline-flex items-center gap-1 rounded-sm border px-2.5 py-1 text-[12px]"
+      style={{ background: 'var(--card)', borderColor: 'var(--sage)' }}
+    >
+      <span className="font-semibold" style={{ color: 'var(--sage)' }}>
+        {label}
+      </span>
+      <span className="text-foreground">{value}</span>
     </div>
   );
 }
-
-const sty = {
-  container: { marginBottom: 16 } as React.CSSProperties,
-  dropZone: { border: '2px dashed var(--ums-border)', borderRadius: 8, padding: '14px 16px', textAlign: 'center' as const, cursor: 'pointer', background: 'var(--ums-bg-surface-alt)', transition: 'all 0.2s', outline: 'none' } as React.CSSProperties,
-  dropZoneDragOver: { borderColor: 'var(--ums-success)', background: 'var(--ums-success-light)' } as React.CSSProperties,
-  dropText: { fontSize: 13, color: 'var(--ums-text-muted)' } as React.CSSProperties,
-  uploadTrigger: { color: 'var(--ums-brand-primary)', cursor: 'pointer', textDecoration: 'underline' as const } as React.CSSProperties,
-  statusSuccess: { color: 'var(--ums-success)', fontWeight: 700, fontSize: 13 } as React.CSSProperties,
-  gallery: { display: 'flex', gap: 10, marginTop: 10, overflowX: 'auto' as const, padding: 2 } as React.CSSProperties,
-  thumbWrapper: { position: 'relative' as const, width: 60, height: 60, border: '1px solid var(--ums-border)', borderRadius: 6, background: 'var(--ums-bg-surface)', flexShrink: 0 } as React.CSSProperties,
-  thumbImg: { width: '100%', height: '100%', objectFit: 'cover' as const, borderRadius: 5 } as React.CSSProperties,
-  thumbRemove: { position: 'absolute' as const, top: -6, right: -6, background: 'var(--ums-error)', color: '#fff', borderRadius: '50%', width: 18, height: 18, textAlign: 'center' as const, lineHeight: '16px', fontSize: 12, cursor: 'pointer', border: '1px solid var(--ums-bg-surface)', fontWeight: 700 } as React.CSSProperties,
-  ocrBtn: { marginTop: 10, background: 'var(--ums-success)', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' } as React.CSSProperties,
-  ocrBtnDisabled: { marginTop: 10, background: 'var(--ums-text-placeholder)', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'not-allowed' } as React.CSSProperties,
-  error: { background: 'var(--ums-error-light)', color: 'var(--ums-error-text)', padding: '8px 12px', borderRadius: 6, marginTop: 8, fontSize: 13, border: '1px solid var(--ums-error-border)' } as React.CSSProperties,
-  resultContainer: { marginTop: 12, border: '1px solid var(--ums-success-border)', borderRadius: 8, padding: 14, background: 'var(--ums-success-light)' } as React.CSSProperties,
-  resultTitle: { margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: 'var(--ums-success-text)' } as React.CSSProperties,
-  fieldGrid: { display: 'flex', flexWrap: 'wrap' as const, gap: 8 } as React.CSSProperties,
-  fieldBadge: { background: 'var(--ums-success-light)', border: '1px solid var(--ums-success-border)', borderRadius: 6, padding: '4px 10px', fontSize: 12 } as React.CSSProperties,
-  fieldLabel: { fontWeight: 700, color: 'var(--ums-success-text)', marginRight: 4 } as React.CSSProperties,
-  fieldValue: { color: 'var(--ums-text-primary)' } as React.CSSProperties,
-  mismatchContainer: { marginTop: 12, border: '1px solid var(--ums-error-border)', borderRadius: 8, padding: 12, background: 'var(--ums-error-light)' } as React.CSSProperties,
-  mismatchTitle: { margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: 'var(--ums-error-text)' } as React.CSSProperties,
-  mismatchRow: { fontSize: 13, marginBottom: 6, lineHeight: 1.5 } as React.CSSProperties,
-  mismatchExtracted: { color: 'var(--ums-success-text)', fontWeight: 500 } as React.CSSProperties,
-  mismatchEntered: { color: 'var(--ums-error-text)', fontWeight: 500 } as React.CSSProperties,
-  matchSuccess: { marginTop: 10, background: 'var(--ums-success-light)', color: 'var(--ums-success-text)', padding: '8px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600, border: '1px solid var(--ums-success-border)' } as React.CSSProperties,
-};

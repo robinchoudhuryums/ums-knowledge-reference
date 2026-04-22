@@ -68,6 +68,7 @@ import {
   isAccountLocked,
   updateLockoutCache,
   isAccountLockedFromCache,
+  ENABLE_NATIVE_MFA,
   MAX_FAILED_ATTEMPTS,
   LOCKOUT_DURATION_MS,
   PASSWORD_HISTORY_SIZE,
@@ -197,8 +198,16 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
       return { kind: 'invalid_credentials' };
     }
 
-    // MFA check: if user has MFA enabled, require a valid TOTP code
-    if (user.mfaEnabled && user.mfaSecret) {
+    // MFA check: if user has MFA enabled, require a valid TOTP code.
+    //
+    // When ENABLE_NATIVE_MFA=false the check is skipped — the expectation is
+    // that operators have flipped this after SSO is stable, because CA
+    // enforces MFA before its session exists and the SSO middleware trusts
+    // that signal (mfaVerified:true on the CaVerifyResponse). Users still
+    // enrolled in RAG's native MFA simply don't get prompted; stored
+    // mfaSecret / mfaRecoveryCodes remain untouched so a future flip back
+    // to true restores the gate without re-enrollment.
+    if (ENABLE_NATIVE_MFA && user.mfaEnabled && user.mfaSecret) {
       if (!mfaCode) {
         // Password correct but MFA code not provided — tell frontend to prompt for it
         return { kind: 'mfa_required' };
@@ -335,6 +344,23 @@ export async function logoutHandler(req: AuthRequest, res: Response): Promise<vo
     revokeToken(req.user.jti);
   }
   clearAuthCookie(res);
+
+  // Fire-and-forget SLO to CA. Captures the cookie header BEFORE the
+  // response is sent (though Node's fetch would still have access via
+  // the closure, this is clearer). `void` discards the promise so it
+  // doesn't unhandle-reject; the helper itself is non-throwing anyway.
+  const rawCookie = req.headers.cookie;
+  void (async () => {
+    try {
+      const { forwardSsoLogout } = await import('./ssoLogout');
+      await forwardSsoLogout(rawCookie);
+    } catch (err) {
+      logger.warn('SSO logout forward helper threw', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  })();
+
   res.json({ message: 'Logged out' });
 }
 

@@ -4,37 +4,58 @@
  */
 
 import { useState } from 'react';
+import { ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import { PpdQuestionnaire } from './PpdQuestionnaire';
 import { PpdQueueViewer } from './PpdQueueViewer';
 import { AccountCreationForm } from './AccountCreationForm';
 import { PapAccountCreationForm } from './PapAccountCreationForm';
 import { FormWithQueue } from './FormWithQueue';
+import { cn } from '@/lib/utils';
 
 type SubTab = 'ppd' | 'pmd-account' | 'pap-account';
+
+const SUB_TABS: { key: SubTab; label: string }[] = [
+  { key: 'ppd', label: 'PPD Questionnaire' },
+  { key: 'pmd-account', label: 'PMD Account Creation' },
+  { key: 'pap-account', label: 'PAP Account Creation' },
+];
 
 export function FormsTab() {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('ppd');
 
-  const subTabs: { key: SubTab; label: string }[] = [
-    { key: 'ppd', label: 'PPD Questionnaire' },
-    { key: 'pmd-account', label: 'PMD Account Creation' },
-    { key: 'pap-account', label: 'PAP Account Creation' },
-  ];
-
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={styles.subNav}>
-        {subTabs.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setActiveSubTab(t.key)}
-            style={activeSubTab === t.key ? styles.subTabActive : styles.subTab}
-          >
-            {t.label}
-          </button>
-        ))}
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      {/* Sub-nav — mono-font tabs with accent underline for active */}
+      <div className="flex shrink-0 items-center gap-0 border-b border-border bg-card px-4 sm:px-7">
+        {SUB_TABS.map((t) => {
+          const active = activeSubTab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setActiveSubTab(t.key)}
+              aria-pressed={active}
+              className={cn(
+                'relative px-4 py-2.5 text-[13px] transition-colors',
+                active
+                  ? 'font-semibold text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {t.label}
+              {active && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 bottom-0 h-0.5"
+                  style={{ background: 'var(--accent)' }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
+
+      <div className="min-h-0 flex-1 overflow-auto">
         {activeSubTab === 'ppd' && (
           <FormWithQueue
             formLabel="PPD Form"
@@ -64,71 +85,38 @@ export function FormsTab() {
   );
 }
 
-/** Placeholder queue for PMD Account submissions (backend queue not yet implemented) */
+function QueuePlaceholder({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="mx-auto my-6 max-w-[1100px] px-4 sm:px-7">
+      <div className="rounded-sm border border-border bg-card px-6 py-10 text-center shadow-sm">
+        <div
+          aria-hidden="true"
+          className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-sm"
+          style={{ background: 'var(--copper-soft)', color: 'var(--accent)' }}
+        >
+          <ClipboardDocumentListIcon className="h-6 w-6" />
+        </div>
+        <p className="mb-1 text-[15px] font-semibold text-foreground">{title}</p>
+        <p className="text-[13px] text-muted-foreground">{message}</p>
+      </div>
+    </div>
+  );
+}
+
 function PmdQueuePlaceholder() {
   return (
-    <div style={queuePlaceholderStyles.container}>
-      <div style={queuePlaceholderStyles.card}>
-        <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.4 }}>📋</div>
-        <p style={queuePlaceholderStyles.title}>PMD Account Submission Queue</p>
-        <p style={queuePlaceholderStyles.text}>PMD Account Creation submissions will appear here. Currently, submissions are sent via email.</p>
-      </div>
-    </div>
+    <QueuePlaceholder
+      title="PMD account submission queue"
+      message="PMD Account Creation submissions will appear here. Currently, submissions are sent via email."
+    />
   );
 }
 
-/** Placeholder queue for PAP Account submissions */
 function PapQueuePlaceholder() {
   return (
-    <div style={queuePlaceholderStyles.container}>
-      <div style={queuePlaceholderStyles.card}>
-        <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.4 }}>📋</div>
-        <p style={queuePlaceholderStyles.title}>PAP Account Submission Queue</p>
-        <p style={queuePlaceholderStyles.text}>PAP Account Creation submissions will appear here. Currently, submissions are sent via email.</p>
-      </div>
-    </div>
+    <QueuePlaceholder
+      title="PAP account submission queue"
+      message="PAP Account Creation submissions will appear here. Currently, submissions are sent via email."
+    />
   );
 }
-
-const queuePlaceholderStyles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', maxWidth: '1100px', margin: '20px auto' },
-  card: {
-    textAlign: 'center', padding: '40px 20px',
-    background: 'var(--ums-bg-surface)', borderRadius: '12px',
-    border: '1px solid var(--ums-border)', boxShadow: 'var(--ums-shadow-sm)',
-  },
-  title: { fontSize: '15px', fontWeight: 600, color: 'var(--ums-text-primary)', margin: '0 0 4px' },
-  text: { fontSize: '13px', color: 'var(--ums-text-muted)', margin: 0 },
-};
-
-const styles = {
-  subNav: {
-    display: 'flex',
-    gap: 0,
-    borderBottom: '2px solid var(--ums-border)',
-    flexShrink: 0,
-    background: 'var(--ums-bg-surface)',
-  } as React.CSSProperties,
-  subTab: {
-    padding: '10px 20px',
-    border: 'none',
-    background: 'transparent',
-    color: 'var(--ums-text-muted)',
-    fontSize: 14,
-    fontWeight: 500,
-    cursor: 'pointer',
-    borderBottom: '2px solid transparent',
-    marginBottom: -2,
-  } as React.CSSProperties,
-  subTabActive: {
-    padding: '10px 20px',
-    border: 'none',
-    background: 'transparent',
-    color: 'var(--ums-brand-primary)',
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: 'pointer',
-    borderBottom: '2px solid var(--ums-brand-primary)',
-    marginBottom: -2,
-  } as React.CSSProperties,
-};

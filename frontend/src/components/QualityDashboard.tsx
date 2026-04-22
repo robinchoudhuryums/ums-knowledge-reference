@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getQualityMetrics, QualityMetrics } from '../services/api';
+import { cn } from '@/lib/utils';
 
 export function QualityDashboard() {
   const [metrics, setMetrics] = useState<QualityMetrics | null>(null);
@@ -10,74 +11,134 @@ export function QualityDashboard() {
   useEffect(() => {
     setLoading(true);
     getQualityMetrics(days)
-      .then(data => { setMetrics(data); setError(''); })
-      .catch(err => setError(err.message))
+      .then((data) => {
+        setMetrics(data);
+        setError('');
+      })
+      .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [days]);
 
-  if (loading) return <div style={styles.loading}>Loading quality metrics...</div>;
-  if (error) return <div style={styles.error}>{error}</div>;
+  if (loading) {
+    return (
+      <div className="p-6 text-center text-[13px] text-muted-foreground">
+        Loading quality metrics…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="mx-7 mt-6 rounded-sm border px-3 py-2 text-[13px]"
+        style={{
+          background: 'var(--warm-red-soft)',
+          borderColor: 'var(--warm-red)',
+          color: 'var(--warm-red)',
+        }}
+      >
+        {error}
+      </div>
+    );
+  }
   if (!metrics) return null;
 
-  const maxDayQueries = Math.max(...metrics.dailyStats.map(d => d.queries), 1);
+  const maxDayQueries = Math.max(...metrics.dailyStats.map((d) => d.queries), 1);
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h3 style={styles.title}>Answer Quality Metrics</h3>
-        <div style={styles.periodButtons}>
-          {[7, 14, 30].map(d => (
+    <div className="p-6 sm:p-7">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div>
+          <div
+            className="font-mono uppercase text-muted-foreground"
+            style={{ fontSize: 10, letterSpacing: '0.14em' }}
+          >
+            Quality
+          </div>
+          <h2
+            className="mt-1 font-display font-medium text-foreground"
+            style={{ fontSize: 20, lineHeight: 1.15, letterSpacing: '-0.3px' }}
+          >
+            Answer quality metrics
+          </h2>
+        </div>
+        <div className="inline-flex rounded-sm border border-border bg-card p-0.5">
+          {[7, 14, 30].map((d) => (
             <button
               key={d}
+              type="button"
               onClick={() => setDays(d)}
-              style={days === d ? styles.periodActive : styles.periodButton}
-            >{d}d</button>
+              aria-pressed={days === d}
+              className={cn(
+                'rounded-sm px-3 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors',
+                days === d
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {d}d
+            </button>
           ))}
         </div>
       </div>
 
       {/* Summary cards */}
-      <div style={styles.cards}>
-        <div style={styles.card}>
-          <div style={styles.cardValue}>{metrics.qualityScore}%</div>
-          <div style={styles.cardLabel}>Quality Score</div>
-        </div>
-        <div style={styles.card}>
-          <div style={styles.cardValue}>{metrics.totalQueries}</div>
-          <div style={styles.cardLabel}>Total Queries</div>
-        </div>
-        <div style={styles.card}>
-          <div style={styles.cardValue}>{metrics.totalFlagged}</div>
-          <div style={styles.cardLabel}>Flagged Responses</div>
-        </div>
-        <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-high)' }}>{metrics.confidenceCounts.high}</div>
-          <div style={styles.cardLabel}>High Confidence</div>
-        </div>
-        <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-partial)' }}>{metrics.confidenceCounts.partial}</div>
-          <div style={styles.cardLabel}>Partial</div>
-        </div>
-        <div style={styles.card}>
-          <div style={{ ...styles.cardValue, color: 'var(--ums-conf-low)' }}>{metrics.confidenceCounts.low}</div>
-          <div style={styles.cardLabel}>Low / Unanswered</div>
-        </div>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6">
+        <SummaryCard value={`${metrics.qualityScore}%`} label="Quality score" />
+        <SummaryCard value={metrics.totalQueries} label="Total queries" />
+        <SummaryCard value={metrics.totalFlagged} label="Flagged responses" />
+        <SummaryCard
+          value={metrics.confidenceCounts.high}
+          label="High confidence"
+          valueColor="var(--conf-high)"
+        />
+        <SummaryCard
+          value={metrics.confidenceCounts.partial}
+          label="Partial"
+          valueColor="var(--conf-partial)"
+        />
+        <SummaryCard
+          value={metrics.confidenceCounts.low}
+          label="Low / unanswered"
+          valueColor="var(--conf-low)"
+        />
       </div>
 
       {/* Daily trend */}
-      <div style={styles.section}>
-        <h4 style={styles.sectionTitle}>Daily Trend</h4>
-        <div style={styles.chart}>
-          {metrics.dailyStats.map(day => (
-            <div key={day.date} style={styles.chartRow}>
-              <span style={styles.chartDate}>{day.date.slice(5)}</span>
-              <div style={styles.chartBarBg}>
-                <div style={{ ...styles.chartBar, width: `${(day.queries / maxDayQueries) * 100}%` }}>
-                  <span style={styles.chartBarLabel}>{day.queries}q</span>
+      <div className="mb-6 rounded-sm border border-border bg-card p-4 shadow-sm">
+        <h3 className="mb-3 text-[14px] font-semibold text-foreground">Daily trend</h3>
+        <div className="flex flex-col gap-1">
+          {metrics.dailyStats.map((day) => (
+            <div key={day.date} className="flex items-center gap-2 text-[12px]">
+              <span className="w-12 text-right font-mono text-[11px] text-muted-foreground tabular-nums">
+                {day.date.slice(5)}
+              </span>
+              <div className="h-5 flex-1 overflow-hidden rounded-sm bg-muted">
+                <div
+                  className="flex h-full items-center pl-1.5 font-mono text-[10px] text-background transition-all duration-300"
+                  style={{
+                    width: `${(day.queries / maxDayQueries) * 100}%`,
+                    background: 'var(--accent)',
+                    minWidth: 2,
+                  }}
+                >
+                  <span className="whitespace-nowrap">{day.queries}q</span>
                 </div>
               </div>
-              <span style={styles.chartPct}>{day.highPct}% high</span>
-              {day.flagged > 0 && <span style={styles.chartFlagged}>{day.flagged} flagged</span>}
+              <span
+                className="w-16 text-[11px] tabular-nums"
+                style={{ color: 'var(--conf-high)' }}
+              >
+                {day.highPct}% high
+              </span>
+              {day.flagged > 0 && (
+                <span
+                  className="text-[11px] tabular-nums"
+                  style={{ color: 'var(--warm-red)' }}
+                >
+                  {day.flagged} flagged
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -85,13 +146,23 @@ export function QualityDashboard() {
 
       {/* Knowledge gaps */}
       {metrics.unansweredQuestions.length > 0 && (
-        <div style={styles.section}>
-          <h4 style={styles.sectionTitle}>Knowledge Gaps (Low Confidence Questions)</h4>
-          <div style={styles.gapList}>
+        <div className="rounded-sm border border-border bg-card p-4 shadow-sm">
+          <h3 className="mb-3 text-[14px] font-semibold text-foreground">
+            Knowledge gaps (low-confidence questions)
+          </h3>
+          <div className="flex flex-col gap-1.5">
             {metrics.unansweredQuestions.map((q, i) => (
-              <div key={i} style={styles.gapItem}>
-                <span style={styles.gapQuestion}>{q.question}</span>
-                <span style={styles.gapDate}>{q.date}</span>
+              <div
+                key={i}
+                className="flex justify-between rounded-sm border px-3 py-2 text-[13px]"
+                style={{
+                  background: 'var(--warm-red-soft)',
+                  borderColor: 'var(--warm-red)',
+                  color: 'var(--warm-red)',
+                }}
+              >
+                <span className="flex-1">{q.question}</span>
+                <span className="ml-3 text-[11px] opacity-80">{q.date}</span>
               </div>
             ))}
           </div>
@@ -101,31 +172,26 @@ export function QualityDashboard() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '24px 28px' },
-  loading: { padding: '24px', color: 'var(--ums-text-muted)', textAlign: 'center' },
-  error: { padding: '24px', color: 'var(--ums-error)' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  title: { margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)' },
-  periodButtons: { display: 'flex', gap: '4px' },
-  periodButton: { padding: '5px 12px', border: '1px solid var(--ums-border)', borderRadius: '6px', background: 'var(--ums-bg-surface)', cursor: 'pointer', fontSize: '12px', color: 'var(--ums-text-muted)' },
-  periodActive: { padding: '5px 12px', border: '1px solid var(--ums-brand-primary)', borderRadius: '6px', background: 'var(--ums-brand-light)', cursor: 'pointer', fontSize: '12px', color: 'var(--ums-brand-text)', fontWeight: 600 },
-  cards: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px' },
-  card: { padding: '16px', background: 'var(--ums-bg-surface-alt)', borderRadius: '10px', border: '1px solid var(--ums-border)', textAlign: 'center' as const },
-  cardValue: { fontSize: '24px', fontWeight: 700, color: 'var(--ums-text-primary)' },
-  cardLabel: { fontSize: '11px', color: 'var(--ums-text-muted)', marginTop: '4px', textTransform: 'uppercase' as const, letterSpacing: '0.3px' },
-  section: { marginBottom: '24px' },
-  sectionTitle: { margin: '0 0 12px', fontSize: '14px', fontWeight: 600, color: 'var(--ums-text-primary)' },
-  chart: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  chartRow: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' },
-  chartDate: { width: '50px', color: 'var(--ums-text-muted)', fontSize: '11px', textAlign: 'right' as const },
-  chartBarBg: { flex: 1, height: '20px', background: 'var(--ums-bg-surface-alt)', borderRadius: '4px', overflow: 'hidden' },
-  chartBar: { height: '100%', background: 'linear-gradient(90deg, var(--ums-brand-primary), #42A5F5)', borderRadius: '4px', display: 'flex', alignItems: 'center', minWidth: '2px' },
-  chartBarLabel: { fontSize: '10px', color: 'white', paddingLeft: '6px', whiteSpace: 'nowrap' as const },
-  chartPct: { width: '70px', color: 'var(--ums-conf-high)', fontSize: '11px' },
-  chartFlagged: { color: 'var(--ums-error)', fontSize: '11px' },
-  gapList: { display: 'flex', flexDirection: 'column' as const, gap: '6px' },
-  gapItem: { display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--ums-error-light)', border: '1px solid var(--ums-error-border)', borderRadius: '8px', fontSize: '13px' },
-  gapQuestion: { color: 'var(--ums-text-secondary)', flex: 1 },
-  gapDate: { color: 'var(--ums-text-muted)', fontSize: '11px', marginLeft: '12px' },
-};
+function SummaryCard({
+  value,
+  label,
+  valueColor,
+}: {
+  value: string | number;
+  label: string;
+  valueColor?: string;
+}) {
+  return (
+    <div className="rounded-sm border border-border bg-card p-4 text-center shadow-sm">
+      <div
+        className="text-[24px] font-bold tabular-nums text-foreground"
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {value}
+      </div>
+      <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+    </div>
+  );
+}

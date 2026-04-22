@@ -9,7 +9,7 @@
 import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
-import { JWT_SECRET, JWT_EXPIRY } from './authConfig';
+import { JWT_SECRET, JWT_EXPIRY, SHARED_COOKIE_DOMAIN } from './authConfig';
 import { getSets } from '../cache';
 import { logger } from '../utils/logger';
 
@@ -23,6 +23,15 @@ const REFRESH_REVOCATION_TTL_MS = 7 * 24 * 60 * 60 * 1000 + 60 * 1000; // 7 days
 
 // ─── Cookie Management ──────────────────────────────────────────────────────
 
+// When SHARED_COOKIE_DOMAIN is set (e.g. ".umscallanalyzer.com"), all three
+// cookies (auth, refresh, CSRF) are scoped to the parent domain so they ride
+// with the shared session cookie across subdomains. sameSite:strict still
+// works because strict is about cross-SITE (registrable domain), not cross-
+// subdomain. Unset = exact host (default, current behavior).
+const sharedDomain = SHARED_COOKIE_DOMAIN
+  ? { domain: SHARED_COOKIE_DOMAIN }
+  : {};
+
 export function setAuthCookie(res: Response, token: string): void {
   res.cookie(AUTH_COOKIE, token, {
     httpOnly: true,
@@ -30,6 +39,7 @@ export function setAuthCookie(res: Response, token: string): void {
     sameSite: 'strict',
     path: '/',
     maxAge: 30 * 60 * 1000,
+    ...sharedDomain,
   });
 }
 
@@ -40,21 +50,27 @@ export function setRefreshCookie(res: Response, token: string): void {
     sameSite: 'strict',
     path: '/api/auth/refresh', // Only sent to refresh endpoint
     maxAge: REFRESH_TOKEN_TTL_MS,
+    ...sharedDomain,
   });
 }
 
 export function clearAuthCookie(res: Response): void {
+  // clearCookie must match the original cookie's domain + path exactly, or the
+  // browser keeps the old entry. Passing the same sharedDomain as the setter
+  // guarantees a clean removal.
   res.clearCookie(AUTH_COOKIE, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     path: '/',
+    ...sharedDomain,
   });
   res.clearCookie(REFRESH_COOKIE, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     path: '/api/auth/refresh',
+    ...sharedDomain,
   });
 }
 

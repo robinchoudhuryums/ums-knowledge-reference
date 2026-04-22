@@ -4,10 +4,8 @@
  */
 
 import { useState } from 'react';
-import {
-  ClipboardDocumentListIcon,
-  DocumentTextIcon,
-} from '@heroicons/react/24/outline';
+import { ClipboardDocumentListIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { cn } from '@/lib/utils';
 
 interface Props {
   formLabel: string;
@@ -16,69 +14,62 @@ interface Props {
   QueueComponent: React.ComponentType;
 }
 
-export function FormWithQueue({ formLabel, queueLabel, FormComponent, QueueComponent }: Props) {
+export function FormWithQueue({
+  formLabel,
+  queueLabel,
+  FormComponent,
+  QueueComponent,
+}: Props) {
   const [view, setView] = useState<'form' | 'queue'>('form');
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={styles.toggleBar}>
-        <button
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex shrink-0 items-center gap-1 border-b border-border bg-muted px-4 py-1.5 sm:px-7">
+        <ToggleButton
+          active={view === 'form'}
           onClick={() => setView('form')}
-          style={view === 'form' ? styles.toggleActive : styles.toggle}
-        >
-          <DocumentTextIcon className="w-4 h-4" />
-          {formLabel}
-        </button>
-        <button
+          Icon={DocumentTextIcon}
+          label={formLabel}
+        />
+        <ToggleButton
+          active={view === 'queue'}
           onClick={() => setView('queue')}
-          style={view === 'queue' ? styles.toggleActive : styles.toggle}
-        >
-          <ClipboardDocumentListIcon className="w-4 h-4" />
-          {queueLabel}
-        </button>
+          Icon={ClipboardDocumentListIcon}
+          label={queueLabel}
+        />
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div className="min-h-0 flex-1 overflow-auto">
         {view === 'form' ? <FormComponent /> : <QueueComponent />}
       </div>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  toggleBar: {
-    display: 'flex',
-    gap: '4px',
-    padding: '6px 16px',
-    background: 'var(--ums-bg-surface-alt)',
-    borderBottom: '1px solid var(--ums-border)',
-    flexShrink: 0,
-  },
-  toggle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '5px',
-    padding: '5px 12px',
-    fontSize: '12px',
-    fontWeight: 500,
-    color: 'var(--ums-text-muted)',
-    background: 'transparent',
-    border: '1px solid transparent',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-  },
-  toggleActive: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '5px',
-    padding: '5px 12px',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: 'var(--ums-brand-text)',
-    background: 'var(--ums-bg-surface)',
-    border: '1px solid var(--ums-border)',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    boxShadow: 'var(--ums-shadow-sm)',
-  },
-};
+function ToggleButton({
+  active,
+  onClick,
+  Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  Icon: React.ComponentType<{ className?: string }>;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-sm border px-3 py-1 text-[12px] transition-colors',
+        active
+          ? 'border-border bg-card font-semibold text-foreground shadow-sm'
+          : 'border-transparent bg-transparent text-muted-foreground hover:text-foreground',
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}

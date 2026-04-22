@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import AppearanceProvider from './components/appearance-provider';
+import StyleGuide from './pages/StyleGuide';
 import { useAuth } from './hooks/useAuth';
 import { useIdleTimeout } from './hooks/useIdleTimeout';
 import { LoginForm } from './components/LoginForm';
@@ -66,7 +68,20 @@ function useDarkMode(): [boolean, () => void] {
   return [dark, toggle];
 }
 
+// Phase 1 warm-paper escape hatch: append `?style-guide=1` to any URL to preview
+// the new design system without logging in. Remove this branch once the
+// full warm-paper migration lands in Phase 3.
+const isStyleGuide = new URLSearchParams(window.location.search).get('style-guide') === '1';
+
 export default function App() {
+  if (isStyleGuide) {
+    return (
+      <AppearanceProvider>
+        <StyleGuide />
+      </AppearanceProvider>
+    );
+  }
+
   const { auth, login, logout, isAuthenticated, isAdmin, mustChangePassword, handlePasswordChanged, mfaRequired, submitMfaCode } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
   const [collections, setCollections] = useState<Collection[]>([]);

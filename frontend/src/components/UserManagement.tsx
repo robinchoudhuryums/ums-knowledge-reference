@@ -264,6 +264,7 @@ export function UserManagement() {
                   <Th>Username</Th>
                   <Th>Role</Th>
                   <Th>Email</Th>
+                  <Th>Auth</Th>
                   <Th>MFA</Th>
                   <Th>Status</Th>
                   <Th>Last login</Th>
@@ -362,6 +363,27 @@ export function UserManagement() {
                           >
                             {user.email || 'Set email…'}
                           </button>
+                        )}
+                      </Td>
+                      <Td>
+                        {user.ssoSub ? (
+                          <span
+                            className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider"
+                            style={{ color: 'var(--accent)' }}
+                            // The raw ssoSub is stable, opaque, and useful
+                            // for compliance audits — show on hover rather
+                            // than in the always-visible row.
+                            title={`SSO: ${user.ssoSource || 'external'} — caUserId=${user.ssoSub}`}
+                          >
+                            SSO
+                          </span>
+                        ) : (
+                          <span
+                            className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                            title="Break-glass: local password auth"
+                          >
+                            Local
+                          </span>
                         )}
                       </Td>
                       <Td>

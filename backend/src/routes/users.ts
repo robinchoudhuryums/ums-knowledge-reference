@@ -24,6 +24,12 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       createdAt: u.createdAt,
       lastLogin: u.lastLogin || null,
       mustChangePassword: !!u.mustChangePassword,
+      // SSO provenance — surfaced for compliance audits ("which local
+      // user is which CA user?") and for admin visibility of who is
+      // SSO-linked vs local-password. Present only when populated;
+      // break-glass local admins keep these as null.
+      ssoSub: u.ssoSub || null,
+      ssoSource: u.ssoSource || null,
     }));
     res.json({ users: sanitized });
   } catch (error) {

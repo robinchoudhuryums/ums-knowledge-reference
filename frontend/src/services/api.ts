@@ -166,6 +166,10 @@ export interface AdminUser {
   lockedUntil?: string;
   mfaEnabled?: boolean;
   allowedCollections?: string[];
+  /** CA's user UUID when the row was JIT-provisioned or matched via SSO. */
+  ssoSub?: string | null;
+  /** Free-form source tag for the upstream IdP (e.g. "callanalyzer"). */
+  ssoSource?: string | null;
 }
 
 export async function listUsers(): Promise<{ users: AdminUser[] }> {

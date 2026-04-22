@@ -6,7 +6,7 @@
  * RAG stack.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import type { User } from '../types';

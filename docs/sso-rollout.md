@@ -151,16 +151,32 @@ service. No data migration is required.
   CA-side audit entries — the session itself was already audited at
   CA login.
 
+## Closed gaps (shipped post-Track-2)
+
+- **Single sign-out** — shipped. RAG's `logoutHandler` fires a
+  best-effort `POST /api/auth/sso-logout` to CA with the forwarded
+  cookie + `SSO_SHARED_SECRET`. CA's new endpoint bypasses the UA
+  fingerprint check, destroys the session via `req.logout()` +
+  `session.destroy()`, and writes a `sso_logout` HIPAA audit entry.
+  Fire-and-forget from RAG's side; non-throwing, 1.5s timeout, all
+  failure modes log at `warn` without blocking the user's logout.
+- **Return-to after CA login** — shipped. CA's login page reads
+  `?return_to=<url>` and redirects post-login. SSRF-guarded via
+  `client/src/lib/return-to.ts`: only `http(s)://` URLs whose
+  hostname is `umscallanalyzer.com` or a subdomain are accepted;
+  open-redirect lookalikes rejected.
+- **CA admin visibility** — shipped (P2-2). New
+  `GET /api/admin/users/unseen-by-rag` on CA + accent-stripe banner
+  on the Users tab lists users who exist in CA but have never logged
+  into RAG. Reads RAG's new `GET /api/auth/sso-seen` endpoint which
+  returns the set of known `ssoSub` values.
+- **Auth column on RAG user management** — shipped (P2-3). RAG's
+  admin User Management table now has an "Auth" column with SSO /
+  Local pills; hover on the SSO pill shows the full `ssoSub` (CA
+  user ID) for compliance audits.
+
 ## Known gaps (deferred — not blockers)
 
-- **Single sign-out**: logging out of RAG doesn't invalidate the CA
-  session. A user on both tools has to sign out of each. Can be added
-  later by having RAG's `logoutHandler` fire a best-effort POST to
-  CA's `/api/auth/logout` with the forwarded cookie.
-- **Return-to after CA login**: the SSO button passes
-  `?return_to=<rag-url>`, but CA's login page doesn't honor it — users
-  land on CA's dashboard after login and must re-navigate to RAG.
-  Follow-on in CA to read `return_to` and redirect appropriately.
 - **Embedded RAG chat in CA** (Track 3): shipped separately. Once SSO
   is enabled (Stage 3 above), enable the embed by setting
   `EMBED_ALLOWED_ORIGIN=https://umscallanalyzer.com` on RAG and

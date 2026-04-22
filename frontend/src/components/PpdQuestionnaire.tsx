@@ -7,170 +7,45 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import DOMPurify from 'dompurify';
+import { ChevronRightIcon } from '@heroicons/react/24/outline';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
 import { useFormDraft } from '../hooks/useFormDraft';
 import { FormDraftBanner } from './FormDraftBanner';
-import type { FormDraft } from '../services/api';
+import { getCsrfToken, type FormDraft } from '../services/api';
+import {
+  type ApiQuestion,
+  type Lang,
+  type RecommendApiResponse,
+  type RecommendationProduct,
+  storageKey,
+} from './PpdQuestionnaireShared';
+import { PpdQuestionnaireRow } from './PpdQuestionnaireRow';
+import { PpdQuestionnairePainGrid } from './PpdQuestionnairePainGrid';
+import { PpdQuestionnaireProductCard } from './PpdQuestionnaireProductCard';
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
-type Lang = 'en' | 'es';
-
-interface ApiQuestion {
-  id: string;
-  number: string;
-  text: string;
-  spanishText: string;
-  type: 'yes-no' | 'text' | 'select' | 'number' | 'multi-select';
-  group: string;
-  required: boolean;
-  subQuestionOf?: string;
-  showWhen?: string;
-  options?: string[];
+function getCsrf(): string {
+  return getCsrfToken() || '';
 }
 
-interface RecommendationProduct {
-  hcpcsCode: string;
-  description: string;
-  justification: string;
-  category: 'complex-rehab' | 'standard';
-  imageUrl?: string;
-  brochureUrl?: string;
-  seatDimensions?: string;
-  colors?: string;
-  leadTime?: string;
-  notes?: string;
-  portable?: boolean;
+function CompletionBadge({ done, total }: { done: number; total: number }) {
+  const tone =
+    done === total && total > 0
+      ? { bg: 'var(--sage)', fg: 'var(--card)' }
+      : done > 0
+        ? { bg: 'var(--amber)', fg: 'var(--card)' }
+        : { bg: 'var(--muted)', fg: 'var(--muted-foreground)' };
+  return (
+    <span
+      className="inline-flex items-center rounded-sm px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums"
+      style={{ background: tone.bg, color: tone.fg }}
+    >
+      {done}/{total}
+    </span>
+  );
 }
-
-interface RecommendApiResponse {
-  patientInfo: string;
-  recommendations: RecommendationProduct[];
-  submittedAt: string;
-  agentName: string;
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-import { getCsrfToken } from '../services/api';
-function getCsrf(): string { return getCsrfToken() || ''; }
-
-function storageKey(patient: string): string {
-  return `ppd_responses_${patient.replace(/\s+/g, '_').toLowerCase()}`;
-}
-
-/** Convert a non-PNG image blob to PNG for clipboard compatibility */
-function convertToPng(blob: Blob): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    // S2-7: revoke the object URL in both success and error paths so long
-    // agent sessions with many PMD recommendations don't accumulate blob
-    // URLs in memory until the tab is closed.
-    const url = URL.createObjectURL(blob);
-    const cleanup = () => URL.revokeObjectURL(url);
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { cleanup(); reject(new Error('Canvas not supported')); return; }
-        ctx.drawImage(img, 0, 0);
-        canvas.toBlob(b => {
-          cleanup();
-          return b ? resolve(b) : reject(new Error('PNG conversion failed'));
-        }, 'image/png');
-      } catch (err) {
-        cleanup();
-        reject(err);
-      }
-    };
-    img.onerror = () => { cleanup(); reject(new Error('Image load failed')); };
-    img.src = url;
-  });
-}
-
-// ── Styles ─────────────────────────────────────────────────────────────────
-
-const sty = {
-  container: { padding: 20, maxWidth: 900, margin: '0 auto', fontFamily: 'system-ui, sans-serif' } as React.CSSProperties,
-  header: { background: 'linear-gradient(135deg, #223b5d, #1565c0)', color: '#fff', padding: '16px 20px', borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' } as React.CSSProperties,
-  headerTitle: { margin: 0, fontSize: 20, fontWeight: 600 } as React.CSSProperties,
-  patientInput: { padding: '8px 12px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: 280 } as React.CSSProperties,
-  langToggle: { display: 'flex', gap: 0, borderRadius: 6, overflow: 'hidden', border: '1px solid #fff' } as React.CSSProperties,
-  progressRing: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '12px 18px', background: 'var(--ums-bg-glass)', backdropFilter: 'blur(12px)', borderRadius: 10, border: '1px solid var(--ums-border)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' } as React.CSSProperties,
-  progressRingText: { fontSize: 13, color: 'var(--ums-text-muted)', fontWeight: 500 } as React.CSSProperties,
-  section: { border: '1px solid var(--ums-border)', borderRadius: 10, marginBottom: 14, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', transition: 'box-shadow 0.3s ease', background: 'var(--ums-bg-glass)', backdropFilter: 'blur(12px)' } as React.CSSProperties,
-  sectionHeader: { background: 'var(--ums-bg-glass-header)', padding: '12px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' as const, transition: 'background 0.2s', borderBottom: '1px solid var(--ums-border-light)' } as React.CSSProperties,
-  sectionTitle: { margin: 0, fontSize: 15, fontWeight: 600, color: 'var(--ums-text-primary)' } as React.CSSProperties,
-  sectionBody: { padding: '12px 16px' } as React.CSSProperties,
-  questionRow: { marginBottom: 10, padding: '12px 16px', background: 'var(--ums-bg-surface)', borderRadius: 8, border: '1px solid var(--ums-border)', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' } as React.CSSProperties,
-  questionLabel: { display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500, color: 'var(--ums-text-primary)' } as React.CSSProperties,
-  yesNoGroup: { display: 'flex', gap: 8 } as React.CSSProperties,
-  textInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
-  textarea: { padding: '7px 10px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const, minHeight: 60, resize: 'vertical' as const } as React.CSSProperties,
-  selectInput: { padding: '7px 10px', borderRadius: 6, border: '1px solid var(--ums-border)', fontSize: 14, width: '100%', boxSizing: 'border-box' as const } as React.CSSProperties,
-  submitBtn: { background: 'var(--ums-brand-primary)', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
-  submitBtnDisabled: { background: '#90b4d8', color: '#fff', border: 'none', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'not-allowed', marginTop: 8 } as React.CSSProperties,
-  error: { background: '#f8d7da', color: '#721c24', padding: '10px 14px', borderRadius: 6, marginTop: 12 } as React.CSSProperties,
-  recSection: { marginTop: 24 } as React.CSSProperties,
-  recHeading: { fontSize: 17, fontWeight: 700, color: '#fff', padding: '10px 16px', borderRadius: 8, marginBottom: 14 } as React.CSSProperties,
-  recHeadingComplex: { background: 'linear-gradient(135deg, #b71c1c, #d32f2f)' } as React.CSSProperties,
-  recHeadingStandard: { background: 'linear-gradient(135deg, #1565c0, #1976d2)' } as React.CSSProperties,
-  recCard: { border: '1px solid var(--ums-border)', borderRadius: 10, padding: 16, marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' as const, transition: 'box-shadow 0.2s, transform 0.2s', cursor: 'default', background: 'var(--ums-bg-surface)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' } as React.CSSProperties,
-  recImage: { width: 150, height: 150, objectFit: 'contain' as const, borderRadius: 8, border: '1px solid var(--ums-border)', flexShrink: 0, background: 'var(--ums-bg-surface-alt)' } as React.CSSProperties,
-  recBody: { flex: 1, minWidth: 200 } as React.CSSProperties,
-  recHcpcs: { fontSize: 16, fontWeight: 700, color: 'var(--ums-brand-primary)', textDecoration: 'none' } as React.CSSProperties,
-  recJustification: { fontSize: 13, color: 'var(--ums-text-muted)', margin: '6px 0' } as React.CSSProperties,
-  recDetail: { fontSize: 12, color: 'var(--ums-text-muted)', margin: '2px 0' } as React.CSSProperties,
-  recControls: { display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' as const } as React.CSSProperties,
-  starLabel: { cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties,
-  statusSelect: { padding: '4px 8px', borderRadius: 4, border: '1px solid var(--ums-border)', fontSize: 12 } as React.CSSProperties,
-  copyBtn: { padding: '4px 10px', borderRadius: 4, border: '1px solid var(--ums-brand-primary)', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', fontSize: 11, cursor: 'pointer', fontWeight: 500 } as React.CSSProperties,
-  actionBar: { display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' as const } as React.CSSProperties,
-  loadingContainer: { padding: 60, textAlign: 'center' as const, color: 'var(--ums-text-muted)', fontSize: 16 } as React.CSSProperties,
-  badge: { display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, marginLeft: 8 } as React.CSSProperties,
-  painGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 } as React.CSSProperties,
-  clearBtn: { background: 'var(--ums-bg-surface)', color: '#dc3545', border: '1px solid #dc3545', padding: '12px 28px', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 8 } as React.CSSProperties,
-};
-
-function langBtn(active: boolean): React.CSSProperties {
-  return { padding: '6px 14px', cursor: 'pointer', border: 'none', background: active ? 'var(--ums-bg-surface)' : 'transparent', color: active ? '#223b5d' : '#fff', fontWeight: active ? 700 : 400, fontSize: 13 };
-}
-
-function yesBtn(sel: boolean): React.CSSProperties {
-  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #28a745', background: sel ? '#d4edda' : 'var(--ums-bg-surface)', color: sel ? '#155724' : 'var(--ums-text-primary)', fontWeight: sel ? 700 : 400 };
-}
-
-function noBtn(sel: boolean): React.CSSProperties {
-  return { padding: '6px 20px', borderRadius: 6, cursor: 'pointer', border: '1px solid #dc3545', background: sel ? '#f8d7da' : 'var(--ums-bg-surface)', color: sel ? '#721c24' : 'var(--ums-text-primary)', fontWeight: sel ? 700 : 400 };
-}
-
-function painToggle(active: boolean): React.CSSProperties {
-  return {
-    padding: '10px 14px',
-    borderRadius: 8,
-    cursor: 'pointer',
-    border: active ? '2px solid #dc3545' : '1px solid var(--ums-border)',
-    background: active ? '#f8d7da' : 'var(--ums-bg-surface)',
-    color: active ? '#721c24' : 'var(--ums-text-primary)',
-    fontWeight: active ? 700 : 400,
-    fontSize: 14,
-    textAlign: 'center' as const,
-    transition: 'all 0.15s',
-  };
-}
-
-function badgeStyle(answered: number, total: number): React.CSSProperties {
-  const pct = total > 0 ? answered / total : 0;
-  let bg = '#e9ecef';
-  let color = 'var(--ums-text-muted)';
-  if (pct === 1) { bg = '#d4edda'; color = '#155724'; }
-  else if (pct > 0) { bg = '#fff3cd'; color = '#856404'; }
-  return { ...sty.badge, background: bg, color };
-}
-
-// ── Component ──────────────────────────────────────────────────────────────
 
 export function PpdQuestionnaire() {
   const [lang, setLang] = useState<Lang>('en');
@@ -179,25 +54,24 @@ export function PpdQuestionnaire() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [recommendations, setRecommendations] = useState<{ complexRehab: RecommendationProduct[]; standard: RecommendationProduct[] } | null>(null);
+  const [recommendations, setRecommendations] = useState<{
+    complexRehab: RecommendationProduct[];
+    standard: RecommendationProduct[];
+  } | null>(null);
   const [preferred, setPreferred] = useState('');
   const [productStatus, setProductStatus] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState('');
-
-  // Warn user before leaving page if form has unsaved data
-  useUnsavedChanges(Object.keys(responses).length > 0 && !recommendations);
   const [seatingEvalHtml, setSeatingEvalHtml] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState('');
   const [evalLoading, setEvalLoading] = useState(false);
-
-  // Questions fetched from API
   const [questions, setQuestions] = useState<ApiQuestion[]>([]);
   const [groups, setGroups] = useState<string[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(true);
   const [questionsError, setQuestionsError] = useState('');
 
-  // Fetch questions on mount
+  useUnsavedChanges(Object.keys(responses).length > 0 && !recommendations);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -217,10 +91,11 @@ export function PpdQuestionnaire() {
         if (!cancelled) setQuestionsLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Group questions by group field
   const groupedQuestions = useMemo(() => {
     const map = new Map<string, ApiQuestion[]>();
     for (const q of questions) {
@@ -231,73 +106,80 @@ export function PpdQuestionnaire() {
     return map;
   }, [questions]);
 
-  // Required questions (top-level, no subQuestionOf)
-  const requiredQuestions = useMemo(() => {
-    return questions.filter(q => q.required && !q.subQuestionOf);
-  }, [questions]);
+  const requiredQuestions = useMemo(
+    () => questions.filter((q) => q.required && !q.subQuestionOf),
+    [questions],
+  );
 
-  // Load from sessionStorage on patient change
   useEffect(() => {
     if (!patientInfo.trim()) return;
     const saved = sessionStorage.getItem(storageKey(patientInfo));
     if (saved) {
-      try { setResponses(JSON.parse(saved)); } catch { /* ignore corrupt data */ }
+      try {
+        setResponses(JSON.parse(saved));
+      } catch {
+        /* ignore corrupt data */
+      }
     }
   }, [patientInfo]);
 
-  // Auto-save responses to sessionStorage
   useEffect(() => {
     if (!patientInfo.trim()) return;
     sessionStorage.setItem(storageKey(patientInfo), JSON.stringify(responses));
   }, [responses, patientInfo]);
 
   const setResponse = useCallback((id: string, value: string) => {
-    setResponses(prev => ({ ...prev, [id]: value }));
+    setResponses((prev) => ({ ...prev, [id]: value }));
   }, []);
 
   const toggleSection = useCallback((id: string) => {
-    setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
+    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  const isVisible = useCallback((q: ApiQuestion): boolean => {
-    if (!q.subQuestionOf || !q.showWhen) return true;
-    const parentVal = responses[q.subQuestionOf] ?? '';
-    return parentVal.toLowerCase() === q.showWhen.toLowerCase() || parentVal.toLowerCase() === 'yes' && q.showWhen === 'Yes';
-  }, [responses]);
+  const isVisible = useCallback(
+    (q: ApiQuestion): boolean => {
+      if (!q.subQuestionOf || !q.showWhen) return true;
+      const parentVal = responses[q.subQuestionOf] ?? '';
+      return (
+        parentVal.toLowerCase() === q.showWhen.toLowerCase() ||
+        (parentVal.toLowerCase() === 'yes' && q.showWhen === 'Yes')
+      );
+    },
+    [responses],
+  );
 
-  // Progress calculation
-  const answeredCount = useMemo(() => {
-    return requiredQuestions.filter(q => {
-      const val = responses[q.id];
-      return val !== undefined && val !== '';
-    }).length;
-  }, [responses, requiredQuestions]);
-
+  const answeredCount = useMemo(
+    () =>
+      requiredQuestions.filter((q) => {
+        const val = responses[q.id];
+        return val !== undefined && val !== '';
+      }).length,
+    [responses, requiredQuestions],
+  );
   const totalRequired = requiredQuestions.length;
-  const progressPct = totalRequired > 0 ? Math.round((answeredCount / totalRequired) * 100) : 0;
+  const progressPct =
+    totalRequired > 0 ? Math.round((answeredCount / totalRequired) * 100) : 0;
 
-  // Section completion counts
   const sectionCounts = useMemo(() => {
-    const counts: Record<string, { answered: number; total: number }> = {};
+    const result: Record<string, { answered: number; total: number }> = {};
     for (const group of groups) {
       const qs = groupedQuestions.get(group) || [];
-      const visibleQs = qs.filter(q => !q.subQuestionOf || isVisible(q));
-      const answered = visibleQs.filter(q => {
+      const visibleQs = qs.filter((q) => !q.subQuestionOf || isVisible(q));
+      const answered = visibleQs.filter((q) => {
         const val = responses[q.id];
         return val !== undefined && val !== '';
       }).length;
-      counts[group] = { answered, total: visibleQs.length };
+      result[group] = { answered, total: visibleQs.length };
     }
-    return counts;
+    return result;
   }, [groups, groupedQuestions, responses, isVisible]);
 
-  // Clear form
   const handleClearForm = useCallback(() => {
-    if (!window.confirm(lang === 'en'
-      ? 'Are you sure you want to clear all responses? This cannot be undone.'
-      : 'Esta seguro de que desea borrar todas las respuestas? Esto no se puede deshacer.')) {
-      return;
-    }
+    const msg =
+      lang === 'en'
+        ? 'Clear all responses? This cannot be undone.'
+        : '¿Borrar todas las respuestas? Esto no se puede deshacer.';
+    if (!window.confirm(msg)) return;
     setResponses({});
     setRecommendations(null);
     setSeatingEvalHtml('');
@@ -305,20 +187,14 @@ export function PpdQuestionnaire() {
     setError('');
     setPreferred('');
     setProductStatus({});
-    if (patientInfo.trim()) {
-      sessionStorage.removeItem(storageKey(patientInfo));
-    }
+    if (patientInfo.trim()) sessionStorage.removeItem(storageKey(patientInfo));
   }, [lang, patientInfo]);
 
-  // Format responses for API calls
-  const formatApiResponses = useCallback(() => {
-    return Object.entries(responses).map(([questionId, answer]) => ({ questionId, answer }));
-  }, [responses]);
+  const formatApiResponses = useCallback(
+    () => Object.entries(responses).map(([questionId, answer]) => ({ questionId, answer })),
+    [responses],
+  );
 
-  // Server-side draft: complements existing sessionStorage by letting the
-  // user resume across devices or after an accidental tab close. Auto-save
-  // is debounced 2s and only engages once the patient label is entered so
-  // we don't litter the queue with empty records.
   const draftPayload = useMemo(
     () => ({ patientInfo, responses, lang, preferred, productStatus }),
     [patientInfo, responses, lang, preferred, productStatus],
@@ -344,7 +220,8 @@ export function PpdQuestionnaire() {
     if (p.responses && typeof p.responses === 'object') setResponses(p.responses);
     if (p.lang === 'en' || p.lang === 'es') setLang(p.lang);
     if (typeof p.preferred === 'string') setPreferred(p.preferred);
-    if (p.productStatus && typeof p.productStatus === 'object') setProductStatus(p.productStatus);
+    if (p.productStatus && typeof p.productStatus === 'object')
+      setProductStatus(p.productStatus);
   }, []);
 
   const handleStartOverDraft = useCallback(async () => {
@@ -356,34 +233,34 @@ export function PpdQuestionnaire() {
     setError('');
     setPreferred('');
     setProductStatus({});
-    if (patientInfo.trim()) {
-      sessionStorage.removeItem(storageKey(patientInfo));
-    }
+    if (patientInfo.trim()) sessionStorage.removeItem(storageKey(patientInfo));
     setPatientInfo('');
   }, [draft, patientInfo]);
 
-  // Submit to API for recommendations
   const handleSubmit = async () => {
     setLoading(true);
     setError('');
     setRecommendations(null);
     try {
-      const csrf = getCsrf();
-      const apiResponses = formatApiResponses();
       const res = await fetch('/api/ppd/recommend', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
-        body: JSON.stringify({ patientInfo, responses: apiResponses, language: lang === 'en' ? 'english' : 'spanish' }),
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': getCsrf() },
+        body: JSON.stringify({
+          patientInfo,
+          responses: formatApiResponses(),
+          language: lang === 'en' ? 'english' : 'spanish',
+        }),
       });
       if (!res.ok) {
         const msg = await res.text();
         throw new Error(msg || `Request failed (${res.status})`);
       }
       const data: RecommendApiResponse = await res.json();
-      const complexRehab = data.recommendations.filter(r => r.category === 'complex-rehab');
-      const standard = data.recommendations.filter(r => r.category === 'standard');
-      setRecommendations({ complexRehab, standard });
+      setRecommendations({
+        complexRehab: data.recommendations.filter((r) => r.category === 'complex-rehab'),
+        standard: data.recommendations.filter((r) => r.category === 'standard'),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get recommendations');
     } finally {
@@ -391,242 +268,153 @@ export function PpdQuestionnaire() {
     }
   };
 
-  // ── Render helpers ─────────────────────────────────────────────────────
-
-  const renderQuestion = (q: ApiQuestion) => {
-    if (!isVisible(q)) return null;
-    const label = lang === 'en' ? q.text : q.spanishText;
-    const val = responses[q.id] ?? '';
-
-    return (
-      <div key={q.id} style={sty.questionRow}>
-        <label style={sty.questionLabel}>
-          {q.number}. {label}
-          {q.required && <span style={{ color: '#dc3545', marginLeft: 3 }}>*</span>}
-        </label>
-
-        {q.type === 'yes-no' && (
-          <div style={sty.yesNoGroup}>
-            <button type="button" style={yesBtn(val === 'Yes')} onClick={() => setResponse(q.id, 'Yes')}>
-              {lang === 'en' ? 'Yes' : 'Si'}
-            </button>
-            <button type="button" style={noBtn(val === 'No')} onClick={() => setResponse(q.id, 'No')}>
-              No
-            </button>
-          </div>
-        )}
-
-        {q.type === 'text' && (
-          <input style={sty.textInput} value={val} onChange={e => setResponse(q.id, e.target.value)} />
-        )}
-
-        {q.type === 'number' && (
-          <input type="number" style={{ ...sty.textInput, width: 120 }} value={val} onChange={e => setResponse(q.id, e.target.value)} />
-        )}
-
-        {q.type === 'select' && q.options && (
-          <select style={sty.selectInput} value={val} onChange={e => setResponse(q.id, e.target.value)}>
-            <option value="">{lang === 'en' ? '-- Select --' : '-- Seleccionar --'}</option>
-            {q.options.map(o => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </select>
-        )}
-
-        {q.type === 'multi-select' && q.options && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {q.options.map(o => {
-              const selected = (val || '').split(',').filter(Boolean).includes(o);
-              return (
-                <button
-                  key={o}
-                  type="button"
-                  style={{
-                    padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
-                    border: selected ? '2px solid var(--ums-brand-primary)' : '1px solid var(--ums-border)',
-                    background: selected ? 'var(--ums-brand-light)' : 'var(--ums-bg-surface)',
-                    color: selected ? 'var(--ums-brand-primary)' : 'var(--ums-text-primary)',
-                    fontWeight: selected ? 700 : 400, fontSize: 13,
-                  }}
-                  onClick={() => {
-                    const current = (val || '').split(',').filter(Boolean);
-                    const next = selected ? current.filter(v => v !== o) : [...current, o];
-                    setResponse(q.id, next.join(','));
-                  }}
-                >
-                  {o}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
+  const handleGenerateEval = async () => {
+    if (!recommendations) return;
+    setEvalLoading(true);
+    setSeatingEvalHtml('');
+    try {
+      const allRecs = [...recommendations.complexRehab, ...recommendations.standard];
+      const res = await fetch('/api/ppd/seating-eval', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': getCsrf() },
+        body: JSON.stringify({
+          patientInfo,
+          responses: formatApiResponses(),
+          recommendations: allRecs,
+        }),
+      });
+      if (!res.ok) throw new Error(`Failed (${res.status})`);
+      const data = await res.json();
+      setSeatingEvalHtml(data.html);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate seating evaluation');
+    } finally {
+      setEvalLoading(false);
+    }
   };
 
-  const renderPainGroup = (qs: ApiQuestion[]) => {
-    return (
-      <div style={sty.painGrid}>
-        {qs.map(q => {
-          const label = lang === 'en' ? q.text.replace('?', '') : q.spanishText.replace('?', '').replace('\u00bf', '');
-          const val = responses[q.id] ?? '';
-          const active = val === 'Yes';
-          return (
-            <button
-              key={q.id}
-              type="button"
-              style={painToggle(active)}
-              onClick={() => setResponse(q.id, active ? 'No' : 'Yes')}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-    );
+  const handleSubmitQueue = async () => {
+    if (!recommendations) return;
+    setSubmitting(true);
+    setSubmitSuccess('');
+    try {
+      const allRecs = [...recommendations.complexRehab, ...recommendations.standard];
+      const res = await fetch('/api/ppd/submit', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': getCsrf() },
+        body: JSON.stringify({
+          patientInfo,
+          responses: formatApiResponses(),
+          recommendations: allRecs,
+          productSelections: productStatus,
+          language: lang === 'en' ? 'english' : 'spanish',
+        }),
+      });
+      if (!res.ok) throw new Error(`Failed (${res.status})`);
+      setSubmitSuccess(
+        lang === 'en'
+          ? 'PPD submitted to Pre-Appointment Kit queue.'
+          : 'PPD enviado a la cola del Kit de Pre-Cita.',
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit PPD');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const renderProductCard = (product: RecommendationProduct, idx: number) => {
-    const key = `${product.category}_${idx}`;
-    return (
-      <div key={key} className="ppd-rec-card" style={sty.recCard}>
-        {product.imageUrl && (
-          <img
-            src={product.imageUrl}
-            alt={product.hcpcsCode}
-            style={sty.recImage}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        )}
-        <div style={sty.recBody}>
-          {product.brochureUrl ? (
-            <a href={product.brochureUrl} target="_blank" rel="noopener noreferrer" style={sty.recHcpcs}>{product.hcpcsCode}</a>
-          ) : (
-            <span style={sty.recHcpcs}>{product.hcpcsCode}</span>
-          )}
-          {product.description && <div style={{ fontSize: 14, fontWeight: 500, marginTop: 2 }}>{product.description}</div>}
-          <p style={sty.recJustification}>{product.justification}</p>
-          {product.seatDimensions && <div style={sty.recDetail}><strong>Seat:</strong> {product.seatDimensions}</div>}
-          {product.colors && <div style={sty.recDetail}><strong>Colors:</strong> {product.colors}</div>}
-          {product.leadTime && <div style={sty.recDetail}><strong>Lead time:</strong> {product.leadTime}</div>}
-          {product.notes && <div style={sty.recDetail}><strong>Notes:</strong> {product.notes}</div>}
-
-          {/* Copy buttons for 8x8 / patient communication */}
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' as const }}>
-            {product.imageUrl && (
-              <button
-                type="button"
-                style={sty.copyBtn}
-                onClick={async () => {
-                  try {
-                    // Fetch image as blob and copy to clipboard as an image
-                    const res = await fetch(product.imageUrl!, { credentials: 'same-origin' });
-                    const blob = await res.blob();
-                    // ClipboardItem requires image/png for broad compatibility
-                    const pngBlob = blob.type === 'image/png' ? blob : await convertToPng(blob);
-                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
-                    setCopiedId(`img_${key}`);
-                  } catch {
-                    // Fallback: copy URL if clipboard image API not supported
-                    navigator.clipboard.writeText(product.imageUrl!).catch(() => {});
-                    setCopiedId(`img_${key}`);
-                  }
-                  setTimeout(() => setCopiedId(''), 2000);
-                }}
-              >
-                {copiedId === `img_${key}` ? 'Copied!' : 'Copy Image'}
-              </button>
-            )}
-            {product.brochureUrl && (
-              <button
-                type="button"
-                style={sty.copyBtn}
-                onClick={() => { navigator.clipboard.writeText(product.brochureUrl!); setCopiedId(`pdf_${key}`); setTimeout(() => setCopiedId(''), 2000); }}
-              >
-                {copiedId === `pdf_${key}` ? 'Copied!' : 'Copy Brochure Link'}
-              </button>
-            )}
-          </div>
-
-          <div style={sty.recControls}>
-            <label style={sty.starLabel}>
-              <input type="radio" name="preferred_product" checked={preferred === key} onChange={() => setPreferred(key)} />
-              {lang === 'en' ? 'Preferred' : 'Preferido'}
-            </label>
-            <select
-              style={sty.statusSelect}
-              value={productStatus[key] || 'undecided'}
-              onChange={e => setProductStatus(prev => ({ ...prev, [key]: e.target.value }))}
-            >
-              <option value="undecided">{lang === 'en' ? 'Undecided' : 'Indeciso'}</option>
-              <option value="accept">{lang === 'en' ? 'Accept' : 'Aceptar'}</option>
-              <option value="reject">{lang === 'en' ? 'Reject' : 'Rechazar'}</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    );
+  const onCopied = (id: string) => {
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(''), 2000);
   };
-
-  // ── Main render ────────────────────────────────────────────────────────
 
   if (questionsLoading) {
     return (
-      <div style={sty.container}>
-        <div style={sty.loadingContainer}>
-          {lang === 'en' ? 'Loading questionnaire...' : 'Cargando cuestionario...'}
-        </div>
+      <div className="p-10 text-center text-[13px] text-muted-foreground">
+        {lang === 'en' ? 'Loading questionnaire…' : 'Cargando cuestionario…'}
       </div>
     );
   }
-
   if (questionsError) {
     return (
-      <div style={sty.container}>
-        <div style={sty.error}>{questionsError}</div>
+      <div
+        role="alert"
+        className="mx-auto mt-6 max-w-3xl rounded-sm border px-3 py-2 text-[13px]"
+        style={{
+          background: 'var(--warm-red-soft)',
+          borderColor: 'var(--warm-red)',
+          color: 'var(--warm-red)',
+        }}
+      >
+        {questionsError}
       </div>
     );
   }
 
+  const progressStroke =
+    progressPct < 25
+      ? 'var(--muted-foreground)'
+      : progressPct < 75
+        ? 'var(--amber)'
+        : 'var(--sage)';
+
   return (
-    <div style={sty.container}>
-      {/* Hover effects via CSS (can't do :hover with inline styles) */}
-      <style>{`
-        .ppd-rec-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); transform: translateY(-2px); }
-        .ppd-section:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        .ppd-section-body { transition: max-height 0.3s ease, opacity 0.3s ease; overflow: hidden; }
-        .ppd-section-body.collapsed { max-height: 0 !important; opacity: 0; padding: 0 16px !important; }
-        .ppd-section-body.expanded { max-height: 3000px; opacity: 1; }
-        @media (max-width: 768px) {
-          .ppd-rec-card { flex-direction: column !important; }
-          .ppd-rec-card img { width: 100% !important; height: auto !important; max-height: 200px; }
-          .ppd-header-wrap { flex-direction: column !important; align-items: flex-start !important; }
-        }
-      `}</style>
+    <div className="mx-auto max-w-3xl px-4 py-5 sm:px-7">
       {/* Header */}
-      <div style={sty.header}>
-        <h2 style={sty.headerTitle}>
-          {lang === 'en' ? 'PPD Questionnaire \u2014 Power Mobility' : 'Cuestionario PPD \u2014 Movilidad El\u00e9ctrica'}
-        </h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const }}>
-          <input
-            style={sty.patientInput}
-            placeholder={lang === 'en' ? 'Patient Name - Trx#' : 'Nombre del Paciente - Trx#'}
-            value={patientInfo}
-            onChange={e => setPatientInfo(e.target.value)}
-            // S2-6: bound the input — this value is used to derive the
-            // sessionStorage key (see storageKey()), so an unbounded
-            // paste would balloon the key and risk localStorage quota.
-            maxLength={200}
-          />
-          <div style={sty.langToggle}>
-            <button type="button" style={langBtn(lang === 'en')} onClick={() => setLang('en')}>EN</button>
-            <button type="button" style={langBtn(lang === 'es')} onClick={() => setLang('es')}>ES</button>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div
+            className="font-mono uppercase text-muted-foreground"
+            style={{ fontSize: 10, letterSpacing: '0.14em' }}
+          >
+            PPD
           </div>
+          <h2
+            className="mt-1 font-display font-medium text-foreground"
+            style={{ fontSize: 22, lineHeight: 1.15, letterSpacing: '-0.4px' }}
+          >
+            {lang === 'en'
+              ? 'PPD questionnaire — Power mobility'
+              : 'Cuestionario PPD — Movilidad eléctrica'}
+          </h2>
+        </div>
+        <div className="inline-flex rounded-sm border border-border bg-card p-0.5">
+          {(['en', 'es'] as const).map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => setLang(l)}
+              aria-pressed={lang === l}
+              className={cn(
+                'rounded-sm px-3 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors',
+                lang === l
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {l}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Server-side draft status + resume/start-over controls */}
+      {/* Patient info */}
+      <div className="mb-3">
+        <Input
+          type="text"
+          placeholder={
+            lang === 'en' ? 'Patient name — Trx#' : 'Nombre del paciente — Trx#'
+          }
+          value={patientInfo}
+          onChange={(e) => setPatientInfo(e.target.value)}
+          // S2-6: bound input so sessionStorage key cannot be ballooned.
+          maxLength={200}
+          className="max-w-md"
+        />
+      </div>
+
       <FormDraftBanner
         formType="ppd"
         currentDraftId={draft.currentDraftId}
@@ -640,24 +428,42 @@ export function PpdQuestionnaire() {
       />
 
       {/* Progress ring */}
-      <div style={sty.progressRing}>
+      <div className="mb-4 flex items-center gap-3.5 rounded-sm border border-border bg-card p-3 shadow-sm">
         <svg width="60" height="60" viewBox="0 0 60 60">
-          <circle cx="30" cy="30" r="25" fill="none" stroke="var(--ums-border)" strokeWidth="5" />
-          <circle cx="30" cy="30" r="25" fill="none"
-            stroke={progressPct < 25 ? 'var(--ums-text-placeholder)' : progressPct < 75 ? 'var(--ums-warning)' : 'var(--ums-success)'}
-            strokeWidth="5" strokeLinecap="round"
+          <circle cx="30" cy="30" r="25" fill="none" stroke="var(--border)" strokeWidth="5" />
+          <circle
+            cx="30"
+            cy="30"
+            r="25"
+            fill="none"
+            stroke={progressStroke}
+            strokeWidth="5"
+            strokeLinecap="round"
             strokeDasharray={`${progressPct * 1.5708} 157.08`}
             transform="rotate(-90 30 30)"
-            style={{ transition: 'stroke-dasharray 0.4s ease, stroke 0.3s ease' }} />
-          <text x="30" y="34" textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--ums-text-primary)">{progressPct}%</text>
+            style={{ transition: 'stroke-dasharray 0.4s ease, stroke 0.3s ease' }}
+          />
+          <text
+            x="30"
+            y="34"
+            textAnchor="middle"
+            fontSize="14"
+            fontWeight="700"
+            fill="var(--foreground)"
+          >
+            {progressPct}%
+          </text>
         </svg>
-        <div style={sty.progressRingText}>
-          {answeredCount} / {totalRequired} {lang === 'en' ? 'required questions answered' : 'preguntas obligatorias respondidas'}
+        <div className="text-[13px] font-medium text-muted-foreground">
+          {answeredCount} / {totalRequired}{' '}
+          {lang === 'en'
+            ? 'required questions answered'
+            : 'preguntas obligatorias respondidas'}
         </div>
       </div>
 
-      {/* Question sections — grouped dynamically by API groups */}
-      {groups.map(group => {
+      {/* Group sections */}
+      {groups.map((group) => {
         const qs = groupedQuestions.get(group) || [];
         if (qs.length === 0) return null;
         const isCollapsed = collapsed[group] ?? false;
@@ -665,193 +471,243 @@ export function PpdQuestionnaire() {
         const isPainGroup = group === 'Consistent Pain';
 
         return (
-          <div key={group} className="ppd-section" style={sty.section}>
-            <div style={sty.sectionHeader} onClick={() => toggleSection(group)}>
-              <h3 style={sty.sectionTitle}>
-                {group}
-                <span style={badgeStyle(counts.answered, counts.total)}>
-                  {counts.answered}/{counts.total}
-                </span>
-              </h3>
-              <span style={{ fontSize: 14, color: 'var(--ums-text-muted)', transition: 'transform 0.3s', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}>{'\u25B6'}</span>
-            </div>
-            <div className={`ppd-section-body ${isCollapsed ? 'collapsed' : 'expanded'}`} style={sty.sectionBody}>
-              {isPainGroup
-                ? renderPainGroup(qs)
-                : qs.map(renderQuestion)
-              }
-            </div>
+          <div
+            key={group}
+            className="mb-3.5 overflow-hidden rounded-sm border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
+          >
+            <button
+              type="button"
+              onClick={() => toggleSection(group)}
+              aria-expanded={!isCollapsed}
+              className="flex w-full cursor-pointer select-none items-center justify-between border-b border-border bg-muted px-4 py-3 text-left transition-colors hover:bg-[var(--copper-soft)]"
+            >
+              <h3 className="m-0 text-[15px] font-semibold text-foreground">{group}</h3>
+              <div className="flex items-center gap-2">
+                {counts.total > 0 && (
+                  <CompletionBadge done={counts.answered} total={counts.total} />
+                )}
+                <ChevronRightIcon
+                  className={cn(
+                    'h-4 w-4 text-muted-foreground transition-transform',
+                    !isCollapsed && 'rotate-90',
+                  )}
+                />
+              </div>
+            </button>
+            {!isCollapsed && (
+              <div className="px-4 py-3">
+                {isPainGroup ? (
+                  <PpdQuestionnairePainGrid
+                    questions={qs}
+                    responses={responses}
+                    lang={lang}
+                    onChange={setResponse}
+                  />
+                ) : (
+                  qs
+                    .filter((q) => isVisible(q))
+                    .map((q) => (
+                      <PpdQuestionnaireRow
+                        key={q.id}
+                        question={q}
+                        value={responses[q.id] ?? ''}
+                        lang={lang}
+                        onChange={setResponse}
+                      />
+                    ))
+                )}
+              </div>
+            )}
           </div>
         );
       })}
 
-      {/* Action buttons row */}
-      <div style={sty.actionBar}>
-        {/* Get Recommendations */}
-        <button
-          type="button"
-          style={loading ? sty.submitBtnDisabled : sty.submitBtn}
-          disabled={loading}
-          onClick={handleSubmit}
-        >
+      {/* Action bar (recommend / clear) */}
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <Button type="button" onClick={handleSubmit} disabled={loading}>
           {loading
-            ? (lang === 'en' ? 'Getting Recommendations...' : 'Obteniendo Recomendaciones...')
-            : (lang === 'en' ? 'Get Recommendations' : 'Obtener Recomendaciones')}
-        </button>
-
-        {/* Clear Form */}
-        <button
+            ? lang === 'en'
+              ? 'Getting recommendations…'
+              : 'Obteniendo recomendaciones…'
+            : lang === 'en'
+              ? 'Get recommendations'
+              : 'Obtener recomendaciones'}
+        </Button>
+        <Button
           type="button"
-          style={sty.clearBtn}
+          variant="outline"
           onClick={handleClearForm}
+          style={{ borderColor: 'var(--warm-red)', color: 'var(--warm-red)' }}
         >
-          {lang === 'en' ? 'Clear Form' : 'Borrar Formulario'}
-        </button>
+          {lang === 'en' ? 'Clear form' : 'Borrar'}
+        </Button>
       </div>
 
-      {/* Error display */}
-      {error && <div style={sty.error}>{error}</div>}
+      {error && (
+        <div
+          role="alert"
+          className="mt-3 rounded-sm border px-3 py-2 text-[13px]"
+          style={{
+            background: 'var(--warm-red-soft)',
+            borderColor: 'var(--warm-red)',
+            color: 'var(--warm-red)',
+          }}
+        >
+          {error}
+        </div>
+      )}
 
-      {/* Recommendation results */}
+      {/* Recommendations */}
       {recommendations && (
-        <div style={sty.recSection}>
+        <div className="mt-6">
           {recommendations.complexRehab.length > 0 && (
             <>
-              <h3 style={{ ...sty.recHeading, ...sty.recHeadingComplex }}>
-                {lang === 'en' ? 'Complex Rehab Technology (CRT)' : 'Tecnolog\u00eda de Rehabilitaci\u00f3n Compleja (CRT)'}
+              <h3
+                className="mb-3 rounded-sm px-3 py-2 text-[14px] font-semibold"
+                style={{ background: 'var(--warm-red-soft)', color: 'var(--warm-red)' }}
+              >
+                {lang === 'en'
+                  ? 'Complex rehab technology (CRT)'
+                  : 'Tecnología de rehabilitación compleja (CRT)'}
               </h3>
-              {recommendations.complexRehab.map((p, i) => renderProductCard(p, i))}
+              {recommendations.complexRehab.map((p, i) => (
+                <PpdQuestionnaireProductCard
+                  key={`crt_${i}`}
+                  product={p}
+                  idx={i}
+                  lang={lang}
+                  preferred={preferred}
+                  onPreferredChange={setPreferred}
+                  productStatus={productStatus}
+                  onStatusChange={(k, v) => setProductStatus((prev) => ({ ...prev, [k]: v }))}
+                  copiedId={copiedId}
+                  onCopied={onCopied}
+                />
+              ))}
             </>
           )}
           {recommendations.standard.length > 0 && (
             <>
-              <h3 style={{ ...sty.recHeading, ...sty.recHeadingStandard }}>
-                {lang === 'en' ? 'Standard Power Mobility' : 'Movilidad El\u00e9ctrica Est\u00e1ndar'}
+              <h3
+                className="mb-3 mt-5 rounded-sm px-3 py-2 text-[14px] font-semibold"
+                style={{ background: 'var(--copper-soft)', color: 'var(--accent)' }}
+              >
+                {lang === 'en'
+                  ? 'Standard power mobility'
+                  : 'Movilidad eléctrica estándar'}
               </h3>
-              {recommendations.standard.map((p, i) => renderProductCard(p, i))}
+              {recommendations.standard.map((p, i) => (
+                <PpdQuestionnaireProductCard
+                  key={`std_${i}`}
+                  product={p}
+                  idx={i}
+                  lang={lang}
+                  preferred={preferred}
+                  onPreferredChange={setPreferred}
+                  productStatus={productStatus}
+                  onStatusChange={(k, v) => setProductStatus((prev) => ({ ...prev, [k]: v }))}
+                  copiedId={copiedId}
+                  onCopied={onCopied}
+                />
+              ))}
             </>
           )}
-          {recommendations.complexRehab.length === 0 && recommendations.standard.length === 0 && (
-            <div style={{ padding: 16, textAlign: 'center', color: 'var(--ums-text-muted)' }}>
-              {lang === 'en' ? 'No recommendations returned. Please review your responses.' : 'No se devolvieron recomendaciones. Revise sus respuestas.'}
-            </div>
-          )}
+          {recommendations.complexRehab.length === 0 &&
+            recommendations.standard.length === 0 && (
+              <div className="rounded-sm border border-border bg-card p-4 text-center text-[13px] text-muted-foreground">
+                {lang === 'en'
+                  ? 'No recommendations returned. Please review your responses.'
+                  : 'No se devolvieron recomendaciones. Revise sus respuestas.'}
+              </div>
+            )}
 
-          {/* ── Action Buttons ─────────────────────────────── */}
-          <div style={sty.actionBar}>
-            <button
+          {/* Eval + submit */}
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <Button
               type="button"
-              style={evalLoading ? sty.submitBtnDisabled : { ...sty.submitBtn, background: '#2e7d32' }}
+              onClick={handleGenerateEval}
               disabled={evalLoading}
-              onClick={async () => {
-                setEvalLoading(true);
-                setSeatingEvalHtml('');
-                try {
-                  const csrf = getCsrf();
-                  const allRecs = [...recommendations.complexRehab, ...recommendations.standard];
-                  const apiResponses = formatApiResponses();
-                  const res = await fetch('/api/ppd/seating-eval', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
-                    body: JSON.stringify({ patientInfo, responses: apiResponses, recommendations: allRecs }),
-                  });
-                  if (!res.ok) throw new Error(`Failed (${res.status})`);
-                  const data = await res.json();
-                  setSeatingEvalHtml(data.html);
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Failed to generate seating evaluation');
-                } finally {
-                  setEvalLoading(false);
-                }
-              }}
+              style={{ background: 'var(--sage)', color: 'var(--card)' }}
             >
               {evalLoading
-                ? (lang === 'en' ? 'Generating...' : 'Generando...')
-                : (lang === 'en' ? 'Generate Seating Evaluation' : 'Generar Evaluaci\u00f3n de Asiento')}
-            </button>
-
-            <button
-              type="button"
-              style={submitting ? sty.submitBtnDisabled : { ...sty.submitBtn, background: '#e65100' }}
-              disabled={submitting}
-              onClick={async () => {
-                setSubmitting(true);
-                setSubmitSuccess('');
-                try {
-                  const csrf = getCsrf();
-                  const allRecs = [...recommendations.complexRehab, ...recommendations.standard];
-                  const apiResponses = formatApiResponses();
-                  const res = await fetch('/api/ppd/submit', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrf },
-                    body: JSON.stringify({
-                      patientInfo,
-                      responses: apiResponses,
-                      recommendations: allRecs,
-                      productSelections: productStatus,
-                      language: lang === 'en' ? 'english' : 'spanish',
-                    }),
-                  });
-                  if (!res.ok) throw new Error(`Failed (${res.status})`);
-                  setSubmitSuccess(lang === 'en'
-                    ? 'PPD submitted to Pre-Appointment Kit queue!'
-                    : 'PPD enviado a la cola del Kit de Pre-Cita!');
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Failed to submit PPD');
-                } finally {
-                  setSubmitting(false);
-                }
-              }}
-            >
+                ? lang === 'en'
+                  ? 'Generating…'
+                  : 'Generando…'
+                : lang === 'en'
+                  ? 'Generate seating evaluation'
+                  : 'Generar evaluación de asiento'}
+            </Button>
+            <Button type="button" onClick={handleSubmitQueue} disabled={submitting}>
               {submitting
-                ? (lang === 'en' ? 'Submitting...' : 'Enviando...')
-                : (lang === 'en' ? 'Submit to Queue' : 'Enviar a Cola')}
-            </button>
+                ? lang === 'en'
+                  ? 'Submitting…'
+                  : 'Enviando…'
+                : lang === 'en'
+                  ? 'Submit to queue'
+                  : 'Enviar a cola'}
+            </Button>
           </div>
 
           {submitSuccess && (
-            <div style={{ background: '#d4edda', color: '#155724', padding: '10px 14px', borderRadius: 6, marginTop: 12, fontWeight: 600 }}>
+            <div
+              role="status"
+              className="mt-3 rounded-sm border px-3 py-2 text-[13px] font-semibold"
+              style={{
+                background: 'var(--sage-soft)',
+                borderColor: 'var(--sage)',
+                color: 'var(--sage)',
+              }}
+            >
               {submitSuccess}
             </div>
           )}
         </div>
       )}
 
-      {/* ── Seating Evaluation Preview ─────────────────────── */}
+      {/* Seating evaluation preview */}
       {seatingEvalHtml && (
-        <div style={sty.recSection}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={sty.recHeading}>
-              {lang === 'en' ? 'Seating Evaluation Preview' : 'Vista Previa de Evaluaci\u00f3n de Asiento'}
+        <div className="mt-6">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-[14px] font-semibold text-foreground">
+              {lang === 'en'
+                ? 'Seating evaluation preview'
+                : 'Vista previa de evaluación de asiento'}
             </h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
+            <div className="flex gap-2">
+              <Button
                 type="button"
-                style={sty.copyBtn}
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   const w = window.open('', '_blank');
-                  if (w) { w.document.write(DOMPurify.sanitize(seatingEvalHtml)); w.document.close(); w.print(); }
+                  if (w) {
+                    w.document.write(DOMPurify.sanitize(seatingEvalHtml));
+                    w.document.close();
+                    w.print();
+                  }
                 }}
               >
                 {lang === 'en' ? 'Print' : 'Imprimir'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                style={sty.copyBtn}
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   navigator.clipboard.writeText(seatingEvalHtml);
-                  setCopiedId('eval_html');
-                  setTimeout(() => setCopiedId(''), 2000);
+                  onCopied('eval_html');
                 }}
               >
-                {copiedId === 'eval_html' ? 'Copied!' : (lang === 'en' ? 'Copy HTML' : 'Copiar HTML')}
-              </button>
+                {copiedId === 'eval_html'
+                  ? 'Copied!'
+                  : lang === 'en'
+                    ? 'Copy HTML'
+                    : 'Copiar HTML'}
+              </Button>
             </div>
           </div>
           <div
-            style={{ border: '1px solid var(--ums-border)', borderRadius: 8, padding: 16, background: 'var(--ums-bg-surface)', overflow: 'auto', maxHeight: 600 }}
+            className="max-h-[600px] overflow-auto rounded-sm border border-border bg-background p-4"
             dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(seatingEvalHtml) }}
           />
         </div>

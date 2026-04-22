@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Brain } from 'lucide-react';
 import { forgotPassword, resetPasswordWithCode } from '../services/api';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,27 @@ interface Props {
   onLogin: (username: string, password: string, mfaCode?: string) => Promise<void>;
   mfaRequired?: boolean;
   onMfaSubmit?: (code: string) => Promise<void>;
+}
+
+interface SsoConfig {
+  enabled: boolean;
+  loginUrl: string | null;
+  provider: string;
+}
+
+/**
+ * Fetch public auth config from the backend. Returns null on any failure
+ * so the form gracefully falls back to the local username/password path.
+ */
+async function fetchSsoConfig(): Promise<SsoConfig | null> {
+  try {
+    const res = await fetch('/api/auth/config', { credentials: 'same-origin' });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body?.sso ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function FieldError({ id, children }: { id: string; children: React.ReactNode }) {
@@ -32,6 +53,44 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // SSO discovery — fetched once on mount. `?local=1` in the URL forces the
+  // local-password flow even when SSO is the configured default (break-glass
+  // for when CA is down). Keeping the escape hatch opt-in via URL means the
+  // happy path stays a single button.
+  const [ssoConfig, setSsoConfig] = useState<SsoConfig | null>(null);
+  const [ssoChecked, setSsoChecked] = useState(false);
+  const forceLocal =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('local') === '1';
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSsoConfig().then((cfg) => {
+      if (!cancelled) {
+        setSsoConfig(cfg);
+        setSsoChecked(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const showSsoPanel =
+    ssoChecked &&
+    ssoConfig?.enabled === true &&
+    !!ssoConfig.loginUrl &&
+    !forceLocal &&
+    !mfaRequired;
+
+  const handleSsoRedirect = () => {
+    if (!ssoConfig?.loginUrl) return;
+    // Land the user back here after CA sign-in. CA doesn't currently honor a
+    // return_to param, but passing it is forward-compatible + harmless.
+    const returnTo = encodeURIComponent(window.location.origin + window.location.pathname);
+    window.location.href = `${ssoConfig.loginUrl}?return_to=${returnTo}`;
+  };
 
   // Forgot password flow
   const [forgotMode, setForgotMode] = useState<'off' | 'request' | 'code' | 'done'>('off');
@@ -131,7 +190,23 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
           </div>
         </div>
 
-        <p className="mb-6 text-sm text-muted-foreground">{subtitle}</p>
+        <p className="mb-6 text-sm text-muted-foreground">
+          {showSsoPanel ? 'Sign in with your CallAnalyzer account.' : subtitle}
+        </p>
+
+        {showSsoPanel && (
+          <div className="mb-2 flex flex-col gap-3">
+            <Button type="button" onClick={handleSsoRedirect} className="w-full">
+              Sign in with CallAnalyzer
+            </Button>
+            <a
+              href={`${window.location.pathname}?local=1`}
+              className="w-full bg-transparent py-1 text-center text-[13px] text-muted-foreground hover:text-foreground"
+            >
+              Use a local account instead
+            </a>
+          </div>
+        )}
 
         {forgotMessage && (
           <div
@@ -147,6 +222,7 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
           </div>
         )}
 
+        {!showSsoPanel && (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {forgotMode === 'done' ? (
             <Button
@@ -302,6 +378,7 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
             </button>
           )}
         </form>
+        )}
       </div>
     </div>
   );

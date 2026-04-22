@@ -18,6 +18,44 @@ describe('LoginForm', () => {
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
   });
 
+  it('shows "Sign in with CallAnalyzer" when SSO config is enabled and hides the local form', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          sso: {
+            enabled: true,
+            loginUrl: 'https://umscallanalyzer.com/auth',
+            provider: 'callanalyzer',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    render(<LoginForm onLogin={mockOnLogin} />);
+    expect(
+      await screen.findByRole('button', { name: /sign in with callanalyzer/i }),
+    ).toBeInTheDocument();
+    // Local form should be hidden under SSO panel
+    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  });
+
+  it('falls back to local form when SSO fetch fails', async () => {
+    const fetchSpy = vi
+      .spyOn(global, 'fetch')
+      .mockRejectedValue(new Error('network'));
+    render(<LoginForm onLogin={mockOnLogin} />);
+    // After the effect settles, the local form is still there.
+    await waitFor(() => {
+      expect(screen.getByLabelText('Username')).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole('button', { name: /sign in with callanalyzer/i }),
+    ).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  });
+
   it('shows validation errors on blur when fields are empty', async () => {
     render(<LoginForm onLogin={mockOnLogin} />);
     const usernameInput = screen.getByLabelText('Username');

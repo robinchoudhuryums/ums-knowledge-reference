@@ -344,6 +344,26 @@ app.get('/api/metrics', authenticate, requireAdmin, (_req: express.Request, res:
   res.json(getMetricsSnapshot());
 });
 
+// Public auth configuration — no auth required. The frontend reads this
+// on page load to decide whether to show the local username/password form
+// or a single "Sign in with CallAnalyzer" button. The SSO URL is derived
+// from CA_BASE_URL (the same env the introspection middleware uses).
+app.get('/api/auth/config', (_req, res) => {
+  const ssoEnabled = process.env.ENABLE_SSO === 'true';
+  const caBase = (process.env.CA_BASE_URL || '').replace(/\/$/, '');
+  res.json({
+    sso: {
+      enabled: ssoEnabled && caBase.length > 0,
+      // Where the frontend should send the user when they click "Sign in".
+      // CA's existing login page — after success the browser lands back on
+      // RAG with the shared session cookie set, and the SSO middleware
+      // bootstraps the RAG session on the next request.
+      loginUrl: ssoEnabled && caBase ? `${caBase}/auth` : null,
+      provider: 'callanalyzer',
+    },
+  });
+});
+
 // Auth routes
 app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/users', authenticate, requireAdmin, (req, res) => createUserHandler(req as AuthRequest, res));

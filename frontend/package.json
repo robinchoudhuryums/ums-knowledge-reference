@@ -38,7 +38,6 @@
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
-    "react-router-dom": "^7.14.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "wouter": "^3.3.5"

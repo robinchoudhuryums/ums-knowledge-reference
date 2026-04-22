@@ -63,13 +63,11 @@
   --sidebar-border: var(--hairline);
   --sidebar-ring: var(--copper);
 
-  /* RAG-specific semantics. Confidence aliases keep existing ChatInterface /
+  /* RAG-specific semantics. Confidence aliases keep ChatInterface /
      SourceViewer / QualityDashboard color logic meaningful under warm-paper:
        high    → sage  (trustworthy)
        partial → amber (partial)
-       low     → warm-red (caution)
-     Components that previously referenced --ums-conf-* should migrate to
-     these names. */
+       low     → warm-red (caution) */
   --conf-high: var(--sage);
   --conf-high-bg: var(--sage-soft);
   --conf-high-border: var(--sage);

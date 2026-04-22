@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext } from 'react';
+import { Button } from '@/components/ui/button';
 
 interface ConfirmOptions {
   title: string;
@@ -28,14 +29,14 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   }>({ open: false, options: { title: '', message: '' }, resolve: null });
 
   const confirm = useCallback((options: ConfirmOptions): Promise<boolean> => {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       setState({ open: true, options, resolve });
     });
   }, []);
 
   const handleClose = (result: boolean) => {
     state.resolve?.(result);
-    setState(prev => ({ ...prev, open: false, resolve: null }));
+    setState((prev) => ({ ...prev, open: false, resolve: null }));
   };
 
   const isDanger = state.options.variant === 'danger';
@@ -43,7 +44,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  // Close on Escape key + focus trap (Tab cycles between dialog buttons only)
+  // Close on Escape + focus-trap (Tab cycles between dialog buttons only).
   useEffect(() => {
     if (!state.open) return;
     previousFocusRef.current = document.activeElement as HTMLElement;
@@ -53,7 +54,6 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         handleClose(false);
         return;
       }
-      // Focus trap: keep Tab/Shift+Tab within dialog
       if (e.key === 'Tab' && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -73,34 +73,65 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     document.addEventListener('keydown', handleKey);
     return () => {
       document.removeEventListener('keydown', handleKey);
-      // Restore focus to the element that triggered the dialog
       previousFocusRef.current?.focus();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.open]);
 
   return (
     <ConfirmContext.Provider value={{ confirm }}>
       {children}
       {state.open && (
-        <div style={styles.overlay} onClick={() => handleClose(false)} role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
-          <div style={styles.dialog} onClick={e => e.stopPropagation()} ref={dialogRef}>
-            <h3 style={styles.title} id="confirm-dialog-title">{state.options.title}</h3>
-            <p style={styles.message} id="confirm-dialog-message">{state.options.message}</p>
-            <div style={styles.actions}>
-              <button
+        <div
+          onClick={() => handleClose(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-dialog-title"
+          aria-describedby="confirm-dialog-message"
+          className="fixed inset-0 z-[10000] flex items-center justify-center px-4"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            ref={dialogRef}
+            className="w-full max-w-[420px] rounded-sm border border-border bg-card p-6 shadow-lg"
+          >
+            <div
+              className="font-mono uppercase text-muted-foreground"
+              style={{ fontSize: 10, letterSpacing: '0.12em' }}
+            >
+              {isDanger ? 'Destructive action' : 'Confirm'}
+            </div>
+            <h3
+              id="confirm-dialog-title"
+              className="font-display font-medium text-foreground mt-1"
+              style={{ fontSize: 18, lineHeight: 1.15, letterSpacing: '-0.2px' }}
+            >
+              {state.options.title}
+            </h3>
+            <p
+              id="confirm-dialog-message"
+              className="mt-2 text-sm text-muted-foreground"
+            >
+              {state.options.message}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => handleClose(false)}
-                style={styles.cancelButton}
                 autoFocus={isDanger}
               >
                 {state.options.cancelLabel || 'Cancel'}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant={isDanger ? 'destructive' : 'default'}
                 onClick={() => handleClose(true)}
-                style={isDanger ? styles.dangerButton : styles.confirmButton}
                 autoFocus={!isDanger}
               >
                 {state.options.confirmLabel || 'Confirm'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -108,76 +139,3 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     </ConfirmContext.Provider>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-    backdropFilter: 'blur(4px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10000,
-  },
-  dialog: {
-    background: 'var(--ums-bg-surface)',
-    borderRadius: '14px',
-    padding: '24px',
-    maxWidth: '420px',
-    width: '92%',
-    boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
-  },
-  title: {
-    margin: '0 0 8px',
-    fontSize: '17px',
-    fontWeight: 700,
-    color: 'var(--ums-text-primary)',
-  },
-  message: {
-    margin: '0 0 20px',
-    fontSize: '14px',
-    color: 'var(--ums-text-muted)',
-    lineHeight: '1.5',
-  },
-  actions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '8px',
-  },
-  cancelButton: {
-    padding: '8px 18px',
-    background: 'none',
-    border: '1px solid var(--ums-border)',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--ums-text-muted)',
-  },
-  confirmButton: {
-    padding: '8px 18px',
-    background: 'var(--ums-brand-gradient)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: 600,
-    boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)',
-  },
-  dangerButton: {
-    padding: '8px 18px',
-    background: 'var(--ums-error)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: 600,
-    boxShadow: 'var(--ums-shadow-sm)',
-  },
-};

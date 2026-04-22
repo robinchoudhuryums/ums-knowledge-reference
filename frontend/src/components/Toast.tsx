@@ -4,6 +4,7 @@ import {
   XCircleIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -32,18 +33,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const addToast = useCallback((message: string, type: ToastType = 'info', duration = 4000) => {
     const id = nextId++;
-    setToasts(prev => [...prev, { id, message, type, duration }]);
+    setToasts((prev) => [...prev, { id, message, type, duration }]);
   }, []);
 
   const removeToast = useCallback((id: number) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   return (
     <ToastContext.Provider value={{ addToast }}>
       {children}
-      <div style={styles.container} aria-live="polite">
-        {toasts.map(toast => (
+      <div
+        className="pointer-events-none fixed right-4 top-4 z-[9999] flex max-w-[400px] flex-col gap-2"
+        aria-live="polite"
+      >
+        {toasts.map((toast) => (
           <ToastItemView key={toast.id} toast={toast} onDismiss={removeToast} />
         ))}
       </div>
@@ -51,82 +55,67 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ToastItemView({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: number) => void }) {
+/**
+ * Warm-paper toast visuals — left accent stripe in the tone color, hairline
+ * border, muted-ink message copy. The tone colors resolve through the
+ * palette-aware --sage / --amber / --warm-red tokens so the user's chosen
+ * palette still flows through.
+ */
+const TONE_CONFIG: Record<
+  ToastType,
+  {
+    Icon: React.ComponentType<{ className?: string }>;
+    accentVar: string;
+  }
+> = {
+  success: { Icon: CheckCircleIcon, accentVar: '--sage' },
+  error: { Icon: XCircleIcon, accentVar: '--warm-red' },
+  warning: { Icon: ExclamationTriangleIcon, accentVar: '--amber' },
+  info: { Icon: InformationCircleIcon, accentVar: '--accent' },
+};
+
+function ToastItemView({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastItem;
+  onDismiss: (id: number) => void;
+}) {
   const [exiting, setExiting] = useState(false);
 
   useEffect(() => {
     const fadeTimer = setTimeout(() => setExiting(true), toast.duration - 300);
     const removeTimer = setTimeout(() => onDismiss(toast.id), toast.duration);
-    return () => { clearTimeout(fadeTimer); clearTimeout(removeTimer); };
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(removeTimer);
+    };
   }, [toast.id, toast.duration, onDismiss]);
 
-  const colors = typeColors[toast.type];
+  const { Icon, accentVar } = TONE_CONFIG[toast.type];
 
   return (
     <div
+      role="alert"
+      className="pointer-events-auto flex min-w-[280px] items-center gap-2.5 rounded-sm border border-border bg-card py-3 pl-4 pr-3 shadow-sm transition-[opacity,transform] duration-300"
       style={{
-        ...styles.toast,
-        background: colors.bg,
-        borderColor: colors.border,
         opacity: exiting ? 0 : 1,
         transform: exiting ? 'translateX(20px)' : 'translateX(0)',
+        boxShadow: `inset 2px 0 0 var(${accentVar}), 0 2px 6px rgba(0,0,0,0.06)`,
       }}
-      role="alert"
     >
-      <span style={{ ...styles.icon, color: colors.icon }}>{<colors.Icon className="w-5 h-5" />}</span>
-      <span style={{ ...styles.message, color: colors.text }}>{toast.message}</span>
+      <span className="shrink-0" style={{ color: `var(${accentVar})` }}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="flex-1 text-[13px] leading-snug text-foreground">{toast.message}</span>
       <button
+        type="button"
         onClick={() => onDismiss(toast.id)}
-        style={{ ...styles.close, color: colors.text }}
+        className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
         aria-label="Dismiss notification"
       >
-        &times;
+        <XMarkIcon className="h-4 w-4" />
       </button>
     </div>
   );
 }
-
-const typeColors: Record<ToastType, { bg: string; border: string; icon: string; text: string; Icon: React.ComponentType<{ className?: string }> }> = {
-  success: { bg: 'var(--ums-success-light)', border: 'var(--ums-success-border)', icon: 'var(--ums-success)', text: 'var(--ums-success-text)', Icon: CheckCircleIcon },
-  error:   { bg: 'var(--ums-error-light)', border: 'var(--ums-error-border)', icon: 'var(--ums-error)', text: 'var(--ums-error-text)', Icon: XCircleIcon },
-  warning: { bg: 'var(--ums-warning-light)', border: 'var(--ums-warning-border)', icon: 'var(--ums-warning)', text: 'var(--ums-warning-text)', Icon: ExclamationTriangleIcon },
-  info:    { bg: 'var(--ums-info-light)', border: 'var(--ums-info-border)', icon: 'var(--ums-info)', text: 'var(--ums-info-text)', Icon: InformationCircleIcon },
-};
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    position: 'fixed',
-    top: '16px',
-    right: '16px',
-    zIndex: 9999,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    maxWidth: '400px',
-    pointerEvents: 'none',
-  },
-  toast: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '12px 14px',
-    borderRadius: '10px',
-    border: '1px solid',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-    transition: 'opacity 0.3s ease, transform 0.3s ease',
-    pointerEvents: 'auto',
-    minWidth: '280px',
-  },
-  icon: { fontSize: '16px', fontWeight: 700, flexShrink: 0 },
-  message: { flex: 1, fontSize: '13px', fontWeight: 500, lineHeight: '1.4' },
-  close: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '18px',
-    lineHeight: 1,
-    opacity: 0.6,
-    padding: '0 2px',
-    flexShrink: 0,
-  },
-};

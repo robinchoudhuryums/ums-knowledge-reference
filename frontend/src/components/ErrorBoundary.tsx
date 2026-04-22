@@ -1,5 +1,7 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { reportError } from '../services/errorReporting';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   children: ReactNode;
@@ -28,21 +30,35 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={styles.container}>
-          <div style={styles.icon}>!</div>
-          <h3 style={styles.title}>Something went wrong</h3>
-          <p style={styles.message}>
-            {this.props.fallbackMessage || 'An unexpected error occurred. Please try refreshing the page.'}
+        <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+          <div
+            aria-hidden="true"
+            className="mb-4 flex h-12 w-12 items-center justify-center rounded-sm border"
+            style={{
+              background: 'var(--warm-red-soft)',
+              borderColor: 'var(--warm-red)',
+              color: 'var(--warm-red)',
+            }}
+          >
+            <ExclamationTriangleIcon className="h-6 w-6" />
+          </div>
+          <h3 className="mb-2 font-display text-[18px] font-medium text-foreground">
+            Something went wrong
+          </h3>
+          <p className="mb-4 max-w-[420px] text-sm leading-relaxed text-muted-foreground">
+            {this.props.fallbackMessage ||
+              'An unexpected error occurred. Please try refreshing the page.'}
           </p>
           {this.state.error && (
-            <pre style={styles.details}>{this.state.error.message}</pre>
+            <pre
+              className="mb-4 max-w-[520px] overflow-auto rounded-sm border border-border bg-muted px-4 py-3 text-left font-mono text-[12px] text-muted-foreground"
+            >
+              {this.state.error.message}
+            </pre>
           )}
-          <button
-            onClick={() => this.setState({ hasError: false, error: null })}
-            style={styles.retryButton}
-          >
-            Try Again
-          </button>
+          <Button onClick={() => this.setState({ hasError: false, error: null })}>
+            Try again
+          </Button>
         </div>
       );
     }
@@ -50,51 +66,3 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '48px 24px',
-    textAlign: 'center',
-  },
-  icon: {
-    width: '48px',
-    height: '48px',
-    borderRadius: '50%',
-    background: 'var(--ums-error-light)',
-    color: 'var(--ums-error)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '24px',
-    fontWeight: 700,
-    marginBottom: '16px',
-    border: '2px solid var(--ums-error-border)',
-  },
-  title: { margin: '0 0 8px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)' },
-  message: { margin: '0 0 16px', fontSize: '14px', color: 'var(--ums-text-muted)', maxWidth: '400px', lineHeight: '1.5' },
-  details: {
-    margin: '0 0 16px',
-    padding: '12px 16px',
-    background: 'var(--ums-bg-surface-alt)',
-    borderRadius: '8px',
-    fontSize: '12px',
-    color: 'var(--ums-text-muted)',
-    maxWidth: '500px',
-    overflow: 'auto',
-    border: '1px solid var(--ums-border-light)',
-  },
-  retryButton: {
-    padding: '8px 20px',
-    background: 'var(--ums-brand-gradient)',
-    color: 'var(--ums-bg-surface)',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-  },
-};

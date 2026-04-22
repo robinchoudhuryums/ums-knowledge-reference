@@ -161,7 +161,77 @@ service. No data migration is required.
   `?return_to=<rag-url>`, but CA's login page doesn't honor it — users
   land on CA's dashboard after login and must re-navigate to RAG.
   Follow-on in CA to read `return_to` and redirect appropriately.
-- **Embedded RAG chat in CA** (Track 3): the original multi-track plan
-  included an iframe of RAG's chat embedded in CA. Unblocked by this
-  rollout (the shared cookie makes the iframe flow trivial) but not
-  wired.
+- **Embedded RAG chat in CA** (Track 3): shipped separately. Once SSO
+  is enabled (Stage 3 above), enable the embed by setting
+  `EMBED_ALLOWED_ORIGIN=https://umscallanalyzer.com` on RAG and
+  `RAG_SERVICE_URL=https://knowledge.umscallanalyzer.com` +
+  `RAG_ENABLED=true` on CA. A floating "Ask KB" button appears on
+  CA's transcript detail pages; clicking it opens a side-drawer
+  iframing RAG at `/?embed=1`. The iframe auto-authenticates via the
+  shared session cookie. See the Track 3 section below.
+
+---
+
+## Track 3 — Embedded KB chat in CallAnalyzer
+
+Adds a floating "Ask KB" button on CA's transcript detail pages. Clicking
+it opens a side-drawer iframing RAG at `/?embed=1`. The iframe inherits
+the shared `.umscallanalyzer.com` session cookie from Track 2, so users
+see no additional login.
+
+### Prerequisites
+
+- Track 2 Stages 1-3 are live (shared session cookie working; users on
+  knowledge.* are auto-authenticated via CA's session).
+
+### Enable sequence
+
+Set on **RAG**:
+```
+EMBED_ALLOWED_ORIGIN=https://umscallanalyzer.com
+```
+
+Deploy RAG. This extends CSP `frame-ancestors` to allow CA's origin and
+disables `X-Frame-Options` (CSP supersedes XFO in modern browsers). With
+this unset, the browser hard-refuses to load the iframe.
+
+Set on **CA**:
+```
+RAG_SERVICE_URL=https://knowledge.umscallanalyzer.com
+RAG_ENABLED=true
+```
+
+Deploy CA. The frontend reads `/api/config`, sees `kb.enabled=true`, and
+renders the floating trigger on transcript detail pages.
+
+Verify:
+- Log into CA (via normal flow).
+- Open any call → transcript detail page.
+- Look for the bottom-right "Ask KB" button.
+- Click it → the drawer slides in from the right; after ~1s the iframe
+  finishes loading and the ChatInterface is usable without any login
+  prompt.
+- Ask a test question; verify the answer lands and source citations
+  render.
+
+### Rollback
+
+Unset either flag:
+- Unset `EMBED_ALLOWED_ORIGIN` on RAG → browsers refuse to load the
+  iframe; CA's drawer shows a blank iframe. (Not graceful; set
+  `RAG_ENABLED=false` on CA at the same time to hide the trigger.)
+- Unset `RAG_SERVICE_URL` or `RAG_ENABLED=false` on CA → `/api/config`
+  returns `kb.enabled=false`, trigger disappears. Cleaner user-facing
+  rollback; CA-side only.
+
+### Known limitations
+
+- **Escape inside the iframe does not close the drawer.** Key events
+  don't bubble across the iframe boundary. Users click the × button.
+- **Source citations open within the iframe.** They don't break out
+  to a new tab. Could be added later with an `embed:open-source`
+  postMessage → `window.open` in CA; low priority.
+- **No height autoresize.** The drawer is a fixed 100vh × 420px
+  regardless of chat content. Keeps the layout stable; dynamic resizing
+  would require a ResizeObserver inside the iframe posting height
+  upward.

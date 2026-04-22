@@ -61,6 +61,12 @@ function genId(): string {
   return `ann-${nextId++}`;
 }
 
+// Raw colors only. PDF.js SVG fill/stroke and on-canvas rendering require
+// concrete color strings; CSS variables wouldn't resolve in the SVG
+// namespace. These stay decoupled from the warm-paper palette-picker
+// intentionally — they encode the backend PDF annotator's semantic
+// categories (red=missing required, amber=low-conf, blue=in-progress,
+// green=done) and must match the server-side renderer.
 const ANNOTATION_COLORS: Record<string, { fill: string; stroke: string; label: string }> = {
   red: { fill: 'rgba(255, 0, 0, 0.12)', stroke: '#DC2626', label: '#991B1B' },
   amber: { fill: 'rgba(245, 158, 11, 0.12)', stroke: '#D97706', label: '#92400E' },
@@ -456,7 +462,7 @@ export function AnnotatedPdfViewer({ file, emptyFields, lowConfidenceFields, onC
                   style={{
                     ...viewerStyles.colorSwatch,
                     background: ANNOTATION_COLORS[c].stroke,
-                    outline: highlightColor === c ? '2px solid var(--ums-text-primary)' : 'none',
+                    outline: highlightColor === c ? '2px solid var(--foreground)' : 'none',
                     outlineOffset: '2px',
                   }}
                   title={c}
@@ -554,7 +560,7 @@ export function AnnotatedPdfViewer({ file, emptyFields, lowConfidenceFields, onC
                       width={pw}
                       height={ph}
                       fill={colors.fill}
-                      stroke={isSelected ? 'var(--ums-text-primary)' : colors.stroke}
+                      stroke={isSelected ? 'var(--foreground)' : colors.stroke}
                       strokeWidth={isSelected ? 2.5 : 1.5}
                       strokeDasharray={isSelected ? '4 2' : 'none'}
                       onMouseDown={(e) => handleAnnotationMouseDown(e, ann)}
@@ -657,44 +663,44 @@ export function AnnotatedPdfViewer({ file, emptyFields, lowConfidenceFields, onC
 
 const viewerStyles: Record<string, React.CSSProperties> = {
   wrapper: {
-    display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--ums-bg-surface-alt)',
+    display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--muted)',
     position: 'relative',
   },
   toolbar: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '8px 16px', background: 'var(--ums-bg-surface)',
-    borderBottom: '1px solid var(--ums-border)', gap: '8px', flexShrink: 0,
+    padding: '8px 16px', background: 'var(--card)',
+    borderBottom: '1px solid var(--border)', gap: '8px', flexShrink: 0,
     flexWrap: 'wrap',
   },
   toolbarLeft: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
   toolbarRight: { display: 'flex', alignItems: 'center', gap: '8px' },
   closeBtn: {
-    padding: '6px 14px', border: '1px solid var(--ums-border)', borderRadius: '8px',
-    background: 'var(--ums-bg-surface)', color: 'var(--ums-text-secondary)', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
+    padding: '6px 14px', border: '1px solid var(--border)', borderRadius: '8px',
+    background: 'var(--card)', color: 'var(--foreground)', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
   },
   divider: {
-    width: '1px', height: '24px', background: 'var(--ums-border)', display: 'inline-block',
+    width: '1px', height: '24px', background: 'var(--border)', display: 'inline-block',
   },
   navBtn: {
-    padding: '5px 12px', border: '1px solid var(--ums-border)', borderRadius: '6px',
-    background: 'var(--ums-bg-surface)', color: 'var(--ums-text-secondary)', fontSize: '12px', cursor: 'pointer',
+    padding: '5px 12px', border: '1px solid var(--border)', borderRadius: '6px',
+    background: 'var(--card)', color: 'var(--foreground)', fontSize: '12px', cursor: 'pointer',
   },
   navBtnDisabled: {
-    padding: '5px 12px', border: '1px solid var(--ums-border)', borderRadius: '6px',
-    background: 'var(--ums-bg-surface-alt)', color: 'var(--ums-text-placeholder)', fontSize: '12px', cursor: 'default',
+    padding: '5px 12px', border: '1px solid var(--border)', borderRadius: '6px',
+    background: 'var(--muted)', color: 'var(--muted-foreground)', fontSize: '12px', cursor: 'default',
   },
-  pageInfo: { fontSize: '13px', color: 'var(--ums-text-secondary)', fontWeight: 600 },
+  pageInfo: { fontSize: '13px', color: 'var(--foreground)', fontWeight: 600 },
   toolBtn: {
-    padding: '6px 14px', border: '1px solid var(--ums-border)', borderRadius: '8px',
-    background: 'var(--ums-bg-surface)', color: 'var(--ums-text-muted)', fontSize: '12px', fontWeight: 500, cursor: 'pointer',
+    padding: '6px 14px', border: '1px solid var(--border)', borderRadius: '8px',
+    background: 'var(--card)', color: 'var(--muted-foreground)', fontSize: '12px', fontWeight: 500, cursor: 'pointer',
   },
   toolBtnActive: {
-    padding: '6px 14px', border: '1px solid var(--ums-brand-primary)', borderRadius: '8px',
-    background: 'var(--ums-brand-light)', color: 'var(--ums-brand-text)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+    padding: '6px 14px', border: '1px solid var(--accent)', borderRadius: '8px',
+    background: 'var(--copper-soft)', color: 'var(--accent)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
   },
   toolBtnActiveHighlight: {
-    padding: '6px 14px', border: '1px solid #D97706', borderRadius: '8px',
-    background: '#FFFBEB', color: '#92400E', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+    padding: '6px 14px', border: '1px solid var(--amber)', borderRadius: '8px',
+    background: 'var(--amber-soft)', color: 'var(--amber)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
   },
   colorPicker: { display: 'flex', gap: '4px', alignItems: 'center' },
   colorSwatch: {
@@ -702,38 +708,38 @@ const viewerStyles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   actionBtn: {
-    padding: '5px 12px', border: '1px solid var(--ums-border)', borderRadius: '6px',
-    background: 'var(--ums-bg-surface)', color: 'var(--ums-text-secondary)', fontSize: '12px', cursor: 'pointer',
+    padding: '5px 12px', border: '1px solid var(--border)', borderRadius: '6px',
+    background: 'var(--card)', color: 'var(--foreground)', fontSize: '12px', cursor: 'pointer',
   },
   actionBtnDisabled: {
-    padding: '5px 12px', border: '1px solid var(--ums-border)', borderRadius: '6px',
-    background: 'var(--ums-bg-surface-alt)', color: 'var(--ums-text-placeholder)', fontSize: '12px', cursor: 'default',
+    padding: '5px 12px', border: '1px solid var(--border)', borderRadius: '6px',
+    background: 'var(--muted)', color: 'var(--muted-foreground)', fontSize: '12px', cursor: 'default',
   },
   exportBtn: {
     padding: '6px 16px', border: 'none', borderRadius: '8px',
-    background: 'var(--ums-brand-gradient)', color: 'white',
+    background: 'var(--accent)', color: 'white',
     fontSize: '12px', fontWeight: 600, cursor: 'pointer',
     boxShadow: '0 2px 6px rgba(27, 111, 201, 0.25)',
   },
   exportBtnDisabled: {
     padding: '6px 16px', border: 'none', borderRadius: '8px',
-    background: 'var(--ums-text-muted)', color: 'white',
+    background: 'var(--muted-foreground)', color: 'white',
     fontSize: '12px', fontWeight: 600, cursor: 'wait',
   },
 
   // Status bar
   statusBar: {
     display: 'flex', alignItems: 'center', gap: '16px', padding: '4px 16px',
-    background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid var(--ums-border)', fontSize: '11px',
-    color: 'var(--ums-text-muted)', flexShrink: 0,
+    background: 'var(--muted)', borderBottom: '1px solid var(--border)', fontSize: '11px',
+    color: 'var(--muted-foreground)', flexShrink: 0,
   },
-  hiddenNote: { color: '#D97706' },
-  selectedNote: { color: 'var(--ums-brand-primary)', fontWeight: 600 },
+  hiddenNote: { color: 'var(--amber)' },
+  selectedNote: { color: 'var(--accent)', fontWeight: 600 },
   removeLink: {
-    background: 'none', border: 'none', color: '#DC2626', fontSize: '11px',
+    background: 'none', border: 'none', color: 'var(--warm-red)', fontSize: '11px',
     cursor: 'pointer', textDecoration: 'underline', padding: 0,
   },
-  toolHint: { fontStyle: 'italic', color: 'var(--ums-text-muted)' },
+  toolHint: { fontStyle: 'italic', color: 'var(--muted-foreground)' },
 
   // Canvas area
   canvasContainer: {
@@ -749,15 +755,15 @@ const viewerStyles: Record<string, React.CSSProperties> = {
   // Sidebar
   sidebar: {
     position: 'absolute', right: 0, top: '88px', bottom: 0, width: '240px',
-    background: 'var(--ums-bg-surface)', borderLeft: '1px solid var(--ums-border)',
+    background: 'var(--card)', borderLeft: '1px solid var(--border)',
     overflowY: 'auto', padding: '12px', zIndex: 5,
   },
   sidebarTitle: {
-    margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: 'var(--ums-text-primary)',
+    margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: 'var(--foreground)',
   },
   annList: { display: 'flex', flexDirection: 'column', gap: '6px' },
   annItem: {
-    padding: '8px', borderRadius: '6px', background: 'var(--ums-bg-surface-alt)',
+    padding: '8px', borderRadius: '6px', background: 'var(--muted)',
     cursor: 'pointer', transition: 'background 0.1s',
   },
   annItemTop: {
@@ -766,22 +772,22 @@ const viewerStyles: Record<string, React.CSSProperties> = {
   annDot: {
     width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
   },
-  annLabel: { fontSize: '12px', fontWeight: 600, color: 'var(--ums-text-primary)', flex: 1 },
+  annLabel: { fontSize: '12px', fontWeight: 600, color: 'var(--foreground)', flex: 1 },
   annType: {
     fontSize: '9px', padding: '1px 4px', borderRadius: '3px',
-    background: 'var(--ums-border)', color: 'var(--ums-text-muted)', textTransform: 'uppercase',
+    background: 'var(--border)', color: 'var(--muted-foreground)', textTransform: 'uppercase',
     fontWeight: 600, letterSpacing: '0.3px',
   },
   annActions: { display: 'flex', gap: '6px' },
   annActionBtn: {
-    padding: '2px 8px', border: '1px solid var(--ums-border)', borderRadius: '4px',
-    background: 'var(--ums-bg-surface)', color: 'var(--ums-text-muted)', fontSize: '10px', cursor: 'pointer',
+    padding: '2px 8px', border: '1px solid var(--border)', borderRadius: '4px',
+    background: 'var(--card)', color: 'var(--muted-foreground)', fontSize: '10px', cursor: 'pointer',
   },
   annActionBtnDanger: {
-    padding: '2px 8px', border: '1px solid #FECACA', borderRadius: '4px',
-    background: '#FEF2F2', color: '#DC2626', fontSize: '10px', cursor: 'pointer',
+    padding: '2px 8px', border: '1px solid var(--warm-red)', borderRadius: '4px',
+    background: 'var(--warm-red-soft)', color: 'var(--warm-red)', fontSize: '10px', cursor: 'pointer',
   },
   annEmpty: {
-    margin: 0, fontSize: '12px', color: 'var(--ums-text-muted)', fontStyle: 'italic',
+    margin: 0, fontSize: '12px', color: 'var(--muted-foreground)', fontStyle: 'italic',
   },
 };

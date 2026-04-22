@@ -1,20 +1,75 @@
-import { useState, useRef, ChangeEvent, lazy, Suspense } from 'react';
+import { useState, useRef, type ChangeEvent } from 'react';
+import {
+  DocumentMagnifyingGlassIcon,
+  ClipboardDocumentCheckIcon,
+  DocumentDuplicateIcon,
+  ArrowUpTrayIcon,
+} from '@heroicons/react/24/outline';
 import {
   ocrDocument,
-  OcrResponse,
+  type OcrResponse,
   reviewForm,
   reviewFormBatch,
   downloadAnnotatedPdf,
   downloadOriginalPdf,
-  FormReviewResult,
-  BatchFormReviewResult,
+  type FormReviewResult,
+  type BatchFormReviewResult,
 } from '../services/api';
-
-const AnnotatedPdfViewer = lazy(() =>
-  import('./AnnotatedPdfViewer').then(m => ({ default: m.AnnotatedPdfViewer }))
-);
+import { cn } from '@/lib/utils';
+import { OcrToolResultView } from './OcrToolResultView';
+import { OcrToolFormResultView } from './OcrToolFormResultView';
+import { OcrToolBatchResultView } from './OcrToolBatchResultView';
 
 type Mode = 'ocr' | 'form-review' | 'batch-review';
+
+const MODE_META: Record<
+  Mode,
+  { label: string; title: string; description: string; Icon: React.ComponentType<{ className?: string }> }
+> = {
+  ocr: {
+    label: 'OCR text',
+    title: 'OCR — scan document',
+    description:
+      'Upload a scanned PDF or image to extract text using AWS Textract. Supports multi-page PDF, PNG, JPEG, and TIFF.',
+    Icon: DocumentMagnifyingGlassIcon,
+  },
+  'form-review': {
+    label: 'Form review',
+    title: 'Form review — detect missing fields',
+    description:
+      'Upload a DME form to detect blank fields. Auto-detects CMN form types and highlights required fields. Cached results skip Textract charges.',
+    Icon: ClipboardDocumentCheckIcon,
+  },
+  'batch-review': {
+    label: 'Batch review',
+    title: 'Batch form review — multiple files',
+    description:
+      'Upload up to 10 forms at once for completeness checking. Get a summary table showing which forms need attention.',
+    Icon: DocumentDuplicateIcon,
+  },
+};
+
+function SectionKicker({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="font-mono uppercase text-muted-foreground"
+      style={{ fontSize: 10, letterSpacing: '0.14em' }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 export function OcrTool() {
   const [mode, setMode] = useState<Mode>('ocr');
@@ -78,7 +133,11 @@ export function OcrTool() {
         setFormResult(result);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : `${mode === 'ocr' ? 'OCR extraction' : 'Form review'} failed`);
+      setError(
+        err instanceof Error
+          ? err.message
+          : `${mode === 'ocr' ? 'OCR extraction' : 'Form review'} failed`,
+      );
     } finally {
       setLoading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -89,7 +148,8 @@ export function OcrTool() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const fileArray = Array.from(files).slice(0, 10); // Max 10 files
+    // Cap at 10 files per server-side batch limit.
+    const fileArray = Array.from(files).slice(0, 10);
     setLoading(true);
     setError('');
     setBatchResult(null);
@@ -108,7 +168,7 @@ export function OcrTool() {
 
   const handleCopy = () => {
     if (ocrResult?.text) {
-      navigator.clipboard.writeText(ocrResult.text);
+      navigator.clipboard.writeText(ocrResult.text).catch(() => {});
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -156,869 +216,150 @@ export function OcrTool() {
     }
   };
 
-  const isPdf = selectedFile?.name.toLowerCase().endsWith('.pdf');
+  const meta = MODE_META[mode];
+  const HeaderIcon = meta.Icon;
+
+  const uploadLabel =
+    loading && mode === 'batch-review'
+      ? `Analyzing ${selectedFiles.length} form${selectedFiles.length !== 1 ? 's' : ''}…`
+      : loading && mode === 'form-review'
+        ? 'Analyzing form fields…'
+        : loading && mode === 'ocr'
+          ? 'Scanning document…'
+          : mode === 'batch-review'
+            ? 'Select files (up to 10)'
+            : 'Select file';
 
   return (
-    <div style={styles.container}>
+    <div className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-7">
       {/* Header */}
-      <div style={styles.headerSection}>
-        <div style={mode === 'ocr' ? styles.iconBg : styles.iconBgForm}>
-          <span style={styles.icon}>
-            {mode === 'batch-review' ? '\u{1F4DA}' : mode === 'form-review' ? '\u{1F4CB}' : '\u{1F4F7}'}
-          </span>
+      <div className="flex items-start gap-3">
+        <div
+          aria-hidden="true"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm"
+          style={{ background: 'var(--copper-soft)', color: 'var(--accent)' }}
+        >
+          <HeaderIcon className="h-5 w-5" />
         </div>
         <div>
-          <h3 style={styles.title}>
-            {mode === 'batch-review'
-              ? 'Batch Form Review — Multiple Files'
-              : mode === 'form-review'
-                ? 'Form Review — Detect Missing Fields'
-                : 'OCR — Scan Document'}
+          <SectionKicker>Tools</SectionKicker>
+          <h3
+            className="mt-1 font-display font-medium text-foreground"
+            style={{ fontSize: 22, lineHeight: 1.15, letterSpacing: '-0.4px' }}
+          >
+            {meta.title}
           </h3>
-          <p style={styles.description}>
-            {mode === 'batch-review'
-              ? 'Upload up to 10 forms at once for completeness checking. Get a summary table showing which forms need attention.'
-              : mode === 'form-review'
-                ? 'Upload a DME form to detect blank fields. Auto-detects CMN form types and highlights required fields. Cached results skip Textract charges.'
-                : 'Upload a scanned PDF or image to extract text using AWS Textract. Supports multi-page PDF, PNG, JPEG, and TIFF.'}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
         </div>
       </div>
 
-      {/* Mode Toggle */}
-      <div style={styles.toggleRow}>
-        <button
-          onClick={() => handleModeSwitch('ocr')}
-          style={mode === 'ocr' ? styles.toggleActive : styles.toggleInactive}
-        >
-          OCR Text Extract
-        </button>
-        <button
-          onClick={() => handleModeSwitch('form-review')}
-          style={mode === 'form-review' ? styles.toggleActiveForm : styles.toggleInactive}
-        >
-          Form Review
-        </button>
-        <button
-          onClick={() => handleModeSwitch('batch-review')}
-          style={mode === 'batch-review' ? styles.toggleActiveForm : styles.toggleInactive}
-        >
-          Batch Review
-        </button>
+      {/* Mode toggle — mono segmented control */}
+      <div className="inline-flex rounded-sm border border-border bg-card p-0.5">
+        {(Object.keys(MODE_META) as Mode[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => handleModeSwitch(m)}
+            aria-pressed={mode === m}
+            className={cn(
+              'rounded-sm px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-colors',
+              mode === m
+                ? 'bg-foreground text-background'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {MODE_META[m].label}
+          </button>
+        ))}
       </div>
 
       {/* Upload */}
-      {mode === 'batch-review' ? (
-        <label style={styles.uploadLabel}>
+      <div>
+        <label>
           <input
-            ref={batchFileRef}
+            ref={mode === 'batch-review' ? batchFileRef : fileRef}
             type="file"
             accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif"
-            onChange={handleBatchFileChange}
-            style={{ display: 'none' }}
+            onChange={mode === 'batch-review' ? handleBatchFileChange : handleFileChange}
+            className="hidden"
             disabled={loading}
-            multiple
+            multiple={mode === 'batch-review'}
           />
-          <span style={loading ? styles.uploadButtonLoading : styles.uploadButtonForm}>
-            {loading ? `Analyzing ${selectedFiles.length} form${selectedFiles.length !== 1 ? 's' : ''}...` : 'Select Files (up to 10)'}
+          <span className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-4 py-2.5 text-[13px] text-foreground hover:bg-muted">
+            <ArrowUpTrayIcon className="h-4 w-4" />
+            {uploadLabel}
           </span>
         </label>
-      ) : (
-        <label style={styles.uploadLabel}>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif"
-            onChange={handleFileChange}
-            style={{ display: 'none' }}
-            disabled={loading}
-          />
-          <span style={loading ? styles.uploadButtonLoading : (mode === 'form-review' ? styles.uploadButtonForm : styles.uploadButton)}>
-            {loading
-              ? (mode === 'form-review' ? 'Analyzing form fields...' : 'Scanning document...')
-              : 'Select File'}
-          </span>
-        </label>
-      )}
 
-      {loading && (
-        <>
-          <div style={styles.loadingBar}>
-            <div style={mode === 'ocr' ? styles.loadingBarFill : styles.loadingBarFillForm} />
-          </div>
-          {mode !== 'ocr' && (
-            <p style={styles.hint}>
-              Textract is analyzing the form structure to detect fields and checkboxes. This may take 15-60 seconds for multi-page PDFs.
-              {mode === 'batch-review' && ' Cached forms will be skipped (no extra charge).'}
-            </p>
-          )}
-        </>
-      )}
-
-      {error && <div style={styles.error}>{error}</div>}
-
-      {/* OCR Results */}
-      {ocrResult && mode === 'ocr' && (
-        <div style={styles.resultContainer}>
-          <div style={styles.resultHeader}>
-            <div style={styles.resultMetaRow}>
-              <span style={styles.resultFilename}>{ocrResult.filename}</span>
-              <span style={styles.metaBadge}>{ocrResult.pageCount} page{ocrResult.pageCount !== 1 ? 's' : ''}</span>
-              <span style={styles.metaBadge}>{Math.round(ocrResult.confidence)}% confidence</span>
-            </div>
-            <button onClick={handleCopy} style={styles.copyButton}>
-              {copied ? 'Copied!' : 'Copy Text'}
-            </button>
-          </div>
-          <pre style={styles.resultText}>{ocrResult.text}</pre>
-        </div>
-      )}
-
-      {/* Form Review Results */}
-      {formResult && mode === 'form-review' && (
-        <div style={styles.formResultContainer}>
-          {/* Summary Header */}
-          <div style={styles.formResultHeader}>
-            <div>
-              <h4 style={styles.formResultTitle}>{formResult.filename}</h4>
-              <div style={styles.formMetaRow}>
-                <span style={styles.metaBadge}>{formResult.pageCount} page{formResult.pageCount !== 1 ? 's' : ''}</span>
-                <span style={styles.metaBadge}>{formResult.totalFields} fields detected</span>
-                <span style={formResult.emptyCount > 0 ? styles.metaBadgeRed : styles.metaBadgeGreen}>
-                  {formResult.emptyCount > 0
-                    ? `${formResult.emptyCount} field${formResult.emptyCount !== 1 ? 's' : ''} missing`
-                    : 'All fields complete'}
-                </span>
-                {formResult.cached && (
-                  <span style={styles.metaBadgeCached}>Cached (no charge)</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Form Type Detection */}
-          {formResult.formType && (
-            <div style={styles.formTypeSection}>
-              <span style={styles.formTypeLabel}>Detected form:</span>
-              <span style={styles.formTypeName}>{formResult.formType.name}</span>
-              <span style={styles.formTypeDesc}>{formResult.formType.description}</span>
-            </div>
-          )}
-
-          {/* Required Missing Fields Alert */}
-          {formResult.requiredMissingCount > 0 && (
-            <div style={styles.requiredAlert}>
-              <span style={styles.requiredAlertIcon}>!</span>
-              <div>
-                <strong>{formResult.requiredMissingCount} required field{formResult.requiredMissingCount !== 1 ? 's' : ''} missing</strong>
-                <div style={styles.requiredList}>
-                  {formResult.requiredMissingFields.map((f, i) => (
-                    <span key={i} style={styles.requiredItem}>
-                      {f.requiredLabel || f.key}
-                      {f.section && <span style={styles.sectionTag}>{f.section}</span>}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Download + Preview Buttons */}
-          {isPdf && formResult.emptyCount > 0 && (
-            <div style={styles.downloadSection}>
-              <p style={styles.downloadLabel}>Download PDFs to send to provider:</p>
-              <div style={styles.downloadRow}>
-                <button
-                  onClick={handleDownloadAnnotated}
-                  disabled={!!downloading}
-                  style={downloading === 'annotated' ? styles.downloadBtnDisabled : styles.downloadBtnAnnotated}
-                >
-                  {downloading === 'annotated' ? 'Generating...' : 'Download Marked-Up Example'}
-                </button>
-                <button
-                  onClick={handleDownloadOriginal}
-                  disabled={!!downloading}
-                  style={downloading === 'original' ? styles.downloadBtnDisabled : styles.downloadBtnOriginal}
-                >
-                  {downloading === 'original' ? 'Downloading...' : 'Download Original (for correction)'}
-                </button>
-                <button
-                  onClick={handlePreviewAnnotated}
-                  disabled={!!downloading}
-                  style={downloading ? styles.downloadBtnDisabled : styles.previewBtn}
-                >
-                  {downloading === 'annotated' && !showPreview ? 'Loading...' : 'Preview Annotated'}
-                </button>
-                <button
-                  onClick={() => setShowInteractiveViewer(true)}
-                  style={styles.interactiveBtn}
-                >
-                  Edit Annotations
-                </button>
-              </div>
-              <p style={styles.downloadHint}>
-                The marked-up copy has a watermark and cannot be submitted to insurance. Send both copies so the provider sees what to fix.
-              </p>
-            </div>
-          )}
-
-          {/* In-browser PDF Preview */}
-          {showPreview && previewUrl && !showInteractiveViewer && (
-            <div style={styles.previewSection}>
-              <div style={styles.previewHeader}>
-                <span style={styles.previewTitle}>Annotated PDF Preview</span>
-                <button onClick={() => setShowPreview(false)} style={styles.previewClose}>Close Preview</button>
-              </div>
-              <iframe
-                src={previewUrl}
-                style={styles.previewIframe}
-                title="Annotated PDF Preview"
-              />
-            </div>
-          )}
-
-          {/* Interactive Annotation Editor */}
-          {showInteractiveViewer && selectedFile && (
-            <div style={styles.interactiveViewerSection}>
-              <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: 'var(--ums-text-muted)' }}>Loading annotation editor...</div>}>
-                <AnnotatedPdfViewer
-                  file={selectedFile}
-                  emptyFields={formResult.emptyFields}
-                  lowConfidenceFields={formResult.lowConfidenceFields}
-                  onClose={() => setShowInteractiveViewer(false)}
-                />
-              </Suspense>
-            </div>
-          )}
-
-          {/* Completion Bar */}
-          <div style={styles.completionSection}>
-            <div style={styles.completionBarBg}>
+        {loading && (
+          <>
+            <div
+              className="mt-3 h-1 w-full overflow-hidden rounded-full"
+              style={{ background: 'var(--muted)' }}
+            >
               <div
-                style={{
-                  ...styles.completionBarFill,
-                  width: `${formResult.completionPercentage}%`,
-                  background: formResult.completionPercentage >= 90
-                    ? 'linear-gradient(90deg, #059669, #34D399)'
-                    : formResult.completionPercentage >= 70
-                      ? 'linear-gradient(90deg, #D97706, #FBBF24)'
-                      : 'linear-gradient(90deg, #DC2626, #F87171)',
-                }}
+                className="h-full animate-pulse"
+                style={{ width: '45%', background: 'var(--accent)' }}
               />
             </div>
-            <span style={styles.completionLabel}>
-              {formResult.completionPercentage}% complete
-            </span>
-          </div>
+            {mode !== 'ocr' && (
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                Textract is analyzing the form structure to detect fields and checkboxes.
+                This may take 15-60 seconds for multi-page PDFs.
+                {mode === 'batch-review' && ' Cached forms will be skipped (no extra charge).'}
+              </p>
+            )}
+          </>
+        )}
+      </div>
 
-          {/* Low Confidence Fields Warning */}
-          {formResult.lowConfidenceCount > 0 && (
-            <div style={styles.lowConfSection}>
-              <h5 style={styles.lowConfTitle}>
-                Low Confidence Fields ({formResult.lowConfidenceCount}) — Verify Manually
-              </h5>
-              <div style={styles.fieldList}>
-                {formResult.lowConfidenceFields.map((f, i) => (
-                  <div key={i} style={styles.fieldItemLowConf}>
-                    <span style={styles.lowConfBadge}>?</span>
-                    <span style={styles.fieldKey}>{f.key || '(unlabeled field)'}</span>
-                    <span style={styles.lowConfValue}>{f.value || '(empty)'}</span>
-                    <span style={styles.fieldConfidence}>{f.confidence}%</span>
-                    <span style={styles.fieldPage}>Page {f.page}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Empty Fields List */}
-          {formResult.emptyCount > 0 && (
-            <div style={styles.fieldSection}>
-              <h5 style={styles.fieldSectionTitle}>Missing / Blank Fields ({formResult.emptyCount})</h5>
-              <div style={styles.fieldList}>
-                {formResult.emptyFields.map((f, i) => (
-                  <div key={i} style={f.isRequired ? styles.fieldItemRequired : styles.fieldItemEmpty}>
-                    <span style={f.isRequired ? styles.fieldNumberRequired : styles.fieldNumber}>
-                      {f.isRequired ? 'REQ' : `#${i + 1}`}
-                    </span>
-                    <span style={styles.fieldKey}>
-                      {f.key || '(unlabeled field)'}
-                      {f.isCheckbox && <span style={styles.checkboxTag}>checkbox</span>}
-                    </span>
-                    {f.section && <span style={styles.sectionTag}>{f.section}</span>}
-                    <span style={styles.fieldPage}>Page {f.page}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Filled Fields (collapsed by default) */}
-          {formResult.filledFields.length > 0 && (
-            <FilledFieldsSection fields={formResult.filledFields} />
-          )}
-
-          {/* New Review Button */}
-          <div style={styles.newReviewRow}>
-            <button onClick={resetState} style={styles.newReviewButton}>
-              Review Another Form
-            </button>
-          </div>
+      {error && (
+        <div
+          role="alert"
+          className="rounded-sm border px-3 py-2 text-[13px]"
+          style={{
+            background: 'var(--warm-red-soft)',
+            borderColor: 'var(--warm-red)',
+            color: 'var(--warm-red)',
+          }}
+        >
+          {error}
         </div>
       )}
 
-      {/* Batch Review Results */}
+      {/* Result dispatch */}
+      {ocrResult && mode === 'ocr' && (
+        <OcrToolResultView result={ocrResult} copied={copied} onCopy={handleCopy} />
+      )}
+
+      {formResult && mode === 'form-review' && (
+        <OcrToolFormResultView
+          result={formResult}
+          selectedFile={selectedFile}
+          downloading={downloading}
+          previewUrl={previewUrl}
+          showPreview={showPreview}
+          showInteractiveViewer={showInteractiveViewer}
+          onDownloadAnnotated={handleDownloadAnnotated}
+          onDownloadOriginal={handleDownloadOriginal}
+          onPreviewAnnotated={handlePreviewAnnotated}
+          onClosePreview={() => setShowPreview(false)}
+          onOpenInteractive={() => setShowInteractiveViewer(true)}
+          onCloseInteractive={() => setShowInteractiveViewer(false)}
+          onReset={resetState}
+        />
+      )}
+
       {batchResult && mode === 'batch-review' && (
-        <div style={styles.formResultContainer}>
-          <div style={styles.formResultHeader}>
-            <div>
-              <h4 style={styles.formResultTitle}>Batch Results — {batchResult.fileCount} Files</h4>
-              <div style={styles.formMetaRow}>
-                {batchResult.totalCachedCount > 0 && (
-                  <span style={styles.metaBadgeCached}>
-                    {batchResult.totalCachedCount} cached (no charge)
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Summary Table */}
-          <div style={styles.batchTableContainer}>
-            <table style={styles.batchTable}>
-              <thead>
-                <tr>
-                  <th style={styles.batchTh}>File</th>
-                  <th style={styles.batchTh}>Form Type</th>
-                  <th style={styles.batchTh}>Fields</th>
-                  <th style={styles.batchTh}>Missing</th>
-                  <th style={styles.batchTh}>Req. Missing</th>
-                  <th style={styles.batchTh}>Completion</th>
-                  <th style={styles.batchTh}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {batchResult.results.map((r, i) => (
-                  <tr
-                    key={i}
-                    style={expandedBatchIndex === i ? styles.batchTrSelected : styles.batchTr}
-                    onClick={() => setExpandedBatchIndex(expandedBatchIndex === i ? null : i)}
-                  >
-                    <td style={styles.batchTd}>
-                      <span style={styles.batchFilename}>{r.filename}</span>
-                      {r.cached && <span style={styles.cachedDot} title="Cached result" />}
-                    </td>
-                    <td style={styles.batchTd}>
-                      <span style={styles.batchFormType}>{r.formType?.name || 'Unknown'}</span>
-                    </td>
-                    <td style={styles.batchTdCenter}>{r.totalFields}</td>
-                    <td style={styles.batchTdCenter}>
-                      <span style={r.emptyCount > 0 ? styles.batchMissingBad : styles.batchMissingGood}>
-                        {r.emptyCount}
-                      </span>
-                    </td>
-                    <td style={styles.batchTdCenter}>
-                      <span style={r.requiredMissingCount > 0 ? styles.batchReqBad : styles.batchMissingGood}>
-                        {r.requiredMissingCount}
-                      </span>
-                    </td>
-                    <td style={styles.batchTdCenter}>
-                      <div style={styles.batchBarBg}>
-                        <div style={{
-                          ...styles.batchBarFill,
-                          width: `${r.completionPercentage}%`,
-                          background: r.completionPercentage >= 90 ? '#059669'
-                            : r.completionPercentage >= 70 ? '#D97706' : '#DC2626',
-                        }} />
-                      </div>
-                      <span style={styles.batchPct}>{r.completionPercentage}%</span>
-                    </td>
-                    <td style={styles.batchTdCenter}>
-                      <span style={r.emptyCount === 0 ? styles.statusComplete : (r.requiredMissingCount > 0 ? styles.statusCritical : styles.statusIncomplete)}>
-                        {r.emptyCount === 0 ? 'Complete' : (r.requiredMissingCount > 0 ? 'Action Needed' : 'Incomplete')}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Expanded detail for selected batch item */}
-          {expandedBatchIndex !== null && batchResult.results[expandedBatchIndex] && (
-            <div style={styles.batchDetail}>
-              <h5 style={styles.batchDetailTitle}>
-                {batchResult.results[expandedBatchIndex].filename} — Missing Fields
-              </h5>
-              {batchResult.results[expandedBatchIndex].emptyFields.length === 0 ? (
-                <p style={styles.batchDetailComplete}>All fields complete!</p>
-              ) : (
-                <div style={styles.fieldList}>
-                  {batchResult.results[expandedBatchIndex].emptyFields.map((f, i) => (
-                    <div key={i} style={f.isRequired ? styles.fieldItemRequired : styles.fieldItemEmpty}>
-                      <span style={f.isRequired ? styles.fieldNumberRequired : styles.fieldNumber}>
-                        {f.isRequired ? 'REQ' : `#${i + 1}`}
-                      </span>
-                      <span style={styles.fieldKey}>{f.key || '(unlabeled)'}</span>
-                      {f.section && <span style={styles.sectionTag}>{f.section}</span>}
-                      <span style={styles.fieldPage}>Page {f.page}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div style={styles.newReviewRow}>
-            <button onClick={resetState} style={styles.newReviewButton}>
-              Review More Forms
-            </button>
-          </div>
-        </div>
+        <OcrToolBatchResultView
+          result={batchResult}
+          expandedIndex={expandedBatchIndex}
+          onToggleExpand={(i) =>
+            setExpandedBatchIndex(expandedBatchIndex === i ? null : i)
+          }
+          onReset={resetState}
+        />
       )}
     </div>
   );
 }
-
-/** Collapsible filled fields section */
-function FilledFieldsSection({ fields }: { fields: Array<{ key: string; value?: string; page: number; confidence: number; section?: string }> }) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div style={styles.fieldSection}>
-      <button onClick={() => setExpanded(!expanded)} style={styles.filledToggle}>
-        <span style={styles.fieldSectionTitleGreen}>
-          Completed Fields ({fields.length})
-        </span>
-        <span style={styles.expandArrow}>{expanded ? '\u25B2' : '\u25BC'}</span>
-      </button>
-      {expanded && (
-        <div style={styles.fieldList}>
-          {fields.map((f, i) => (
-            <div key={i} style={styles.fieldItemFilled}>
-              <span style={styles.fieldKey}>{f.key || '(unlabeled)'}</span>
-              <span style={styles.fieldValue}>{f.value}</span>
-              {f.section && <span style={styles.sectionTag}>{f.section}</span>}
-              <span style={styles.fieldPage}>Page {f.page}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  container: { padding: '28px', maxWidth: '960px', background: 'var(--ums-bg-surface)', height: '100%', overflowY: 'auto' },
-  headerSection: { display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'flex-start' },
-  iconBg: {
-    width: '48px', height: '48px', borderRadius: '14px',
-    background: 'linear-gradient(135deg, var(--ums-brand-light), var(--ums-border))',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  iconBgForm: {
-    width: '48px', height: '48px', borderRadius: '14px',
-    background: 'linear-gradient(135deg, #FFF3E0, #FFE0B2)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  icon: { fontSize: '24px' },
-  title: { margin: '0 0 4px', fontSize: '18px', fontWeight: 700, color: 'var(--ums-text-primary)', letterSpacing: '-0.2px' },
-  description: { margin: 0, fontSize: '14px', color: 'var(--ums-text-muted)', lineHeight: '1.5' },
-
-  // Mode toggle
-  toggleRow: {
-    display: 'flex', gap: '4px', marginBottom: '20px',
-    background: '#F1F5F9', borderRadius: '10px', padding: '3px',
-  },
-  toggleActive: {
-    flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'var(--ums-bg-surface)', color: 'var(--ums-brand-primary)', fontSize: '13px', fontWeight: 600,
-    cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-  },
-  toggleActiveForm: {
-    flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'var(--ums-bg-surface)', color: '#E65100', fontSize: '13px', fontWeight: 600,
-    cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-  },
-  toggleInactive: {
-    flex: 1, padding: '8px 16px', border: 'none', borderRadius: '8px',
-    background: 'transparent', color: 'var(--ums-text-muted)', fontSize: '13px', fontWeight: 500,
-    cursor: 'pointer',
-  },
-
-  // Upload
-  uploadLabel: { display: 'inline-block', cursor: 'pointer' },
-  uploadButton: {
-    display: 'inline-block', padding: '11px 24px',
-    background: 'var(--ums-brand-gradient)', color: 'var(--ums-bg-surface)',
-    borderRadius: '10px', fontSize: '14px', fontWeight: 500,
-    boxShadow: '0 2px 8px rgba(27, 111, 201, 0.25)', cursor: 'pointer',
-  },
-  uploadButtonForm: {
-    display: 'inline-block', padding: '11px 24px',
-    background: 'linear-gradient(135deg, #E65100, #BF360C)', color: 'white',
-    borderRadius: '10px', fontSize: '14px', fontWeight: 500,
-    boxShadow: '0 2px 8px rgba(230, 81, 0, 0.25)', cursor: 'pointer',
-  },
-  uploadButtonLoading: {
-    display: 'inline-block', padding: '11px 24px', background: 'var(--ums-text-muted)',
-    color: 'var(--ums-bg-surface)', borderRadius: '10px', fontSize: '14px', fontWeight: 500, cursor: 'wait',
-  },
-
-  // Loading
-  loadingBar: {
-    marginTop: '16px', height: '4px', borderRadius: '2px',
-    background: 'var(--ums-border-light)', overflow: 'hidden',
-  },
-  loadingBarFill: {
-    height: '100%', width: '40%', borderRadius: '2px',
-    background: 'linear-gradient(90deg, var(--ums-brand-primary), #42A5F5, var(--ums-brand-primary))',
-    backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite',
-  },
-  loadingBarFillForm: {
-    height: '100%', width: '40%', borderRadius: '2px',
-    background: 'linear-gradient(90deg, #E65100, #FF8F00, #E65100)',
-    backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite',
-  },
-  hint: { fontSize: '12px', color: 'var(--ums-text-muted)', marginTop: '8px' },
-  error: {
-    marginTop: '16px', padding: '12px 16px', background: '#fef2f2',
-    color: '#dc2626', borderRadius: '10px', fontSize: '13px', border: '1px solid #fecaca',
-  },
-
-  // OCR results
-  resultContainer: {
-    marginTop: '24px', border: '1px solid var(--ums-border-light)', borderRadius: '14px',
-    overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-  },
-  resultHeader: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '14px 18px', background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid var(--ums-border-light)',
-  },
-  resultMetaRow: { display: 'flex', alignItems: 'center', gap: '8px' },
-  resultFilename: { fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-primary)' },
-  metaBadge: {
-    fontSize: '11px', color: 'var(--ums-brand-primary)', background: 'var(--ums-brand-light)',
-    padding: '3px 8px', borderRadius: '6px', fontWeight: 500,
-  },
-  metaBadgeRed: {
-    fontSize: '11px', color: '#DC2626', background: '#FEF2F2',
-    padding: '3px 8px', borderRadius: '6px', fontWeight: 600,
-    border: '1px solid #FECACA',
-  },
-  metaBadgeGreen: {
-    fontSize: '11px', color: '#059669', background: '#ECFDF5',
-    padding: '3px 8px', borderRadius: '6px', fontWeight: 600,
-    border: '1px solid #A7F3D0',
-  },
-  metaBadgeCached: {
-    fontSize: '11px', color: '#7C3AED', background: '#F5F3FF',
-    padding: '3px 8px', borderRadius: '6px', fontWeight: 600,
-    border: '1px solid #DDD6FE',
-  },
-  copyButton: {
-    padding: '6px 14px', background: 'var(--ums-bg-surface)', border: '1px solid var(--ums-border)',
-    borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 500, color: 'var(--ums-text-muted)',
-  },
-  resultText: {
-    padding: '18px', margin: 0, fontSize: '13px', lineHeight: '1.7',
-    whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '400px',
-    overflowY: 'auto', fontFamily: 'inherit', color: '#3D5A73', background: 'var(--ums-bg-surface)',
-  },
-
-  // Form Review results
-  formResultContainer: {
-    marginTop: '24px', border: '1px solid var(--ums-border-light)', borderRadius: '14px',
-    overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-  },
-  formResultHeader: {
-    padding: '18px 20px', background: '#FFF8F0', borderBottom: '1px solid #FFE0B2',
-  },
-  formResultTitle: {
-    margin: '0 0 8px', fontSize: '16px', fontWeight: 700, color: 'var(--ums-text-primary)',
-  },
-  formMetaRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const },
-
-  // Form type detection
-  formTypeSection: {
-    padding: '12px 20px', background: 'var(--ums-bg-surface-alt)', borderBottom: '1px solid var(--ums-border-light)',
-    display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const,
-  },
-  formTypeLabel: { fontSize: '12px', color: 'var(--ums-text-muted)', fontWeight: 500 },
-  formTypeName: { fontSize: '13px', fontWeight: 700, color: 'var(--ums-brand-primary)' },
-  formTypeDesc: { fontSize: '12px', color: 'var(--ums-text-muted)', fontStyle: 'italic' },
-
-  // Required fields alert
-  requiredAlert: {
-    padding: '14px 20px', background: '#FEF2F2', borderBottom: '1px solid #FECACA',
-    display: 'flex', gap: '12px', alignItems: 'flex-start',
-    fontSize: '13px', color: '#991B1B',
-  },
-  requiredAlertIcon: {
-    width: '24px', height: '24px', borderRadius: '50%', background: '#DC2626',
-    color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: '14px', fontWeight: 700, flexShrink: 0,
-  },
-  requiredList: {
-    marginTop: '6px', display: 'flex', gap: '6px', flexWrap: 'wrap' as const,
-  },
-  requiredItem: {
-    fontSize: '12px', background: '#FEE2E2', padding: '3px 8px', borderRadius: '6px',
-    border: '1px solid #FECACA', display: 'inline-flex', alignItems: 'center', gap: '4px',
-  },
-  sectionTag: {
-    fontSize: '10px', background: 'var(--ums-brand-light)', color: 'var(--ums-brand-primary)', padding: '2px 5px',
-    borderRadius: '3px', fontWeight: 600,
-  },
-
-  // Downloads
-  downloadSection: {
-    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid var(--ums-border-light)',
-  },
-  downloadLabel: {
-    margin: '0 0 10px', fontSize: '13px', fontWeight: 600, color: '#374151',
-  },
-  downloadRow: { display: 'flex', gap: '10px', flexWrap: 'wrap' as const },
-  downloadBtnAnnotated: {
-    padding: '10px 20px', border: 'none', borderRadius: '10px',
-    background: 'linear-gradient(135deg, #E65100, #BF360C)', color: 'white',
-    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-    boxShadow: '0 2px 6px rgba(230,81,0,0.2)',
-  },
-  downloadBtnOriginal: {
-    padding: '10px 20px', border: '1px solid var(--ums-border)', borderRadius: '10px',
-    background: 'var(--ums-bg-surface)', color: '#374151',
-    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-  },
-  previewBtn: {
-    padding: '10px 20px', border: '1px solid #C4B5FD', borderRadius: '10px',
-    background: '#F5F3FF', color: '#6D28D9',
-    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-  },
-  interactiveBtn: {
-    padding: '10px 20px', border: '1px solid #6EE7B7', borderRadius: '10px',
-    background: '#ECFDF5', color: '#065F46',
-    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-  },
-  downloadBtnDisabled: {
-    padding: '10px 20px', border: 'none', borderRadius: '10px',
-    background: 'var(--ums-text-muted)', color: 'var(--ums-bg-surface)',
-    fontSize: '13px', fontWeight: 600, cursor: 'wait',
-  },
-  downloadHint: {
-    margin: '10px 0 0', fontSize: '12px', color: 'var(--ums-text-muted)', lineHeight: '1.5',
-    fontStyle: 'italic',
-  },
-
-  // PDF Preview
-  previewSection: {
-    borderBottom: '1px solid var(--ums-border-light)',
-  },
-  previewHeader: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '10px 20px', background: '#F5F3FF', borderBottom: '1px solid #DDD6FE',
-  },
-  previewTitle: { fontSize: '13px', fontWeight: 600, color: '#6D28D9' },
-  previewClose: {
-    padding: '4px 12px', border: '1px solid #C4B5FD', borderRadius: '6px',
-    background: 'var(--ums-bg-surface)', color: '#6D28D9', fontSize: '12px', cursor: 'pointer',
-  },
-  previewIframe: {
-    width: '100%', height: '600px', border: 'none',
-  },
-  interactiveViewerSection: {
-    height: '700px', borderBottom: '1px solid var(--ums-border-light)',
-  },
-
-  // Completion bar
-  completionSection: {
-    padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px',
-    borderBottom: '1px solid var(--ums-border-light)',
-  },
-  completionBarBg: {
-    flex: 1, height: '8px', borderRadius: '4px', background: 'var(--ums-border-light)', overflow: 'hidden',
-  },
-  completionBarFill: {
-    height: '100%', borderRadius: '4px',
-    transition: 'width 0.5s ease',
-  },
-  completionLabel: { fontSize: '12px', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' },
-
-  // Low confidence section
-  lowConfSection: {
-    padding: '16px 20px', borderBottom: '1px solid var(--ums-border-light)',
-    background: '#FFFBEB',
-  },
-  lowConfTitle: {
-    margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#92400E',
-    textTransform: 'uppercase' as const, letterSpacing: '0.3px',
-  },
-  fieldItemLowConf: {
-    display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '8px 12px', background: '#FEF3C7', borderRadius: '8px',
-    border: '1px solid #FDE68A',
-  },
-  lowConfBadge: {
-    fontSize: '11px', fontWeight: 700, color: '#92400E',
-    background: '#FDE68A', padding: '2px 6px', borderRadius: '4px', minWidth: '20px',
-    textAlign: 'center' as const,
-  },
-  lowConfValue: {
-    fontSize: '12px', color: '#92400E', fontStyle: 'italic',
-    maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-  fieldConfidence: {
-    fontSize: '10px', color: '#B45309', background: '#FEF3C7',
-    padding: '2px 5px', borderRadius: '3px', fontWeight: 600,
-  },
-
-  // Field lists
-  fieldSection: { padding: '16px 20px', borderBottom: '1px solid var(--ums-border-light)' },
-  fieldSectionTitle: {
-    margin: '0 0 10px', fontSize: '13px', fontWeight: 700, color: '#DC2626',
-    textTransform: 'uppercase' as const, letterSpacing: '0.3px',
-  },
-  fieldSectionTitleGreen: {
-    fontSize: '13px', fontWeight: 700, color: '#059669',
-    textTransform: 'uppercase' as const, letterSpacing: '0.3px',
-  },
-  fieldList: { display: 'flex', flexDirection: 'column' as const, gap: '6px' },
-  fieldItemEmpty: {
-    display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '8px 12px', background: '#FEF2F2', borderRadius: '8px',
-    border: '1px solid #FECACA',
-  },
-  fieldItemRequired: {
-    display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '8px 12px', background: '#FEF2F2', borderRadius: '8px',
-    border: '2px solid #DC2626',
-  },
-  fieldItemFilled: {
-    display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '8px 12px', background: 'var(--ums-bg-surface-alt)', borderRadius: '8px',
-    border: '1px solid var(--ums-border-light)',
-  },
-  fieldNumber: {
-    fontSize: '11px', fontWeight: 700, color: '#DC2626',
-    background: '#FEE2E2', padding: '2px 6px', borderRadius: '4px', minWidth: '24px',
-    textAlign: 'center' as const,
-  },
-  fieldNumberRequired: {
-    fontSize: '10px', fontWeight: 700, color: 'white',
-    background: '#DC2626', padding: '2px 6px', borderRadius: '4px', minWidth: '28px',
-    textAlign: 'center' as const,
-  },
-  fieldKey: { fontSize: '13px', fontWeight: 600, color: 'var(--ums-text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: '6px' },
-  fieldValue: {
-    fontSize: '12px', color: 'var(--ums-text-muted)', maxWidth: '200px',
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-  fieldPage: { fontSize: '11px', color: 'var(--ums-text-muted)' },
-  checkboxTag: {
-    fontSize: '10px', background: '#E5E7EB', color: '#6B7280', padding: '1px 5px',
-    borderRadius: '3px', fontWeight: 500,
-  },
-  filledToggle: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    width: '100%', padding: '0 0 10px', border: 'none', background: 'none',
-    cursor: 'pointer',
-  },
-  expandArrow: { fontSize: '11px', color: 'var(--ums-text-muted)' },
-
-  // New review
-  newReviewRow: { padding: '16px 20px', textAlign: 'center' as const },
-  newReviewButton: {
-    padding: '10px 24px', border: '1px solid var(--ums-border)', borderRadius: '10px',
-    background: 'var(--ums-bg-surface)', color: '#374151', fontSize: '13px', fontWeight: 600,
-    cursor: 'pointer',
-  },
-
-  // Batch table
-  batchTableContainer: {
-    overflowX: 'auto' as const,
-  },
-  batchTable: {
-    width: '100%', borderCollapse: 'collapse' as const, fontSize: '13px',
-  },
-  batchTh: {
-    padding: '10px 12px', textAlign: 'left' as const, fontSize: '11px',
-    fontWeight: 700, color: 'var(--ums-text-muted)', textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px', borderBottom: '2px solid var(--ums-border-light)', background: 'var(--ums-bg-surface-alt)',
-  },
-  batchTr: {
-    cursor: 'pointer', transition: 'background 0.15s',
-  },
-  batchTrSelected: {
-    cursor: 'pointer', background: '#FFF8F0',
-  },
-  batchTd: {
-    padding: '10px 12px', borderBottom: '1px solid var(--ums-border-light)',
-  },
-  batchTdCenter: {
-    padding: '10px 12px', borderBottom: '1px solid var(--ums-border-light)', textAlign: 'center' as const,
-  },
-  batchFilename: {
-    fontWeight: 600, color: 'var(--ums-text-primary)', fontSize: '12px',
-  },
-  cachedDot: {
-    display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
-    background: '#7C3AED', marginLeft: '6px', verticalAlign: 'middle',
-  },
-  batchFormType: {
-    fontSize: '11px', color: 'var(--ums-text-muted)',
-  },
-  batchMissingBad: {
-    color: '#DC2626', fontWeight: 700,
-  },
-  batchMissingGood: {
-    color: '#059669', fontWeight: 600,
-  },
-  batchReqBad: {
-    color: 'white', fontWeight: 700, background: '#DC2626',
-    padding: '2px 6px', borderRadius: '4px', fontSize: '12px',
-  },
-  batchBarBg: {
-    height: '6px', borderRadius: '3px', background: 'var(--ums-border-light)', overflow: 'hidden',
-    display: 'inline-block', width: '60px', verticalAlign: 'middle',
-  },
-  batchBarFill: {
-    height: '100%', borderRadius: '3px',
-  },
-  batchPct: {
-    fontSize: '11px', color: '#374151', fontWeight: 600, marginLeft: '6px',
-  },
-  statusComplete: {
-    fontSize: '11px', color: '#059669', background: '#ECFDF5',
-    padding: '3px 8px', borderRadius: '6px', fontWeight: 600,
-  },
-  statusIncomplete: {
-    fontSize: '11px', color: '#D97706', background: '#FFFBEB',
-    padding: '3px 8px', borderRadius: '6px', fontWeight: 600,
-  },
-  statusCritical: {
-    fontSize: '11px', color: '#DC2626', background: '#FEF2F2',
-    padding: '3px 8px', borderRadius: '6px', fontWeight: 600,
-  },
-
-  // Batch detail
-  batchDetail: {
-    padding: '16px 20px', background: '#FFFDF7', borderBottom: '1px solid var(--ums-border-light)',
-  },
-  batchDetailTitle: {
-    margin: '0 0 10px', fontSize: '14px', fontWeight: 700, color: 'var(--ums-text-primary)',
-  },
-  batchDetailComplete: {
-    margin: 0, fontSize: '13px', color: '#059669', fontWeight: 600,
-  },
-};

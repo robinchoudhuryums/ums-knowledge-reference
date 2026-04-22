@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildCspDirectives,
   shouldDisableFrameguard,
+  devFrameAncestorsHeader,
 } from '../middleware/cspDirectives';
 
 describe('buildCspDirectives', () => {
@@ -49,5 +50,25 @@ describe('shouldDisableFrameguard', () => {
 
   it('disables XFO when embedding is allowed so CSP is the sole authority', () => {
     expect(shouldDisableFrameguard('https://umscallanalyzer.com')).toBe(true);
+  });
+});
+
+describe('devFrameAncestorsHeader', () => {
+  it('returns empty string when no origin is set (caller skips middleware)', () => {
+    expect(devFrameAncestorsHeader('')).toBe('');
+  });
+
+  it('builds a narrow frame-ancestors-only CSP value', () => {
+    expect(
+      devFrameAncestorsHeader('https://umscallanalyzer.com'),
+    ).toBe("frame-ancestors 'self' https://umscallanalyzer.com");
+  });
+
+  it('never introduces other directives that would break Vite HMR', () => {
+    const value = devFrameAncestorsHeader('https://umscallanalyzer.com');
+    // Explicitly assert neither default-src nor script-src are present;
+    // adding them would break 'unsafe-eval' that Vite HMR needs in dev.
+    expect(value).not.toContain('default-src');
+    expect(value).not.toContain('script-src');
   });
 });

@@ -44,3 +44,22 @@ export function buildCspDirectives(embedAllowedOrigin: string): CspDirectiveSet 
 export function shouldDisableFrameguard(embedAllowedOrigin: string): boolean {
   return Boolean(embedAllowedOrigin);
 }
+
+/**
+ * Narrow CSP header value for dev mode — just the `frame-ancestors`
+ * directive, nothing else. The full CSP is intentionally disabled in
+ * dev (helmet.contentSecurityPolicy=false) because Vite HMR needs
+ * 'unsafe-eval' and other exemptions the prod policy forbids. But
+ * disabling the whole policy also drops `frame-ancestors`, which means
+ * a dev instance with EMBED_ALLOWED_ORIGIN set would be framable by
+ * ANY origin — weaker than prod and pointlessly so. This helper
+ * produces just the frame-ancestors string so dev can emit it via a
+ * targeted middleware and preserve the allowlist invariant.
+ *
+ * Returns empty string when no origin is configured; caller should
+ * skip the middleware entirely in that case.
+ */
+export function devFrameAncestorsHeader(embedAllowedOrigin: string): string {
+  if (!embedAllowedOrigin) return '';
+  return `frame-ancestors 'self' ${embedAllowedOrigin}`;
+}

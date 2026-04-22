@@ -76,7 +76,11 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 // X-Frame-Options (since CSP supersedes it in modern browsers). Unset =
 // default-deny framing (current behavior). Used by CallAnalyzer to embed
 // RAG's chat interface inline at /?embed=1.
-import { buildCspDirectives, shouldDisableFrameguard } from './middleware/cspDirectives';
+import {
+  buildCspDirectives,
+  shouldDisableFrameguard,
+  devFrameAncestorsHeader,
+} from './middleware/cspDirectives';
 const embedAllowedOrigin = process.env.EMBED_ALLOWED_ORIGIN || '';
 
 app.use(helmet({
@@ -88,6 +92,18 @@ app.use(helmet({
     : { action: 'sameorigin' },
   crossOriginEmbedderPolicy: false,
 }));
+
+// Dev-mode defense-in-depth: helmet's full CSP is off in dev because
+// Vite HMR needs 'unsafe-eval' etc, but that also drops frame-ancestors.
+// Emit ONLY the frame-ancestors directive in dev when the embed is
+// allowed, so a dev instance can't be iframed by arbitrary origins.
+if (process.env.NODE_ENV !== 'production' && embedAllowedOrigin) {
+  const devFrameAncestors = devFrameAncestorsHeader(embedAllowedOrigin);
+  app.use((_req, res, next) => {
+    res.setHeader('Content-Security-Policy', devFrameAncestors);
+    next();
+  });
+}
 
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
 if (corsOrigin === '*') {

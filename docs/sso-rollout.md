@@ -1,0 +1,167 @@
+# SSO Rollout Runbook — RAG + CallAnalyzer
+
+Option-A shared-cookie SSO: CallAnalyzer (CA) is the auth authority, RAG
+trusts a session cookie scoped to `.umscallanalyzer.com` and JIT-provisions
+local user rows on first login. This runbook covers the coordinated
+deploy + cutover across both services.
+
+## Current state (before rollout)
+
+Everything lands behind env flags defaulting to OFF. On both services
+the existing auth behavior is unchanged until ops flips the flags in
+the order below.
+
+| Flag | Repo | Default | Purpose |
+|------|------|---------|---------|
+| `SSO_SHARED_SECRET` | both | unset | Service-to-service auth on `/api/auth/sso-verify`. Must be ≥32 chars, identical on both services. |
+| `SHARED_COOKIE_DOMAIN` | both | `""` | Parent domain for session + CSRF cookies (e.g. `.umscallanalyzer.com`). Unset = host-scoped (current). |
+| `ENABLE_SSO` | RAG | `false` | Activates the introspection middleware. Requires `CA_BASE_URL`. |
+| `CA_BASE_URL` | RAG | `""` | Where RAG sends `/api/auth/sso-verify` calls (e.g. `https://umscallanalyzer.com`). |
+| `ENABLE_NATIVE_MFA` | RAG | `true` | Gates RAG's TOTP check at login. Keep ON during initial rollout; flip OFF once SSO is stable. |
+
+## Prerequisites
+
+- Both CA and RAG are behind the same reverse proxy on the same eTLD+1
+  (`umscallanalyzer.com` + `knowledge.umscallanalyzer.com`).
+- Both services run over HTTPS (required for `Secure` cookies + HSTS with
+  `includeSubDomains`).
+- Operator has a break-glass RAG admin with a known password — see
+  `backend/src/scripts/reset-admin.ts` for the reset path if needed.
+- A low-traffic window scheduled. Setting `SHARED_COOKIE_DOMAIN`
+  invalidates every existing session on both services because browsers
+  treat host-scoped and domain-scoped cookies as distinct entries — all
+  users will be signed out once at the moment of cutover.
+
+## Rollout order
+
+Flags are flipped in stages so each step can be rolled back independently.
+
+### Stage 1 — Generate the shared secret
+
+```
+openssl rand -hex 32
+```
+
+Set `SSO_SHARED_SECRET=<same-value>` on **both** services. Deploy both.
+No behavior change: CA's new `/api/auth/sso-verify` now returns the user
+when called correctly, but nothing calls it yet. RAG's `ENABLE_SSO` is
+still false so the middleware no-ops.
+
+Verify on CA:
+```
+curl -i https://umscallanalyzer.com/api/auth/sso-verify -H "X-Service-Secret: <secret>"
+# expect: 401 "Not authenticated"  (no session cookie on this curl)
+curl -i https://umscallanalyzer.com/api/auth/sso-verify -H "X-Service-Secret: wrong"
+# expect: 401 "Invalid service credential"
+curl -i https://umscallanalyzer.com/api/auth/sso-verify
+# expect: 401 "Invalid service credential"
+```
+
+### Stage 2 — Shared cookie domain (both services, same deploy window)
+
+Set on **both**:
+```
+SHARED_COOKIE_DOMAIN=.umscallanalyzer.com
+```
+
+Deploy both within the same window. At deploy, all existing sessions on
+both services become invalid — users will be signed out exactly once.
+
+Verify with a fresh browser session after deploy:
+- Log into CA. Inspect the `connect.sid` cookie — `Domain` column
+  should read `.umscallanalyzer.com`, not `umscallanalyzer.com`.
+- Navigate to RAG (which still uses its own login — SSO not yet
+  enabled). Inspect `ums_auth_token` — same domain attribute.
+
+### Stage 3 — Enable SSO on RAG
+
+Set on **RAG only**:
+```
+ENABLE_SSO=true
+CA_BASE_URL=https://umscallanalyzer.com
+```
+
+Deploy RAG. The introspection middleware activates.
+
+Verify:
+- Log into CA first.
+- Navigate to RAG. You should land directly on the app without seeing
+  RAG's login form. RAG's `ums_auth_token` cookie is now set by the
+  middleware.
+- Check RAG's audit log: there should be a `login` entry with
+  `details.action=sso_login` and `details.jitProvisioned=true` (first
+  time) or `false` (subsequent).
+
+### Stage 4 — Frontend SSO panel
+
+No new env flag. The frontend reads `/api/auth/config` on the login
+page and renders "Sign in with CallAnalyzer" when SSO is enabled server-
+side. With Stage 3 deployed, users who sign out of RAG and hit the login
+page see the SSO button by default; the `?local=1` URL param keeps the
+username/password form reachable for break-glass.
+
+### Stage 5 — Retire RAG native MFA (optional, after 1-2 weeks)
+
+Only after Stage 4 is stable in prod.
+
+Set on **RAG**:
+```
+ENABLE_NATIVE_MFA=false
+```
+
+Deploy RAG. RAG's TOTP check at login is skipped. CA still enforces MFA
+before its session exists, so the overall security posture is
+preserved. Users stay enrolled; flipping the flag back on restores the
+check without re-enrollment.
+
+## Rollback paths
+
+Each stage rolls back by unsetting its flag and redeploying the affected
+service. No data migration is required.
+
+- **Stage 5 rollback**: set `ENABLE_NATIVE_MFA=true`. Native MFA prompt
+  returns on next login.
+- **Stage 3 rollback**: set `ENABLE_SSO=false`. Introspection middleware
+  no-ops. RAG falls back to its own login form (frontend /api/auth/config
+  returns `sso.enabled=false`, LoginForm shows username/password).
+- **Stage 2 rollback**: unset `SHARED_COOKIE_DOMAIN` on both. All
+  sessions invalidate again; users sign back in once.
+- **Stage 1 rollback**: unset `SSO_SHARED_SECRET` on both. CA's
+  `/api/auth/sso-verify` returns 503. RAG's middleware skips
+  introspection.
+
+## What to watch post-cutover
+
+- **RAG audit log**: `details.action=sso_login` entries with
+  `jitProvisioned` counts. A burst of `jitProvisioned=true` is normal
+  on day 1 (each existing CA user gets one local row on first RAG
+  visit). After that it should trend to zero as the ssoSub fast path
+  takes over.
+- **RAG logs**: `logger.warn` entries mentioning
+  `SSO introspection failed` indicate CA is unreachable or returned a
+  non-200. A few is fine (e.g. expired CA sessions); sustained output
+  points at a CA outage or a CORS/secret mismatch.
+- **RAG usage stats**: per-user daily query limits now key on CA's
+  UUID (for SSO'd users) — a user who was previously at their local
+  daily limit gets a fresh budget on first SSO login because
+  `usage_records` has no row for the new user id. Expected. Do not
+  try to "merge" old and new rows; the FK-stability invariant is the
+  whole point of JIT-provisioning with CA's UUID.
+- **CA audit log**: unchanged. `/api/auth/sso-verify` does not write
+  CA-side audit entries — the session itself was already audited at
+  CA login.
+
+## Known gaps (deferred — not blockers)
+
+- **Single sign-out**: logging out of RAG doesn't invalidate the CA
+  session. A user on both tools has to sign out of each. Can be added
+  later by having RAG's `logoutHandler` fire a best-effort POST to
+  CA's `/api/auth/logout` with the forwarded cookie.
+- **Return-to after CA login**: the SSO button passes
+  `?return_to=<rag-url>`, but CA's login page doesn't honor it — users
+  land on CA's dashboard after login and must re-navigate to RAG.
+  Follow-on in CA to read `return_to` and redirect appropriately.
+- **Embedded RAG chat in CA** (Track 3): the original multi-track plan
+  included an iframe of RAG's chat embedded in CA. Unblocked by this
+  rollout (the shared cookie makes the iframe flow trivial) but not
+  wired.

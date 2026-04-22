@@ -71,21 +71,21 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Security middleware
+// When set (e.g. "https://umscallanalyzer.com"), allows that origin to
+// iframe this service. Extends CSP frame-ancestors and disables
+// X-Frame-Options (since CSP supersedes it in modern browsers). Unset =
+// default-deny framing (current behavior). Used by CallAnalyzer to embed
+// RAG's chat interface inline at /?embed=1.
+import { buildCspDirectives, shouldDisableFrameguard } from './middleware/cspDirectives';
+const embedAllowedOrigin = process.env.EMBED_ALLOWED_ORIGIN || '';
+
 app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],  // React inline styles require unsafe-inline
-      imgSrc: ["'self'", 'data:', 'blob:'],     // data: for base64, blob: for PDF preview
-      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-      connectSrc: ["'self'"],                    // API calls to same origin
-      frameSrc: ["'none'"],
-      objectSrc: ["'none'"],
-      baseUri: ["'self'"],
-      formAction: ["'self'"],
-    },
-  } : false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production'
+    ? { directives: buildCspDirectives(embedAllowedOrigin) }
+    : false,
+  frameguard: shouldDisableFrameguard(embedAllowedOrigin)
+    ? false
+    : { action: 'sameorigin' },
   crossOriginEmbedderPolicy: false,
 }));
 

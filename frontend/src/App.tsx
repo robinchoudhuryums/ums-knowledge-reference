@@ -9,6 +9,7 @@ import { useAuth } from './hooks/useAuth';
 import { useIdleTimeout } from './hooks/useIdleTimeout';
 import { LoginForm } from './components/LoginForm';
 import { ChatInterface } from './components/ChatInterface';
+import { EmbedShell } from './components/EmbedShell';
 import { PopoutButton } from './components/PopoutButton';
 import { ChangePasswordForm } from './components/ChangePasswordForm';
 import { FormsTab } from './components/FormsTab';
@@ -22,6 +23,10 @@ import { listCollections } from './services/api';
 
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'true';
 const isStyleGuide = new URLSearchParams(window.location.search).get('style-guide') === '1';
+// Embed mode — the app is being iframed by a sibling service (CallAnalyzer).
+// Renders a chrome-free ChatInterface and wires a minimal postMessage bridge
+// so the parent frame can coordinate open/close state.
+const isEmbed = new URLSearchParams(window.location.search).get('embed') === '1';
 
 function IdleWarningBanner({ remainingSeconds }: { remainingSeconds: number }) {
   const label =
@@ -198,6 +203,17 @@ function AuthenticatedApp() {
         </main>
       </div>
     );
+  }
+
+  // Embed mode: iframed by a sibling service (CallAnalyzer). No header, no
+  // sidebar — the parent provides chrome. Emits `embed:ready` on mount so
+  // the parent can show the panel, and listens for `embed:ping` as a
+  // liveness check. Origin validation on every postMessage — we only talk
+  // to the exact origin our parent came from (read once from ancestorOrigins
+  // or fall back to `*` for the outbound ready message, which leaks no
+  // sensitive data).
+  if (isEmbed) {
+    return <EmbedShell collections={collections} />;
   }
 
   return (

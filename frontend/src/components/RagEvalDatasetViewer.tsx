@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { getEvalDataset, EvalDataset, GoldPair } from '../services/api';
 
 /**
@@ -18,100 +20,153 @@ export function RagEvalDatasetViewer() {
   useEffect(() => {
     let cancelled = false;
     getEvalDataset()
-      .then(d => { if (!cancelled) setDataset(d); })
-      .catch(err => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load dataset'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((d) => {
+        if (!cancelled) setDataset(d);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : 'Failed to load dataset');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredPairs: GoldPair[] = useMemo(() => {
     if (!dataset) return [];
     const term = search.trim().toLowerCase();
-    return dataset.pairs.filter(p => {
+    return dataset.pairs.filter((p) => {
       if (filterCategory !== 'all' && p.category !== filterCategory) return false;
       if (!term) return true;
       return (
         p.question.toLowerCase().includes(term) ||
-        p.expectedKeywords.some(k => k.toLowerCase().includes(term)) ||
-        p.expectedCodes.some(c => c.toLowerCase().includes(term))
+        p.expectedKeywords.some((k) => k.toLowerCase().includes(term)) ||
+        p.expectedCodes.some((c) => c.toLowerCase().includes(term))
       );
     });
   }, [dataset, filterCategory, search]);
 
   return (
-    <div style={styles.card}>
-      <div style={styles.header}>
-        <div>
-          <h3 style={styles.title}>RAG gold-standard dataset</h3>
-          <p style={styles.subtitle}>
-            Gold-standard Q&amp;A pairs used by <code>scripts/evalRag.ts</code> to measure
-            recall@10 and MRR. Not run from this page — run the CLI against a populated
-            index to produce <code>eval-output/junit.xml</code>.
-          </p>
-        </div>
+    <div className="rounded-sm border border-border bg-card p-5 shadow-sm">
+      <div className="mb-3">
+        <h3 className="text-[14px] font-semibold text-foreground">
+          RAG gold-standard dataset
+        </h3>
+        <p className="mt-1 max-w-[660px] text-[12px] leading-relaxed text-muted-foreground">
+          Gold-standard Q&amp;A pairs used by <code className="font-mono">scripts/evalRag.ts</code> to
+          measure recall@10 and MRR. Not run from this page — run the CLI against a
+          populated index to produce <code className="font-mono">eval-output/junit.xml</code>.
+        </p>
       </div>
 
-      {loading && <div style={styles.loading}>Loading…</div>}
-      {error && <div style={styles.errorBanner}>{error}</div>}
+      {loading && (
+        <div className="py-5 text-center text-[13px] text-muted-foreground">
+          Loading…
+        </div>
+      )}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-sm border px-3 py-2 text-[12px]"
+          style={{
+            background: 'var(--warm-red-soft)',
+            borderColor: 'var(--warm-red)',
+            color: 'var(--warm-red)',
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       {dataset && (
         <>
-          <div style={styles.metaRow}>
-            <span style={styles.metaChip}>v{dataset.version}</span>
-            <span style={styles.metaChip}>{dataset.totalPairs} pairs</span>
-            <span style={styles.metaChip}>updated {dataset.lastUpdated}</span>
+          <div className="mb-3 flex flex-wrap gap-2">
+            <MetaChip>v{dataset.version}</MetaChip>
+            <MetaChip>{dataset.totalPairs} pairs</MetaChip>
+            <MetaChip>updated {dataset.lastUpdated}</MetaChip>
           </div>
 
-          <div style={styles.categoryRow}>
-            <button
-              type="button"
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <CategoryChip
+              active={filterCategory === 'all'}
               onClick={() => setFilterCategory('all')}
-              style={{ ...styles.chip, ...(filterCategory === 'all' ? styles.chipActive : {}) }}
             >
               All ({dataset.totalPairs})
-            </button>
-            {dataset.categories.map(c => (
-              <button
+            </CategoryChip>
+            {dataset.categories.map((c) => (
+              <CategoryChip
                 key={c.name}
-                type="button"
+                active={filterCategory === c.name}
                 onClick={() => setFilterCategory(c.name)}
-                style={{ ...styles.chip, ...(filterCategory === c.name ? styles.chipActive : {}) }}
               >
                 {c.name} ({c.count})
-              </button>
+              </CategoryChip>
             ))}
           </div>
 
-          <input
+          <Input
             type="text"
             placeholder="Filter by question, keyword, or HCPCS…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={styles.search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="mb-2"
           />
 
-          <div style={styles.count}>
+          <div className="mb-2 font-mono text-[11px] text-muted-foreground">
             Showing {filteredPairs.length} of {dataset.pairs.length}
           </div>
 
-          <ul style={styles.list}>
+          <ul className="max-h-[420px] list-none overflow-y-auto rounded-sm border border-border">
             {filteredPairs.map((p, i) => (
-              <li key={i} style={styles.item}>
-                <div style={styles.itemTop}>
-                  <span style={styles.itemCategory}>{p.category}</span>
-                  <span style={styles.itemQuestion}>{p.question}</span>
+              <li
+                key={i}
+                className="border-b border-border px-3 py-2.5 last:border-b-0"
+              >
+                <div className="mb-1 flex items-center gap-2.5">
+                  <span
+                    className="inline-flex items-center rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider"
+                    style={{ background: 'var(--copper-soft)', color: 'var(--accent)' }}
+                  >
+                    {p.category}
+                  </span>
+                  <span className="text-[13px] text-foreground">{p.question}</span>
                 </div>
-                <div style={styles.itemBottom}>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
                   {p.expectedCodes.length > 0 && (
-                    <div style={styles.itemMeta}>
-                      <strong>codes:</strong>{' '}
-                      {p.expectedCodes.map(c => <code key={c} style={styles.codeChip}>{c}</code>)}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <strong className="font-mono uppercase tracking-wider">
+                        codes
+                      </strong>
+                      {p.expectedCodes.map((c) => (
+                        <code
+                          key={c}
+                          className="rounded-sm px-1.5 py-0.5 font-mono text-[11px]"
+                          style={{
+                            background: 'var(--copper-soft)',
+                            color: 'var(--accent)',
+                          }}
+                        >
+                          {c}
+                        </code>
+                      ))}
                     </div>
                   )}
                   {p.expectedKeywords.length > 0 && (
-                    <div style={styles.itemMeta}>
-                      <strong>keywords:</strong>{' '}
-                      {p.expectedKeywords.map(k => <span key={k} style={styles.keywordChip}>{k}</span>)}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <strong className="font-mono uppercase tracking-wider">
+                        keywords
+                      </strong>
+                      {p.expectedKeywords.map((k) => (
+                        <span
+                          key={k}
+                          className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px]"
+                        >
+                          {k}
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -120,7 +175,9 @@ export function RagEvalDatasetViewer() {
           </ul>
 
           {filteredPairs.length === 0 && (
-            <div style={styles.empty}>No pairs match the current filter.</div>
+            <div className="py-5 text-center text-[12px] italic text-muted-foreground">
+              No pairs match the current filter.
+            </div>
           )}
         </>
       )}
@@ -128,28 +185,36 @@ export function RagEvalDatasetViewer() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  card: { padding: 20, background: 'var(--ums-bg-surface, #fff)' },
-  header: { marginBottom: 12 },
-  title: { margin: '0 0 4px', fontSize: 16, fontWeight: 600, color: 'var(--ums-text-primary, #111827)' },
-  subtitle: { margin: 0, fontSize: 12, color: 'var(--ums-text-muted, #6b7280)', maxWidth: 660, lineHeight: 1.5 },
-  loading: { padding: 20, textAlign: 'center' as const, color: 'var(--ums-text-muted, #6b7280)' },
-  errorBanner: { padding: 10, background: '#fef2f2', color: '#b91c1c', borderRadius: 6, fontSize: 12 },
-  metaRow: { display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' as const },
-  metaChip: { padding: '2px 10px', background: 'var(--ums-bg-app, #f3f4f6)', borderRadius: 999, fontSize: 11, color: 'var(--ums-text-muted, #6b7280)' },
-  categoryRow: { display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' as const },
-  chip: { padding: '4px 10px', background: 'var(--ums-bg-app, #f3f4f6)', border: '1px solid var(--ums-border-light, #e5e7eb)', borderRadius: 999, cursor: 'pointer', fontSize: 11, color: 'var(--ums-text-primary, #111827)' },
-  chipActive: { background: 'var(--ums-accent, #2563eb)', color: '#fff', borderColor: 'var(--ums-accent, #2563eb)' },
-  search: { width: '100%', padding: '6px 10px', border: '1px solid var(--ums-border-light, #e5e7eb)', borderRadius: 6, fontSize: 13, marginBottom: 8, boxSizing: 'border-box' as const },
-  count: { fontSize: 11, color: 'var(--ums-text-muted, #6b7280)', marginBottom: 8 },
-  list: { listStyle: 'none', padding: 0, margin: 0, maxHeight: 420, overflowY: 'auto' as const, border: '1px solid var(--ums-border-light, #e5e7eb)', borderRadius: 6 },
-  item: { padding: '10px 12px', borderBottom: '1px solid var(--ums-border-light, #e5e7eb)' },
-  itemTop: { display: 'flex', gap: 10, alignItems: 'center', marginBottom: 4 },
-  itemCategory: { padding: '1px 8px', background: '#eef2ff', color: '#3730a3', borderRadius: 999, fontSize: 10, textTransform: 'uppercase' as const, fontWeight: 600 },
-  itemQuestion: { fontSize: 13, color: 'var(--ums-text-primary, #111827)' },
-  itemBottom: { display: 'flex', gap: 14, flexWrap: 'wrap' as const, fontSize: 11, color: 'var(--ums-text-muted, #6b7280)' },
-  itemMeta: { display: 'flex', gap: 4, flexWrap: 'wrap' as const, alignItems: 'center' },
-  codeChip: { padding: '1px 6px', background: '#e0f2fe', color: '#075985', borderRadius: 4, fontSize: 11, fontFamily: 'monospace' },
-  keywordChip: { padding: '1px 6px', background: '#f1f5f9', color: '#475569', borderRadius: 4, fontSize: 11 },
-  empty: { padding: 20, textAlign: 'center' as const, color: 'var(--ums-text-muted, #6b7280)', fontStyle: 'italic' as const },
-};
+function MetaChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-sm bg-muted px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function CategoryChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'rounded-sm border px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors',
+        active
+          ? 'border-foreground bg-foreground text-background'
+          : 'border-border bg-card text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
+  );
+}

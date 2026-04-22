@@ -101,6 +101,13 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
+// SSO introspection — runs after cookieParser so req.cookies is populated,
+// before WAF + routes so it can bootstrap a RAG session cookie the normal
+// authenticate middleware will then verify. No-op unless ENABLE_SSO=true
+// and the request has a CA `connect.sid` without a RAG `ums_auth_token`.
+import { trySsoIntrospection } from './middleware/sso';
+app.use(trySsoIntrospection);
+
 // Application-level WAF — must be after body parsing (needs parsed JSON)
 // but before CSRF and routes (blocks malicious requests early)
 import { wafMiddleware } from './middleware/waf';

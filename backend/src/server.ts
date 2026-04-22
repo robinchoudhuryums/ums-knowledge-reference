@@ -380,6 +380,41 @@ app.get('/api/auth/config', (_req, res) => {
   });
 });
 
+// Service-to-service: which CA user IDs has RAG actually seen via SSO?
+// Returns { seen: string[] } — an array of every non-null sso_sub in
+// RAG's users table. CA admin calls this to list CA users whose email
+// exists there but who've never logged into RAG (helpful for diagnosing
+// "user reports KB access broken" before RAG admin credentials are
+// reached for). Requires X-Service-Secret so outside callers can't
+// enumerate the user base.
+app.get('/api/auth/sso-seen', async (req, res) => {
+  const configured = process.env.SSO_SHARED_SECRET;
+  if (!configured || configured.length < 32) {
+    res.status(503).json({ error: 'SSO not configured' });
+    return;
+  }
+  const presented = (req.headers['x-service-secret'] as string) || '';
+  const a = Buffer.from(configured);
+  const b = Buffer.from(presented);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    res.status(401).json({ error: 'Invalid service credential' });
+    return;
+  }
+  try {
+    const { getUsers } = await import('./middleware/auth');
+    const users = await getUsers();
+    const seen = users
+      .map((u) => u.ssoSub)
+      .filter((s): s is string => typeof s === 'string' && s.length > 0);
+    res.json({ seen });
+  } catch (err) {
+    logger.warn('sso-seen: failed to list users', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    res.status(500).json({ error: 'Failed to list users' });
+  }
+});
+
 // Auth routes
 app.post('/api/auth/login', loginLimiter, loginHandler);
 app.post('/api/auth/users', authenticate, requireAdmin, (req, res) => createUserHandler(req as AuthRequest, res));

@@ -68,6 +68,7 @@ import {
   isAccountLocked,
   updateLockoutCache,
   isAccountLockedFromCache,
+  ENABLE_NATIVE_MFA,
   MAX_FAILED_ATTEMPTS,
   LOCKOUT_DURATION_MS,
   PASSWORD_HISTORY_SIZE,
@@ -197,8 +198,16 @@ export async function loginHandler(req: Request, res: Response): Promise<void> {
       return { kind: 'invalid_credentials' };
     }
 
-    // MFA check: if user has MFA enabled, require a valid TOTP code
-    if (user.mfaEnabled && user.mfaSecret) {
+    // MFA check: if user has MFA enabled, require a valid TOTP code.
+    //
+    // When ENABLE_NATIVE_MFA=false the check is skipped — the expectation is
+    // that operators have flipped this after SSO is stable, because CA
+    // enforces MFA before its session exists and the SSO middleware trusts
+    // that signal (mfaVerified:true on the CaVerifyResponse). Users still
+    // enrolled in RAG's native MFA simply don't get prompted; stored
+    // mfaSecret / mfaRecoveryCodes remain untouched so a future flip back
+    // to true restores the gate without re-enrollment.
+    if (ENABLE_NATIVE_MFA && user.mfaEnabled && user.mfaSecret) {
       if (!mfaCode) {
         // Password correct but MFA code not provided — tell frontend to prompt for it
         return { kind: 'mfa_required' };

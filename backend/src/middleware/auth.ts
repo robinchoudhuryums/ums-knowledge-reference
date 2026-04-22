@@ -344,6 +344,23 @@ export async function logoutHandler(req: AuthRequest, res: Response): Promise<vo
     revokeToken(req.user.jti);
   }
   clearAuthCookie(res);
+
+  // Fire-and-forget SLO to CA. Captures the cookie header BEFORE the
+  // response is sent (though Node's fetch would still have access via
+  // the closure, this is clearer). `void` discards the promise so it
+  // doesn't unhandle-reject; the helper itself is non-throwing anyway.
+  const rawCookie = req.headers.cookie;
+  void (async () => {
+    try {
+      const { forwardSsoLogout } = await import('./ssoLogout');
+      await forwardSsoLogout(rawCookie);
+    } catch (err) {
+      logger.warn('SSO logout forward helper threw', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  })();
+
   res.json({ message: 'Logged out' });
 }
 

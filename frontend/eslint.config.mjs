@@ -45,6 +45,14 @@ export default [
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-non-null-assertion': 'off',
 
+      // TypeScript has its own checker for undeclared identifiers that
+      // understands types (HTMLElement subclasses, MessageEvent, Window,
+      // ResizeObserver, etc.) and ambient DOM globals. Leaving eslint's
+      // `no-undef` on here duplicates the check with a weaker
+      // implementation that flags every type-only reference as "not
+      // defined". `tsc --noEmit` in CI is the authoritative check.
+      'no-undef': 'off',
+
       // React hooks
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
@@ -53,7 +61,10 @@ export default [
       'no-throw-literal': 'error',
       'prefer-const': 'error',
       'no-var': 'error',
-      'eqeqeq': ['error', 'always'],
+      // Allow `x != null` / `x == null` as a concise match for both
+      // null and undefined — idiomatic and safer to preserve than
+      // mechanically converting to `x !== null && x !== undefined`.
+      'eqeqeq': ['error', 'always', { null: 'ignore' }],
       'no-eval': 'error',
       'no-implied-eval': 'error',
 

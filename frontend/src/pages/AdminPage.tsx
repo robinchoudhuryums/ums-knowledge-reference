@@ -9,6 +9,7 @@ import { ProductImageManager } from "@/components/ProductImageManager";
 import { ExtractionQualityStatsCard } from "@/components/ExtractionQualityStatsCard";
 import { SourceStalenessManager } from "@/components/SourceStalenessManager";
 import { RagEvalDatasetViewer } from "@/components/RagEvalDatasetViewer";
+import { BatchStatusCard } from "@/components/BatchStatusCard";
 
 function SectionKicker({ children }: { children: React.ReactNode }) {
   return (
@@ -87,6 +88,9 @@ export default function AdminPage() {
         </ErrorBoundary>
         <ErrorBoundary fallbackMessage="RAG eval dataset view encountered an error.">
           <RagEvalDatasetViewer />
+        </ErrorBoundary>
+        <ErrorBoundary fallbackMessage="Batch status card encountered an error.">
+          <BatchStatusCard />
         </ErrorBoundary>
       </div>
     </div>

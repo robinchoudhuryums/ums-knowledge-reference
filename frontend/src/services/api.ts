@@ -1024,6 +1024,29 @@ export async function getExtractionQualityStats(templateId?: string): Promise<{ 
   return request(`/extraction/corrections-stats${qs}`);
 }
 
+// ─── Bedrock batch inference status (admin) ──────────────────────────────────
+
+export interface BatchStatusActiveJob {
+  jobId: string;
+  createdAt: string;
+  itemCount: number;
+}
+
+export interface BatchStatusSnapshot {
+  /** Whether BEDROCK_BATCH_MODE=true AND BEDROCK_BATCH_ROLE_ARN is configured. */
+  available: boolean;
+  /** Separate duplicate flag the backend also returns. */
+  enabled: boolean;
+  intervalMinutes: number;
+  pending: number;
+  active: BatchStatusActiveJob[];
+  orphanedSubmissions: number;
+}
+
+export async function getBatchStatus(): Promise<BatchStatusSnapshot> {
+  return request('/admin/batch-status');
+}
+
 // ─── Form drafts (partial save/resume) ───────────────────────────────────────
 
 export type FormDraftType = 'ppd' | 'pmd-account' | 'pap-account';

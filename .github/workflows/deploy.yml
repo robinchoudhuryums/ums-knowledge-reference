@@ -1,0 +1,152 @@
+# UMS Knowledge Base — Deploy to EC2
+# Deploys to production ONLY after CI passes. Also supports manual trigger.
+#
+# Flow:
+#   1. On push to main → CI workflow runs (tests, type check, build)
+#   2. After CI passes → this workflow deploys via SSH
+#   3. Manual trigger (workflow_dispatch) skips CI gate (for hotfixes) and
+#      accepts a branch input so operators can deploy a feature branch to
+#      staging without merging.
+#
+# Deploy mechanism: blue-green Docker container swap via `deploy-bluegreen.sh`.
+# Old container keeps serving traffic on port 3001 while new container is
+# built + health-checked on staging port 3002, then the ports swap. Failure
+# at any step rolls back to the old container. ~2s downtime vs ~30s standard.
+#
+# Required GitHub Secrets:
+#   EC2_SSH_KEY        — Private SSH key (PEM) for the EC2 instance
+#   EC2_HOST           — EC2 public IP or hostname
+#   EC2_USER           — SSH username (e.g. "ec2-user" or "ubuntu")
+#   EC2_APP_DIR        — App directory on EC2 (e.g. "/home/ec2-user/ums-knowledge-reference")
+#
+# HIPAA note: This workflow does NOT handle PHI. It only triggers a
+# code pull + Docker rebuild + container swap on the EC2 instance. All
+# sensitive data (credentials, documents, vectors, audit logs) stays on
+# the server in S3 / RDS / the mounted env file.
+
+name: Deploy to EC2
+
+on:
+  # Deploy after CI workflow completes successfully on main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  # Allow manual trigger for hotfixes (bypasses CI gate)
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy (default: main)'
+        required: false
+        default: 'main'
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false  # Don't cancel in-progress deploys — a swap midway is worse than queueing
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only deploy if: CI succeeded (workflow_run) OR manual trigger (workflow_dispatch)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+
+    steps:
+      - name: Validate secrets
+        run: |
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "::error::EC2_HOST secret is not set. Go to repo Settings > Secrets and variables > Actions to configure it."
+            exit 1
+          fi
+          if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then
+            echo "::error::EC2_SSH_KEY secret is not set."
+            exit 1
+          fi
+          if [ -z "${{ secrets.EC2_USER }}" ]; then
+            echo "::error::EC2_USER secret is not set (e.g. 'ec2-user' or 'ubuntu')."
+            exit 1
+          fi
+          if [ -z "${{ secrets.EC2_APP_DIR }}" ]; then
+            echo "::error::EC2_APP_DIR secret is not set (e.g. '/home/ec2-user/ums-knowledge-reference')."
+            exit 1
+          fi
+
+      - name: Determine branch
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ github.event.inputs.branch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.event.workflow_run.head_branch }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy via SSH (blue-green)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          command_timeout: 15m
+          script: |
+            set -e
+            cd ${{ secrets.EC2_APP_DIR }}
+            echo "=== GitHub Actions Deploy ==="
+            echo "Commit:  ${{ github.sha }}"
+            echo "Branch:  ${{ steps.branch.outputs.name }}"
+            echo "Trigger: ${{ github.event_name }}"
+            # Bootstrap: discard any on-box drift to tracked files (e.g. a
+            # stray `npm install` that mutated package-lock.json) so the
+            # pull inside deploy-bluegreen.sh can always fast-forward cleanly.
+            # .env and other gitignored files are unaffected. This guards
+            # against the chicken-and-egg case where deploy-bluegreen.sh
+            # itself is what needs to be updated.
+            git fetch origin ${{ steps.branch.outputs.name }}
+            git reset --hard origin/${{ steps.branch.outputs.name }}
+            ./deploy-bluegreen.sh ${{ steps.branch.outputs.name }}
+
+      - name: Post-deploy health verification
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          command_timeout: 2m
+          script: |
+            # Independent health check after deploy-bluegreen.sh completes.
+            # Validates both HTTP 200 AND that the response body looks right,
+            # so a container serving a 200-but-empty health endpoint (e.g.
+            # bad reverse proxy) still fails this step.
+            for i in 1 2 3 4 5; do
+              BODY=$(curl -sf --max-time 10 http://localhost:3001/api/health 2>/dev/null) && break
+              echo "Health check attempt $i failed, retrying in 5s..."
+              sleep 5
+            done
+            if [ -z "$BODY" ]; then
+              echo "::error::Health check failed — no response after 5 attempts"
+              echo "=== Recent container logs ==="
+              docker logs --tail 40 ums-knowledge 2>/dev/null || true
+              exit 1
+            fi
+            if ! echo "$BODY" | grep -q '"status"'; then
+              echo "::error::Health check returned unexpected response: $BODY"
+              exit 1
+            fi
+            echo "Health check passed: $BODY"
+
+      - name: Post deploy summary
+        if: always()
+        run: |
+          echo "### Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ steps.branch.outputs.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mechanism:** Docker blue-green (port 3002 → 3001)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Rollback (SSH to box): \`docker stop ums-knowledge && docker rename ums-knowledge-old ums-knowledge && docker start ums-knowledge\`" >> $GITHUB_STEP_SUMMARY

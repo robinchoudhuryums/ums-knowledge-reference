@@ -189,13 +189,42 @@ docker run -d \
   -p "${PROD_PORT}:${PROD_PORT}" \
   "$NEW_TAG"
 
-# Quick health check on production port
-sleep 3
-if curl -sf "http://localhost:${PROD_PORT}/api/health" > /dev/null 2>&1; then
+# Production health check — mirror the staging retry loop. The swap
+# recreates the container from the image (a staging container on port
+# 3002 can't have its port mapping changed in place), so the new
+# production container goes through its own full cold start:
+# migrations, vector store load, DB connection retries. A fixed 3s
+# wait was too short in practice and caused false-positive rollbacks
+# when the new container was still coming up healthily.
+HEALTHY=false
+TRIES=0
+while [ "$TRIES" -lt "$HEALTH_TIMEOUT" ]; do
+  TRIES=$((TRIES + 1))
+  if curl -sf "http://localhost:${PROD_PORT}/api/health" > /dev/null 2>&1; then
+    echo "Production healthy after ${TRIES}s"
+    HEALTHY=true
+    break
+  fi
+  # Partial log dump at 15s to diagnose slow-start issues before the
+  # full timeout — matches the staging check's behavior.
+  if [ "$TRIES" = "15" ]; then
+    echo "=== Production still not healthy at 15s — partial logs: ==="
+    docker logs --tail 40 "$CONTAINER_NAME" 2>&1 || true
+    echo "==="
+  fi
+  sleep 1
+done
+
+if [ "$HEALTHY" = "true" ]; then
   echo "Production health check passed — removing old container"
   docker rm "${CONTAINER_NAME}-old" 2>/dev/null || true
 else
-  echo "!!! Production health check failed — rolling back to old container"
+  echo ""
+  echo "!!! Production health check failed after ${HEALTH_TIMEOUT}s — rolling back to old container"
+  echo "=== Full production container logs (last 200 lines) ==="
+  docker logs --tail 200 "$CONTAINER_NAME" 2>&1 || true
+  echo "=== Container inspect ==="
+  docker inspect "$CONTAINER_NAME" --format 'Status: {{.State.Status}} | ExitCode: {{.State.ExitCode}} | OOM: {{.State.OOMKilled}} | Error: {{.State.Error}}' 2>&1 || true
   docker stop "$CONTAINER_NAME" 2>/dev/null || true
   docker rm "$CONTAINER_NAME" 2>/dev/null || true
   docker rename "${CONTAINER_NAME}-old" "$CONTAINER_NAME" 2>/dev/null || true

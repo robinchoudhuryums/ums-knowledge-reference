@@ -6,13 +6,22 @@
     </linearGradient>
   </defs>
   <rect width="32" height="32" rx="7" fill="url(#bg)"/>
-  <g transform="translate(4.5, 4.5) scale(0.95)" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 2a7 7 0 0 0-4.6 12.3c.5.4.8 1 .9 1.7h7.4c.1-.7.4-1.3.9-1.7A7 7 0 0 0 12 2z"/>
-    <path d="M9 22h6"/>
-    <path d="M10 18v4"/>
-    <path d="M14 18v4"/>
-    <path d="M12 2v4"/>
-    <path d="M4.9 7.1l2.9 2.9"/>
-    <path d="M19.1 7.1l-2.9 2.9"/>
+  <!-- Brain glyph — matches the lucide-react Brain icon used as the
+       in-app sidebar logo. Two symmetric lobes with a center divide
+       and folds. Drawn at scale 1.1 inside the 32×32 viewport so the
+       silhouette reads clearly at 16px favicon renders. -->
+  <g transform="translate(3.5, 3.5) scale(1.05)"
+     fill="none" stroke="white" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- Left lobe -->
+    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+    <!-- Right lobe (mirror) -->
+    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+    <!-- Center divide -->
+    <path d="M12 5v13"/>
+    <!-- Left fold -->
+    <path d="M9 13a4.5 4.5 0 0 0 3-4"/>
+    <!-- Right fold -->
+    <path d="M15 13a4.5 4.5 0 0 1-3-4"/>
   </g>
 </svg>

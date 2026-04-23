@@ -32,7 +32,11 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `feedback.ts` — User feedback/flagging service
   - `formAnalyzer.ts` — CMN form analysis with blank detection and confidence scoring
   - `pdfAnnotator.ts` — Server-side PDF annotation support
-  - `documentExtractor.ts` — Structured document extraction with templates (PPD, CMN, Prior Auth, General) using Claude Sonnet
+  - `modelTiers.ts` — Tiered Bedrock model abstraction (Phase A). `getModelForTier('strong'|'fast'|'reasoning')` resolves via chain: explicit admin override (S3-persisted at `config/model-tiers.json`) → tier-specific env var (`BEDROCK_MODEL_STRONG`/`FAST`/`REASONING`) → legacy alias env var (`BEDROCK_EXTRACTION_MODEL` → strong, `BEDROCK_GENERATION_MODEL` → fast) → hardcoded default. `setTierOverride(tier, modelId, updatedBy, reason)` + `clearTierOverride(tier)` mutate the override store. `loadTierOverrides()` restores persisted overrides at startup. Admin endpoints `GET /api/admin/model-tiers` + `PATCH /api/admin/model-tiers` surface + mutate the overrides. Batch inference (`bedrockBatch.ts`) uses `getModelForTier('strong')` so model promotions affect both paths identically.
+  - `bedrockBatch.ts` — Bedrock Batch Inference service (Phase C). Service-layer primitives only; scheduler drives the lifecycle. `isBatchModeAvailable()` env-guards on `BEDROCK_BATCH_MODE=true` + `BEDROCK_BATCH_ROLE_ARN` (logs misconfig reason once per process). `createBatchInput(items)` writes Converse-shape JSONL to `s3://.../batch-inference/input/<batchId>.jsonl` with per-item `system` block + `inferenceConfig` (default maxTokens 8192 for extraction). `createJob`/`getJobStatus` use `@aws-sdk/client-bedrock` management SDK (distinct from the runtime SDK) — both wrapped in the shared `bedrockCircuitBreaker`. `enqueuePendingItem({itemId, prompt, systemPrompt?, metadata?, ...})` is the public writer API callers use to defer work to batch. `readBatchOutput(outputS3Uri)` parses `.jsonl.out` files with pagination (50-page safety cap). S3 layout: `batch-inference/{pending,active-jobs,orphaned-submissions,input,output}/`.
+  - `batchScheduler.ts` — Batch lifecycle driver (Phase C). Interval-based scheduler: (0) promote `orphaned-submissions/` back to `active-jobs/`, (1) poll active jobs and on completion fire registered result handler per record + clean up pending items + delete tracking file, (2) collect pending items and submit new batch if `pendingCount >= MIN_BATCH_SIZE=5` OR oldest item aged past 2× interval. Tracking-file writes retry 3× (1/2/4s backoff) with fallback to `orphaned-submissions/` on persistent failure; CloudWatch-visible `batch_orphan_escalation` log carries the jobId+jobArn for manual recovery. Orphan-recovery loop (30-min interval, 2-hr threshold) fires handler with a synthesized error for pending items whose active-job vanished. `setBatchResultHandler(fn)` lets callers register a result callback without the scheduler importing jobQueue — enforces a clean dependency boundary. `getBatchStatus()` returns a cheap admin snapshot (S3-listing only, no Bedrock). All timers `.unref()`'d.
+  - `extractionBatchHandler.ts` — Phase C wire-in between `batchScheduler` and `jobQueue`. Registered at server startup via `setBatchResultHandler`. Filters on `metadata.kind === 'extraction'` so future wires (clinical notes, etc.) can share the queue with their own `kind`. On success: `finalizeExtractionFromResponse` → `updateJob(jobId, {status:'completed', result})` → audit entry (`operation: 'extraction-async-batch'`). On error: sanitized `'temporarily unavailable'` message (INV-14 parity).
+  - `documentExtractor.ts` — Structured document extraction with templates (PPD, CMN, Prior Auth, General) using Claude Sonnet. Split at the Bedrock boundary: `prepareExtractionRequest(buffer, filename, mimeType, templateId)` does the pre-Bedrock work (template lookup + text extract + prompt build) and `finalizeExtractionFromResponse(responseText, templateId)` parses Bedrock output → `ExtractionResult`. `extractDocumentData()` composes both for the sync path; batch path uses them separately via `extractionBatchHandler`.
   - `extractionTemplates.ts` — Extraction template definitions and field schemas
   - `clinicalNoteExtractor.ts` — AI-assisted clinical note extraction (ICD-10, test results, medical necessity) using Claude Sonnet
   - `sourceMonitor.ts` — Automated URL monitoring for external document changes (SHA-256 hash comparison). Parallel checks with concurrency limit of 3. Staleness audit (`auditStaleSources`) runs daily and alerts when a source hasn't produced fresh content in longer than its configured `expectedUpdateCadenceDays`; per-source alerts throttled to 1/24h.
@@ -68,7 +72,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `htmlEscape.ts` — HTML entity escaping for safe email template interpolation
   - `envValidation.ts`, `fileValidation.ts`, `urlValidation.ts` (SSRF prevention)
   - `rateLimitKey.ts` — `resolveRateLimitKey(req)` for express-rate-limit keyGenerators; resolves `user.id → req.ip → SHA-256(XFF + User-Agent) → per-request UUID`. Never returns `'unknown'` so distinct clients cannot pool into one bucket (H3). Logs a throttled warning on any fallback past req.ip so broken trust-proxy setups are visible.
-  - `resilience.ts` — shared retry with jitter, circuit breaker, timeout
+  - `resilience.ts` — shared retry with jitter, timeout wrapper, `CircuitBreaker`, and (Phase A) `PerKeyCircuitBreaker` — keyed variant with an LRU-bounded key map (MAX_KEYS=1000). Use `PerKeyCircuitBreaker` when failure semantics apply per-target (per URL, per tenant) so one bad target doesn't brownout the rest; use the single-key `CircuitBreaker` for shared-target systems (Bedrock is one service regardless of caller). `execute()` throws the typed `CircuitBreakerOpenError` (exposed `label` + `failureCount`) on open-circuit rejection so callers can `instanceof`-check the error rather than string-matching. Optional `isFailure(err)` predicate lets callers mark client-side errors (4xx, malformed-prompt rejects) as "don't count toward the breaker threshold."
   - `metrics.ts` — in-memory request metrics with per-route latency percentiles
   - `textractPoller.ts` — shared Textract async job polling + pagination with transient error retry
 - **Routes** (`backend/src/routes/`):
@@ -133,6 +137,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for Unive
   - `SourceStalenessManager.tsx` — Admin dashboard card listing monitored sources past their expected update cadence; includes "Run audit now" button that triggers the alerting path
   - `RagEvalDatasetViewer.tsx` — Admin read-only view of the gold-standard RAG dataset with category filter and text search
   - `ExtractionQualityStatsCard.tsx` — Admin card showing aggregate accuracy and overconfidence from reviewer-submitted extraction corrections
+  - `BatchStatusCard.tsx` — Admin card surfacing `GET /api/admin/batch-status`. Three warm-paper stat tiles (pending items, active jobs, orphaned submissions — orphan tile flips to warm-red when > 0) plus an active-jobs table (short ID, submitted timestamp, item count). Disabled-state copy names the two env vars needed to enable. 30s auto-refresh + manual Refresh button.
 - **Hooks**: `frontend/src/hooks/useAuth.ts` (login/logout with stream cancellation), `frontend/src/hooks/useIdleTimeout.ts` (15-min idle auto-logout with full-viewport interaction blocker), `frontend/src/hooks/useFormDraft.ts` (debounced 2s auto-save to `/api/form-drafts`, `resume(id)`, `discardCurrent()`; failures are non-fatal since sessionStorage remains the first line of defense)
 - **API client**: `frontend/src/services/api.ts` (AbortController-based stream cancellation, 2MB SSE buffer cap, silent token refresh on 401; on refresh failure dispatches `SESSION_EXPIRED_EVENT` so `useAuth` transitions to LoginForm without a full-page reload — preserves React state and in-memory form drafts)
 - **Types**: `frontend/src/types/index.ts`
@@ -271,6 +276,16 @@ CROSS_ENCODER_TOP_N             # Number of candidates to re-score (default: 8, 
 RAG_EVAL_RECALL_THRESHOLD       # Minimum average recall@10 to pass (default: 0.5)
 RAG_EVAL_MRR_THRESHOLD          # Minimum MRR to pass (default: 0.4)
 RAG_EVAL_OUTPUT_DIR             # Where to write junit.xml + results.json (default: ./eval-output)
+
+# Bedrock model tiers (Phase A — modelTiers.ts resolution chain)
+BEDROCK_MODEL_STRONG            # Sonnet-class, primary extraction / batch. Legacy alias: BEDROCK_EXTRACTION_MODEL
+BEDROCK_MODEL_FAST              # Haiku-class, RAG generation. Legacy alias: BEDROCK_GENERATION_MODEL
+BEDROCK_MODEL_REASONING         # Opus-class, reserved — nothing reads it today
+
+# Bedrock Batch Inference (Phase C — 50% cost savings on async workloads)
+BEDROCK_BATCH_MODE              # "true" enables the batch scheduler (default: off)
+BEDROCK_BATCH_ROLE_ARN          # IAM role for CreateModelInvocationJob (required when BATCH_MODE=true; availability guard logs a single error if unset)
+BATCH_INTERVAL_MINUTES          # Scheduler cycle interval (default: 15). Threshold MIN_BATCH_SIZE=5 OR head-of-queue aged past 2× this value triggers submission.
 ```
 
 ## Recent Changes
@@ -368,6 +383,9 @@ The Bedrock IAM policy needs these actions:
 | POST | `/api/ab-tests/batch` | Admin | Batch A/B test (up to 20 questions) |
 | GET | `/api/ab-tests` | Admin | List all A/B test results (last 50) |
 | GET | `/api/ab-tests/stats` | Admin | Aggregate stats with Welch's t-test significance |
+| GET | `/api/admin/model-tiers` | Admin | Phase A: current effective model per tier (strong/fast/reasoning) + source (override/env/legacy-env/default) |
+| PATCH | `/api/admin/model-tiers` | Admin | Phase A: set or clear a tier override. Body: `{tier, model: string\|null, reason?}`. Persists to `config/model-tiers.json` in S3. |
+| GET | `/api/admin/batch-status` | Admin | Phase C: Bedrock batch inference snapshot (pending count, active jobs, orphaned-submissions). S3-listing only — safe to poll. |
 
 
 # Cycle Workflow Config
@@ -447,6 +465,12 @@ INV-28 | Concurrent login attempts for the same username must be serialized so M
 INV-29 | Malware scanning must fail-closed when MALWARE_SCAN_ENABLED=true and the ClamAV daemon is unreachable (reject upload, do not silently pass) | Subsystem: HIPAA Compliance
 INV-30 | All express-rate-limit keyGenerators must go through `resolveRateLimitKey(req)`; direct fallback to `req.ip \|\| 'unknown'` is forbidden because distinct clients would pool into a single shared bucket (H3) | Subsystem: Server & Utilities
 INV-31 | PPD submission status transitions must run under the per-submission mutex so two concurrent reviewer actions cannot clobber each other (H6) | Subsystem: Forms & Workflows
+INV-32 | All scheduler setInterval/setTimeout handles must call `.unref()` so a lingering tick can't pin the event loop open past graceful shutdown (applies to reindexer, orphanCleanup, jobQueue, feeScheduleFetcher, sourceMonitor, dataRetention, batchScheduler) | Subsystem: Server & Utilities
+INV-33 | Graceful shutdown must wrap each scheduler stop in `stopSafely()` (independent try/catch) so one failure can't skip subsequent stops or the buffer-flush step; a 30s `hardExit.unref()` safety net forces exit if any await hangs | Subsystem: Server & Utilities
+INV-34 | Bedrock batch mode availability (`isBatchModeAvailable`) requires BOTH `BEDROCK_BATCH_MODE=true` AND `BEDROCK_BATCH_ROLE_ARN` set; single-env misconfig must log once and fall through to on-demand rather than submitting jobs AWS rejects | Subsystem: AI Processing
+INV-35 | Batch tracking-file writes must retry 3× with exponential backoff and fall back to `batch-inference/orphaned-submissions/` on persistent failure; next scheduler cycle's `promoteOrphanedSubmissions()` self-heals. The AWS batch job is billable by the time the tracking write fires, so losing the tracking file without the orphan fallback means the job runs invisibly | Subsystem: AI Processing
+INV-36 | Extraction batch handler must filter on `metadata.kind === 'extraction'` so future wires (clinical notes, etc.) sharing the same batch queue don't cross-route their results | Subsystem: AI Processing
+INV-37 | Bedrock batch service must resolve the model id via `getModelForTier('strong')` so admin model promotions via `PATCH /api/admin/model-tiers` affect batch + on-demand paths identically | Subsystem: AI Processing
 
 ## Policy Configuration
 Policy threshold: 5/10

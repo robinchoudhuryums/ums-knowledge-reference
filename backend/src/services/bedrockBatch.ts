@@ -56,8 +56,12 @@ const bedrockMgmtClient = new BedrockClient({
 export interface PendingBatchItem {
   /** Unique id for the batch record — typically the job-queue job id. */
   itemId: string;
-  /** The full prompt text to send to Bedrock (system + user combined). */
+  /** User-message text sent to Bedrock. */
   prompt: string;
+  /** Optional system prompt. Rendered as a Converse `system` block. */
+  systemPrompt?: string;
+  /** Optional per-item inference config override (temp + maxTokens). */
+  inferenceConfig?: { temperature?: number; maxTokens?: number };
   /** Optional passthrough metadata (templateId, userId, etc). */
   metadata?: Record<string, unknown>;
   /** Who triggered this item — used for audit. */
@@ -210,15 +214,21 @@ export async function createBatchInput(
   items: PendingBatchItem[],
 ): Promise<{ s3Uri: string; batchId: string }> {
   const batchId = `batch-${Date.now()}-${randomUUID().slice(0, 8)}`;
-  const lines = items.map((item) =>
-    JSON.stringify({
-      recordId: item.itemId,
-      modelInput: {
-        messages: [{ role: 'user', content: [{ text: item.prompt }] }],
-        inferenceConfig: { temperature: 0.05, maxTokens: 4096 },
+  const lines = items.map((item) => {
+    const modelInput: Record<string, unknown> = {
+      messages: [{ role: 'user', content: [{ text: item.prompt }] }],
+      inferenceConfig: {
+        temperature: item.inferenceConfig?.temperature ?? 0.05,
+        // 8192 default — extraction's working cap. Override per-item when
+        // the caller knows the expected output is smaller.
+        maxTokens: item.inferenceConfig?.maxTokens ?? 8192,
       },
-    }),
-  );
+    };
+    if (item.systemPrompt) {
+      modelInput.system = [{ text: item.systemPrompt }];
+    }
+    return JSON.stringify({ recordId: item.itemId, modelInput });
+  });
   const jsonl = lines.join('\n');
   const key = `batch-inference/input/${batchId}.jsonl`;
   const s3Uri = `s3://${S3_BUCKET}/${key}`;

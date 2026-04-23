@@ -34,6 +34,7 @@ vi.mock('../config/aws', () => ({
 import {
   isBatchModeAvailable,
   readBatchOutput,
+  createBatchInput,
   BATCH_S3_PREFIXES,
 } from '../services/bedrockBatch';
 import { s3Client } from '../config/aws';
@@ -71,6 +72,63 @@ describe('isBatchModeAvailable', () => {
     process.env.BEDROCK_BATCH_MODE = 'true';
     process.env.BEDROCK_BATCH_ROLE_ARN = 'arn:aws:iam::123:role/batch';
     expect(isBatchModeAvailable()).toBe(true);
+  });
+});
+
+describe('createBatchInput JSONL encoding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('emits a system block when systemPrompt is provided', async () => {
+    const mockSend = s3Client.send as ReturnType<typeof vi.fn>;
+    mockSend.mockResolvedValueOnce({});
+    await createBatchInput([
+      {
+        itemId: 'a',
+        prompt: 'user msg',
+        systemPrompt: 'you are a careful extractor',
+        timestamp: '2026-04-23T00:00:00.000Z',
+      },
+    ]);
+    // The PUT call's Body is the JSONL string.
+    const putCall = mockSend.mock.calls[0][0] as { input: { Body: string } };
+    const lines = putCall.input.Body.split('\n');
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]);
+    expect(parsed.recordId).toBe('a');
+    expect(parsed.modelInput.system).toEqual([{ text: 'you are a careful extractor' }]);
+    expect(parsed.modelInput.messages).toEqual([
+      { role: 'user', content: [{ text: 'user msg' }] },
+    ]);
+    expect(parsed.modelInput.inferenceConfig.maxTokens).toBe(8192);
+  });
+
+  it('omits the system block when not provided', async () => {
+    const mockSend = s3Client.send as ReturnType<typeof vi.fn>;
+    mockSend.mockResolvedValueOnce({});
+    await createBatchInput([
+      { itemId: 'b', prompt: 'hi', timestamp: '2026-04-23T00:00:00.000Z' },
+    ]);
+    const putCall = mockSend.mock.calls[0][0] as { input: { Body: string } };
+    const parsed = JSON.parse(putCall.input.Body);
+    expect(parsed.modelInput.system).toBeUndefined();
+  });
+
+  it('honors per-item inferenceConfig overrides', async () => {
+    const mockSend = s3Client.send as ReturnType<typeof vi.fn>;
+    mockSend.mockResolvedValueOnce({});
+    await createBatchInput([
+      {
+        itemId: 'c',
+        prompt: 'x',
+        inferenceConfig: { temperature: 0.9, maxTokens: 256 },
+        timestamp: '2026-04-23T00:00:00.000Z',
+      },
+    ]);
+    const putCall = mockSend.mock.calls[0][0] as { input: { Body: string } };
+    const parsed = JSON.parse(putCall.input.Body);
+    expect(parsed.modelInput.inferenceConfig).toEqual({ temperature: 0.9, maxTokens: 256 });
   });
 });
 

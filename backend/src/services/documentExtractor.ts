@@ -27,8 +27,11 @@ export interface ExtractionResult {
 /**
  * Build the extraction prompt by combining the template system prompt with
  * a JSON schema of expected fields and the document text.
+ *
+ * Exported so the batch-inference path can construct the same prompt without
+ * invoking Bedrock directly.
  */
-function buildExtractionPrompt(template: ExtractionTemplate, documentText: string): { system: string; user: string } {
+export function buildExtractionPrompt(template: ExtractionTemplate, documentText: string): { system: string; user: string } {
   const fieldSchema = template.fields.map(f => {
     let typeHint: string = f.type;
     if (f.type === 'select' && f.options) {
@@ -62,8 +65,11 @@ Extract the data now. Return ONLY the JSON followed by CONFIDENCE and NOTES line
 
 /**
  * Parse the LLM response into structured data + confidence + notes.
+ *
+ * Exported so the batch-inference result handler can parse Bedrock batch
+ * output without re-running the full sync pipeline.
  */
-function parseExtractionResponse(
+export function parseExtractionResponse(
   response: string,
   template: ExtractionTemplate,
 ): { data: Record<string, string | number | boolean | null>; confidence: 'high' | 'medium' | 'low'; notes: string } {
@@ -207,6 +213,79 @@ export async function extractDocumentData(
 
   logger.info('Extraction complete', { filename, templateId, confidence, fieldsExtracted: Object.values(data).filter(v => v !== null).length });
 
+  return {
+    templateId: template.id,
+    templateName: template.name,
+    data,
+    confidence,
+    extractionNotes: notes,
+    modelUsed: BEDROCK_EXTRACTION_MODEL,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Batch-mode helpers — used by extractionBatchHandler.ts (Phase C wire-in)
+// ---------------------------------------------------------------------------
+
+/**
+ * Do everything up to the Bedrock call: load template, extract text, build
+ * the prompt. Returned shape is exactly what the batch pipeline needs to
+ * enqueue a PendingBatchItem without duplicating extraction logic.
+ *
+ * Throws the same errors the sync path does (unknown template, insufficient
+ * text) so the caller can 4xx consistently before deferring to batch.
+ */
+export async function prepareExtractionRequest(
+  fileBuffer: Buffer,
+  filename: string,
+  mimeType: string,
+  templateId: string,
+): Promise<{
+  template: ExtractionTemplate;
+  system: string;
+  user: string;
+  documentCharCount: number;
+}> {
+  const template = getTemplateById(templateId);
+  if (!template) {
+    throw new Error(`Unknown extraction template: ${templateId}`);
+  }
+
+  const { text } = await extractText(fileBuffer, mimeType, filename);
+  if (!text || text.trim().length < 20) {
+    throw new Error(
+      'Could not extract sufficient text from the document. Try a higher-quality scan or a text-based PDF.',
+    );
+  }
+
+  const MAX_EXTRACTION_CHARS = 100_000;
+  if (text.length > MAX_EXTRACTION_CHARS) {
+    logger.warn('Document text truncated for extraction', {
+      filename,
+      originalLength: text.length,
+      truncatedTo: MAX_EXTRACTION_CHARS,
+      percentKept: Math.round((MAX_EXTRACTION_CHARS / text.length) * 100),
+    });
+  }
+
+  const { system, user } = buildExtractionPrompt(template, text);
+  return { template, system, user, documentCharCount: text.length };
+}
+
+/**
+ * Parse a Bedrock batch-output text response into an ExtractionResult.
+ * Mirrors the tail of `extractDocumentData` so the batch handler emits the
+ * exact same shape the sync path does.
+ */
+export function finalizeExtractionFromResponse(
+  responseText: string,
+  templateId: string,
+): ExtractionResult {
+  const template = getTemplateById(templateId);
+  if (!template) {
+    throw new Error(`Unknown extraction template: ${templateId}`);
+  }
+  const { data, confidence, notes } = parseExtractionResponse(responseText, template);
   return {
     templateId: template.id,
     templateName: template.name,

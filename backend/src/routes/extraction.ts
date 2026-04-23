@@ -6,13 +6,14 @@ import { Router } from 'express';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
-import { extractDocumentData, BEDROCK_EXTRACTION_MODEL } from '../services/documentExtractor';
+import { extractDocumentData, BEDROCK_EXTRACTION_MODEL, prepareExtractionRequest } from '../services/documentExtractor';
 import { listTemplates, getTemplateById } from '../services/extractionTemplates';
 import { logAuditEvent } from '../services/audit';
 import { logger } from '../utils/logger';
 import { validateFileContent } from '../utils/fileValidation';
 import { resolveRateLimitKey } from '../utils/rateLimitKey';
 import { createJob, getJob, updateJob, getUserJobs } from '../services/jobQueue';
+import { enqueuePendingItem, isBatchModeAvailable } from '../services/bedrockBatch';
 import {
   submitExtractionCorrection,
   listExtractionCorrections,
@@ -232,6 +233,46 @@ router.post('/extract/async', authenticate, extractionLimiter, upload.single('fi
         templateId,
         sizeBytes: file.size,
       });
+
+      // Batch-mode opt-in: when BEDROCK_BATCH_MODE=true + BEDROCK_BATCH_ROLE_ARN
+      // is set, defer the Bedrock call to the batch scheduler (50% cost).
+      // The extractionBatchHandler (registered at server startup) transitions
+      // the job to completed/failed when the result lands.
+      if (isBatchModeAvailable()) {
+        const { system, user: userPrompt } = await prepareExtractionRequest(
+          fileBuffer,
+          filename,
+          mimeType,
+          templateId,
+        );
+        await enqueuePendingItem({
+          itemId: job.id,
+          prompt: userPrompt,
+          systemPrompt: system,
+          metadata: {
+            kind: 'extraction',
+            jobId: job.id,
+            templateId,
+            userId,
+            username,
+            filename,
+          },
+          uploadedBy: username,
+          timestamp: new Date().toISOString(),
+        });
+        updateJob(job.id, {
+          status: 'processing',
+          progress: 40,
+          // The client polls this field — make the queued state visible.
+          error: undefined,
+        });
+        logger.info('Extraction deferred to batch inference', {
+          jobId: job.id,
+          filename,
+          templateId,
+        });
+        return;
+      }
 
       updateJob(job.id, { progress: 30 });
 

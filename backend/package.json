@@ -75,6 +75,7 @@
     "vitest": "^4.0.18"
   },
   "overrides": {
-    "protobufjs": "^7.5.5"
+    "protobufjs": "^7.5.5",
+    "@xmldom/xmldom": "^0.8.13"
   }
 }

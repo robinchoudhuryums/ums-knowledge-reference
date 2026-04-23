@@ -46,6 +46,8 @@ import { startSourceMonitor } from './services/sourceMonitor';
 import { startJobCleanup, loadPersistedJobs, flushJobs } from './services/jobQueue';
 import { startOrphanCleanup } from './services/orphanCleanup';
 import { startRetentionScheduler } from './services/dataRetention';
+import { startBatchScheduler, getBatchStatus } from './services/batchScheduler';
+import { isBatchModeAvailable } from './services/bedrockBatch';
 import { setMalwareScanAlertHandler } from './utils/malwareScan';
 import { sendOperationalAlert } from './services/alertService';
 import documentRoutes from './routes/documents';
@@ -401,6 +403,21 @@ app.patch('/api/admin/model-tiers', authenticate, requireAdmin, async (req: expr
   }
 });
 
+// Bedrock batch inference — admin visibility into the pending queue and
+// active batch jobs. Cheap read-only endpoint (S3 listing only, no Bedrock
+// calls) so the dashboard can poll it on a short interval.
+app.get('/api/admin/batch-status', authenticate, requireAdmin, async (_req, res) => {
+  try {
+    const snapshot = await getBatchStatus();
+    res.json({
+      available: isBatchModeAvailable(),
+      ...snapshot,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Public auth configuration — no auth required. The frontend reads this
 // on page load to decide whether to show the local username/password form
 // or a single "Sign in with CallAnalyzer" button. The SSO URL is derived
@@ -634,6 +651,12 @@ async function start() {
     // Start data retention cleanup scheduler (HIPAA-compliant expiration at ~3 AM daily)
     startRetentionScheduler();
 
+    // Start Bedrock batch inference scheduler (no-op unless BEDROCK_BATCH_MODE=true).
+    // Phase C: foundation only — nothing calls `enqueuePendingItem` yet, so the
+    // scheduler will just idle-poll the pending/ prefix until extraction is
+    // wired in a follow-up PR.
+    startBatchScheduler();
+
     // Route malware-scanner unavailability to operational alerting (throttled to 1/hr per category).
     setMalwareScanAlertHandler((subject, details) => {
       void sendOperationalAlert('malware_scan_unavailable', subject, details);
@@ -683,12 +706,14 @@ async function start() {
       const { stopOrphanCleanup } = await import('./services/orphanCleanup');
       const { stopRetentionScheduler } = await import('./services/dataRetention');
       const { stopJobCleanup } = await import('./services/jobQueue');
+      const { stopBatchScheduler } = await import('./services/batchScheduler');
       await stopSafely('sourceMonitor', stopSourceMonitor);
       await stopSafely('reindexer', stopReindexScheduler);
       await stopSafely('feeScheduleFetcher', stopFeeScheduleFetcher);
       await stopSafely('orphanCleanup', stopOrphanCleanup);
       await stopSafely('dataRetention', stopRetentionScheduler);
       await stopSafely('jobQueue', stopJobCleanup);
+      await stopSafely('batchScheduler', stopBatchScheduler);
       logger.info('All scheduled tasks stopped');
 
       // Flush in-memory buffers. allSettled preserves per-flush

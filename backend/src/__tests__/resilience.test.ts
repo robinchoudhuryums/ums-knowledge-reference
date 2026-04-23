@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { withRetry, withTimeout, CircuitBreaker } from '../utils/resilience';
+import {
+  withRetry,
+  withTimeout,
+  CircuitBreaker,
+  CircuitBreakerOpenError,
+  PerKeyCircuitBreaker,
+} from '../utils/resilience';
 
 // Suppress logger output during tests
 vi.mock('../utils/logger', () => ({
@@ -160,4 +166,127 @@ describe('CircuitBreaker', () => {
 
     vi.spyOn(Date, 'now').mockRestore();
   });
+});
+
+describe('CircuitBreakerOpenError', () => {
+  it('is thrown when the circuit is open, not a plain Error', async () => {
+    const b = new CircuitBreaker('test', 1, 10_000);
+    await expect(b.execute(async () => { throw new Error('boom'); })).rejects.toThrow();
+
+    try {
+      await b.execute(async () => 'ok');
+      throw new Error('should have rejected');
+    } catch (err) {
+      expect(err).toBeInstanceOf(CircuitBreakerOpenError);
+      expect(err).toBeInstanceOf(Error); // back-compat for untyped catch
+      const typed = err as CircuitBreakerOpenError;
+      expect(typed.label).toBe('test');
+      expect(typed.failureCount).toBe(1);
+    }
+  });
+});
+
+describe('CircuitBreaker isFailure predicate', () => {
+  it('errors returning false from isFailure do NOT count toward the threshold', async () => {
+    const b = new CircuitBreaker('test', 2, 10_000);
+    const isServer = (err: unknown) =>
+      err instanceof Error && err.message.startsWith('server:');
+
+    // 10 "client" errors — circuit stays closed
+    for (let i = 0; i < 10; i++) {
+      await expect(b.execute(async () => { throw new Error('client: bad'); }, isServer)).rejects.toThrow();
+    }
+    expect(b.getState()).toBe('closed');
+
+    // Two server errors — opens at threshold
+    await expect(b.execute(async () => { throw new Error('server: bad'); }, isServer)).rejects.toThrow();
+    await expect(b.execute(async () => { throw new Error('server: bad'); }, isServer)).rejects.toThrow();
+    expect(b.getState()).toBe('open');
+  });
+});
+
+describe('PerKeyCircuitBreaker', () => {
+  it('isolates state per key — one failing key does not trip others', async () => {
+    const pk = new PerKeyCircuitBreaker('test', 2, 10_000);
+
+    await expect(pk.execute('a', async () => { throw new Error('boom'); })).rejects.toThrow();
+    await expect(pk.execute('a', async () => { throw new Error('boom'); })).rejects.toThrow();
+    expect(pk.getState('a')).toBe('open');
+
+    expect(pk.getState('b')).toBe('closed');
+    const resultB = await pk.execute('b', async () => 'ok');
+    expect(resultB).toBe('ok');
+
+    // 'a' rejects fast with typed error
+    await expect(pk.execute('a', async () => 'ok')).rejects.toBeInstanceOf(CircuitBreakerOpenError);
+  });
+
+  it('reset(key) clears only that key', async () => {
+    const pk = new PerKeyCircuitBreaker('test', 1, 10_000);
+    await expect(pk.execute('a', async () => { throw new Error('boom'); })).rejects.toThrow();
+    expect(pk.isOpen('a')).toBe(true);
+    pk.reset('a');
+    expect(pk.isOpen('a')).toBe(false);
+  });
+
+  it('accepts per-key threshold override on first creation', async () => {
+    const pk = new PerKeyCircuitBreaker('test', 5, 10_000);
+
+    await expect(
+      pk.execute('strict', async () => { throw new Error('boom'); }, { threshold: 1 }),
+    ).rejects.toThrow();
+    expect(pk.isOpen('strict')).toBe(true);
+
+    // Default threshold (5) on other keys
+    await expect(pk.execute('normal', async () => { throw new Error('boom'); })).rejects.toThrow();
+    expect(pk.isOpen('normal')).toBe(false);
+  });
+
+  it('supports a plain isFailure predicate (back-compat with CircuitBreaker.execute)', async () => {
+    const pk = new PerKeyCircuitBreaker('test', 2, 10_000);
+    const onlyServer = (err: unknown) =>
+      err instanceof Error && err.message.startsWith('server:');
+
+    for (let i = 0; i < 10; i++) {
+      await expect(
+        pk.execute('a', async () => { throw new Error('client: nope'); }, onlyServer),
+      ).rejects.toThrow();
+    }
+    expect(pk.isOpen('a')).toBe(false);
+
+    await expect(
+      pk.execute('a', async () => { throw new Error('server: boom'); }, onlyServer),
+    ).rejects.toThrow();
+    await expect(
+      pk.execute('a', async () => { throw new Error('server: boom'); }, onlyServer),
+    ).rejects.toThrow();
+    expect(pk.isOpen('a')).toBe(true);
+  });
+
+  it('snapshot() returns tracked breakers sorted by most-recently-failed', async () => {
+    const pk = new PerKeyCircuitBreaker('test', 1, 10_000);
+
+    await pk.execute('first', async () => 'ok');
+    await expect(pk.execute('second', async () => { throw new Error('boom'); })).rejects.toThrow();
+    await new Promise((r) => setTimeout(r, 5));
+    await expect(pk.execute('third', async () => { throw new Error('boom'); })).rejects.toThrow();
+
+    const snap = pk.snapshot();
+    expect(snap.length).toBe(3);
+    expect(snap[0].key).toBe('third');  // most recent failure
+    expect(snap[1].key).toBe('second');
+    expect(snap[2].key).toBe('first');  // no failures → lastFailureTime=0
+  });
+
+  it('LRU-evicts oldest key past MAX_KEYS cap', async () => {
+    const pk = new PerKeyCircuitBreaker('test', 10, 10_000);
+    for (let i = 0; i < 1_005; i++) {
+      await pk.execute(`k${i}`, async () => 'ok');
+    }
+    const snap = pk.snapshot();
+    expect(snap.length).toBe(1_000);
+    const keys = new Set(snap.map((s) => s.key));
+    expect(keys.has('k0')).toBe(false);    // oldest evicted
+    expect(keys.has('k1004')).toBe(true);  // newest retained
+  }, 30_000);
 });

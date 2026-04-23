@@ -42,6 +42,14 @@ export default [
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-non-null-assertion': 'off', // used intentionally after auth checks
 
+      // TypeScript has its own checker for undeclared identifiers that
+      // understands types (RequestInit, Response, DOMException, etc.) and
+      // ambient globals (fetch, AbortController on Node 18+). Leaving
+      // eslint's `no-undef` on here duplicates the check with a weaker
+      // implementation and produces false positives on type-only refs.
+      // `tsc --noEmit` in CI is the authoritative check.
+      'no-undef': 'off',
+
       // Code quality
       'no-console': 'off', // we use structured logger that wraps console
       'no-throw-literal': 'error',

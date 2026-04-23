@@ -97,6 +97,7 @@ export function startReindexScheduler(): void {
       logger.error('Re-index scheduler: check failed', { error: String(error) });
     }
   }, REINDEX_INTERVAL);
+  reindexTimer.unref();
 }
 
 /**

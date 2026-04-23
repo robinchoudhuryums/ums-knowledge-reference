@@ -360,6 +360,47 @@ app.get('/api/metrics', authenticate, requireAdmin, (_req: express.Request, res:
   res.json(getMetricsSnapshot());
 });
 
+// Model tiers — admin introspection + runtime override
+// GET returns the current effective model per tier with its source (override/env/legacy-env/default).
+// PATCH sets or clears a tier override; persists to S3 so it survives restart.
+app.get('/api/admin/model-tiers', authenticate, requireAdmin, async (_req, res) => {
+  const { getAllTierSnapshots } = await import('./services/modelTiers');
+  res.json({ tiers: getAllTierSnapshots() });
+});
+
+app.patch('/api/admin/model-tiers', authenticate, requireAdmin, async (req: express.Request, res: express.Response) => {
+  const { setTierOverride, clearTierOverride, MODEL_TIERS } = await import('./services/modelTiers');
+  const body = req.body as { tier?: string; model?: string | null; reason?: string };
+  const tier = body.tier;
+  if (!tier || !(MODEL_TIERS as string[]).includes(tier)) {
+    res.status(400).json({ error: `tier must be one of: ${MODEL_TIERS.join(', ')}` });
+    return;
+  }
+  const authReq = req as AuthRequest;
+  const updatedBy = authReq.user?.username || 'unknown';
+  try {
+    // model: null → clear; string → set
+    if (body.model === null) {
+      await clearTierOverride(tier as 'strong' | 'fast' | 'reasoning', updatedBy);
+      res.json({ tier, cleared: true });
+      return;
+    }
+    if (typeof body.model !== 'string' || body.model.trim().length === 0) {
+      res.status(400).json({ error: 'model must be a non-empty string, or null to clear' });
+      return;
+    }
+    const override = await setTierOverride(
+      tier as 'strong' | 'fast' | 'reasoning',
+      body.model,
+      updatedBy,
+      body.reason,
+    );
+    res.json({ tier, override });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Public auth configuration — no auth required. The frontend reads this
 // on page load to decide whether to show the local username/password form
 // or a single "Sign in with CallAnalyzer" button. The SSO URL is derived
@@ -561,6 +602,14 @@ async function start() {
     const { restoreRevocations } = await import('./middleware/tokenService');
     await restoreRevocations();
 
+    // Restore model-tier overrides from S3. Fire-and-forget — failure
+    // is non-fatal (app boots with env vars + baked defaults); survivors
+    // of a restart re-apply on first getModelForTier() call.
+    const { loadTierOverrides } = await import('./services/modelTiers');
+    loadTierOverrides().catch((err) =>
+      logger.warn('modelTiers: startup hydration failed', { error: String(err) }),
+    );
+
     // Load vector store index into memory
     await initializeVectorStore();
 
@@ -602,41 +651,64 @@ async function start() {
       shuttingDown = true;
       logger.info(`${signal} received — starting graceful shutdown`);
 
+      // Hard-exit safety net: if any await below hangs (e.g. a flush call
+      // never resolves because S3 is wedged), the process would otherwise
+      // sit stuck indefinitely. Unref'd so it doesn't itself keep the
+      // event loop alive after normal shutdown completes.
+      const hardExitMs = 30_000;
+      const hardExit = setTimeout(() => {
+        logger.error(`Graceful shutdown exceeded ${hardExitMs}ms — forcing exit`);
+        process.exit(1);
+      }, hardExitMs);
+      hardExit.unref();
+
       // Stop accepting new connections
       server.close(() => logger.info('HTTP server closed'));
 
-      try {
-        // Stop all scheduled background tasks first (before flushing buffers)
-        const { stopSourceMonitor } = await import('./services/sourceMonitor');
-        const { stopReindexScheduler } = await import('./services/reindexer');
-        const { stopFeeScheduleFetcher } = await import('./services/feeScheduleFetcher');
-        const { stopOrphanCleanup } = await import('./services/orphanCleanup');
-        const { stopRetentionScheduler } = await import('./services/dataRetention');
-        const { stopJobCleanup } = await import('./services/jobQueue');
-        stopSourceMonitor();
-        stopReindexScheduler();
-        stopFeeScheduleFetcher();
-        stopOrphanCleanup();
-        stopRetentionScheduler();
-        stopJobCleanup();
-        logger.info('All scheduled tasks stopped');
+      // Each scheduler stop runs under its own try/catch so one failure
+      // can't skip the rest. Ports CA's pattern (pm2 deploys uncovered
+      // cases where a scheduler stop throws mid-shutdown and subsequent
+      // stops + buffer flushes silently got skipped).
+      const stopSafely = async <T>(label: string, fn: () => Promise<T> | T): Promise<void> => {
+        try {
+          await fn();
+        } catch (err) {
+          logger.warn(`Shutdown step failed: ${label}`, { error: String(err) });
+        }
+      };
 
-        // Flush in-memory buffers to S3
+      const { stopSourceMonitor } = await import('./services/sourceMonitor');
+      const { stopReindexScheduler } = await import('./services/reindexer');
+      const { stopFeeScheduleFetcher } = await import('./services/feeScheduleFetcher');
+      const { stopOrphanCleanup } = await import('./services/orphanCleanup');
+      const { stopRetentionScheduler } = await import('./services/dataRetention');
+      const { stopJobCleanup } = await import('./services/jobQueue');
+      await stopSafely('sourceMonitor', stopSourceMonitor);
+      await stopSafely('reindexer', stopReindexScheduler);
+      await stopSafely('feeScheduleFetcher', stopFeeScheduleFetcher);
+      await stopSafely('orphanCleanup', stopOrphanCleanup);
+      await stopSafely('dataRetention', stopRetentionScheduler);
+      await stopSafely('jobQueue', stopJobCleanup);
+      logger.info('All scheduled tasks stopped');
+
+      // Flush in-memory buffers. allSettled preserves per-flush
+      // independence from the imports above.
+      try {
         const { flushQueryLog } = await import('./services/queryLog');
         const { flushTraces } = await import('./services/ragTrace');
         const { flushUsage } = await import('./services/usage');
         const { persistRevocations } = await import('./middleware/tokenService');
         await Promise.allSettled([flushQueryLog(), flushTraces(), flushUsage(), flushJobs(), persistRevocations()]);
         logger.info('All in-memory buffers flushed to S3');
-
-        // Close database pool if connected
-        try {
-          const { closeDatabasePool } = await import('./config/database');
-          await closeDatabasePool();
-        } catch { /* ignore if not configured */ }
       } catch (err) {
-        logger.error('Error during shutdown flush', { error: String(err) });
+        logger.error('Buffer flush step failed', { error: String(err) });
       }
+
+      // Close database pool if connected
+      await stopSafely('closeDatabasePool', async () => {
+        const { closeDatabasePool } = await import('./config/database');
+        await closeDatabasePool();
+      });
 
       process.exit(0);
     };

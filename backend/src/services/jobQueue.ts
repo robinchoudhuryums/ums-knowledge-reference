@@ -48,6 +48,10 @@ function schedulePersist(): void {
     dirty = false;
     await persistJobs();
   }, delay);
+  // .unref() — a pending debounced persist shouldn't keep the event loop
+  // alive through shutdown. flushJobs() in the graceful-shutdown path
+  // covers the "persist on exit" case.
+  persistTimer.unref();
 }
 
 /**
@@ -215,6 +219,7 @@ export async function flushJobs(): Promise<void> {
 export function startJobCleanup(): void {
   if (cleanupInterval) return;
   cleanupInterval = setInterval(cleanupOldJobs, 10 * 60 * 1000);
+  cleanupInterval.unref();
   logger.info('Job cleanup scheduler started (every 10 minutes)');
 }
 

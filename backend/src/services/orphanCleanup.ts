@@ -62,12 +62,15 @@ export async function cleanupOrphanedDocuments(): Promise<number> {
 let orphanInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startOrphanCleanup(): void {
-  // Run once on startup (after a short delay to let initialization complete)
-  setTimeout(() => {
+  // Run once on startup (after a short delay to let initialization complete).
+  // .unref() so a lingering initial timer doesn't keep the event loop alive
+  // during shutdown if it fires after server.close().
+  const initial = setTimeout(() => {
     cleanupOrphanedDocuments().catch(err =>
       logger.error('Orphan cleanup failed', { error: String(err) })
     );
   }, 30_000);
+  initial.unref();
 
   // Then run every hour
   orphanInterval = setInterval(() => {
@@ -75,6 +78,7 @@ export function startOrphanCleanup(): void {
       logger.error('Orphan cleanup failed', { error: String(err) })
     );
   }, CHECK_INTERVAL_MS);
+  orphanInterval.unref();
 
   logger.info('Orphan cleanup scheduler started (every 1 hour)');
 }

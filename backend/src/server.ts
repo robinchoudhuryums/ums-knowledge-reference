@@ -360,6 +360,47 @@ app.get('/api/metrics', authenticate, requireAdmin, (_req: express.Request, res:
   res.json(getMetricsSnapshot());
 });
 
+// Model tiers — admin introspection + runtime override
+// GET returns the current effective model per tier with its source (override/env/legacy-env/default).
+// PATCH sets or clears a tier override; persists to S3 so it survives restart.
+app.get('/api/admin/model-tiers', authenticate, requireAdmin, async (_req, res) => {
+  const { getAllTierSnapshots } = await import('./services/modelTiers');
+  res.json({ tiers: getAllTierSnapshots() });
+});
+
+app.patch('/api/admin/model-tiers', authenticate, requireAdmin, async (req: express.Request, res: express.Response) => {
+  const { setTierOverride, clearTierOverride, MODEL_TIERS } = await import('./services/modelTiers');
+  const body = req.body as { tier?: string; model?: string | null; reason?: string };
+  const tier = body.tier;
+  if (!tier || !(MODEL_TIERS as string[]).includes(tier)) {
+    res.status(400).json({ error: `tier must be one of: ${MODEL_TIERS.join(', ')}` });
+    return;
+  }
+  const authReq = req as AuthRequest;
+  const updatedBy = authReq.user?.username || 'unknown';
+  try {
+    // model: null → clear; string → set
+    if (body.model === null) {
+      await clearTierOverride(tier as 'strong' | 'fast' | 'reasoning', updatedBy);
+      res.json({ tier, cleared: true });
+      return;
+    }
+    if (typeof body.model !== 'string' || body.model.trim().length === 0) {
+      res.status(400).json({ error: 'model must be a non-empty string, or null to clear' });
+      return;
+    }
+    const override = await setTierOverride(
+      tier as 'strong' | 'fast' | 'reasoning',
+      body.model,
+      updatedBy,
+      body.reason,
+    );
+    res.json({ tier, override });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Public auth configuration — no auth required. The frontend reads this
 // on page load to decide whether to show the local username/password form
 // or a single "Sign in with CallAnalyzer" button. The SSO URL is derived
@@ -560,6 +601,14 @@ async function start() {
     // Restore token revocation state from S3 (in-memory mode only; skipped when Redis is configured)
     const { restoreRevocations } = await import('./middleware/tokenService');
     await restoreRevocations();
+
+    // Restore model-tier overrides from S3. Fire-and-forget — failure
+    // is non-fatal (app boots with env vars + baked defaults); survivors
+    // of a restart re-apply on first getModelForTier() call.
+    const { loadTierOverrides } = await import('./services/modelTiers');
+    loadTierOverrides().catch((err) =>
+      logger.warn('modelTiers: startup hydration failed', { error: String(err) }),
+    );
 
     // Load vector store index into memory
     await initializeVectorStore();

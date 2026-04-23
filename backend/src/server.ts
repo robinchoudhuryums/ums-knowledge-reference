@@ -48,6 +48,7 @@ import { startOrphanCleanup } from './services/orphanCleanup';
 import { startRetentionScheduler } from './services/dataRetention';
 import { startBatchScheduler, getBatchStatus } from './services/batchScheduler';
 import { isBatchModeAvailable } from './services/bedrockBatch';
+import { registerExtractionBatchHandler } from './services/extractionBatchHandler';
 import { setMalwareScanAlertHandler } from './utils/malwareScan';
 import { sendOperationalAlert } from './services/alertService';
 import documentRoutes from './routes/documents';
@@ -652,9 +653,9 @@ async function start() {
     startRetentionScheduler();
 
     // Start Bedrock batch inference scheduler (no-op unless BEDROCK_BATCH_MODE=true).
-    // Phase C: foundation only — nothing calls `enqueuePendingItem` yet, so the
-    // scheduler will just idle-poll the pending/ prefix until extraction is
-    // wired in a follow-up PR.
+    // The extraction async route opts items into batch mode; the handler
+    // below maps per-item results back to jobQueue jobs on completion.
+    registerExtractionBatchHandler();
     startBatchScheduler();
 
     // Route malware-scanner unavailability to operational alerting (throttled to 1/hr per category).

@@ -370,11 +370,14 @@ export function startRetentionScheduler(): void {
     );
   };
 
-  // Schedule first run at ~3 AM, then repeat every 24 hours
+  // Schedule first run at ~3 AM, then repeat every 24 hours.
+  // .unref() both so stray timers don't block event-loop drain on shutdown.
   retentionInitialTimeout = setTimeout(() => {
     runCleanup();
     retentionRepeatInterval = setInterval(runCleanup, TWENTY_FOUR_HOURS_MS);
+    retentionRepeatInterval.unref();
   }, initialDelayMs);
+  retentionInitialTimeout.unref();
 
   logger.info('Data retention scheduler started', {
     nextRunIn: `${Math.round(initialDelayMs / 60000)} minutes`,

@@ -341,12 +341,14 @@ export function startFeeScheduleFetcher(): void {
     url: CMS_FEE_SCHEDULE_URL,
   });
 
-  // Initial fetch after 5 minutes (let the server warm up first)
-  setTimeout(() => {
+  // Initial fetch after 5 minutes (let the server warm up first).
+  // .unref() so shutdown isn't blocked by a pending initial fetch timer.
+  const initial = setTimeout(() => {
     fetchAndIngestFeeSchedule().catch(err => {
       logger.error('Fee schedule initial fetch failed', { error: String(err) });
     });
   }, 5 * 60 * 1000);
+  initial.unref();
 
   // Recurring check
   schedulerInterval = setInterval(() => {
@@ -354,6 +356,7 @@ export function startFeeScheduleFetcher(): void {
       logger.error('Fee schedule periodic fetch failed', { error: String(err) });
     });
   }, FETCH_INTERVAL_HOURS * 60 * 60 * 1000);
+  schedulerInterval.unref();
 }
 
 export function stopFeeScheduleFetcher(): void {

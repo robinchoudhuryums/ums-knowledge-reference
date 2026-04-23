@@ -602,41 +602,64 @@ async function start() {
       shuttingDown = true;
       logger.info(`${signal} received — starting graceful shutdown`);
 
+      // Hard-exit safety net: if any await below hangs (e.g. a flush call
+      // never resolves because S3 is wedged), the process would otherwise
+      // sit stuck indefinitely. Unref'd so it doesn't itself keep the
+      // event loop alive after normal shutdown completes.
+      const hardExitMs = 30_000;
+      const hardExit = setTimeout(() => {
+        logger.error(`Graceful shutdown exceeded ${hardExitMs}ms — forcing exit`);
+        process.exit(1);
+      }, hardExitMs);
+      hardExit.unref();
+
       // Stop accepting new connections
       server.close(() => logger.info('HTTP server closed'));
 
-      try {
-        // Stop all scheduled background tasks first (before flushing buffers)
-        const { stopSourceMonitor } = await import('./services/sourceMonitor');
-        const { stopReindexScheduler } = await import('./services/reindexer');
-        const { stopFeeScheduleFetcher } = await import('./services/feeScheduleFetcher');
-        const { stopOrphanCleanup } = await import('./services/orphanCleanup');
-        const { stopRetentionScheduler } = await import('./services/dataRetention');
-        const { stopJobCleanup } = await import('./services/jobQueue');
-        stopSourceMonitor();
-        stopReindexScheduler();
-        stopFeeScheduleFetcher();
-        stopOrphanCleanup();
-        stopRetentionScheduler();
-        stopJobCleanup();
-        logger.info('All scheduled tasks stopped');
+      // Each scheduler stop runs under its own try/catch so one failure
+      // can't skip the rest. Ports CA's pattern (pm2 deploys uncovered
+      // cases where a scheduler stop throws mid-shutdown and subsequent
+      // stops + buffer flushes silently got skipped).
+      const stopSafely = async <T>(label: string, fn: () => Promise<T> | T): Promise<void> => {
+        try {
+          await fn();
+        } catch (err) {
+          logger.warn(`Shutdown step failed: ${label}`, { error: String(err) });
+        }
+      };
 
-        // Flush in-memory buffers to S3
+      const { stopSourceMonitor } = await import('./services/sourceMonitor');
+      const { stopReindexScheduler } = await import('./services/reindexer');
+      const { stopFeeScheduleFetcher } = await import('./services/feeScheduleFetcher');
+      const { stopOrphanCleanup } = await import('./services/orphanCleanup');
+      const { stopRetentionScheduler } = await import('./services/dataRetention');
+      const { stopJobCleanup } = await import('./services/jobQueue');
+      await stopSafely('sourceMonitor', stopSourceMonitor);
+      await stopSafely('reindexer', stopReindexScheduler);
+      await stopSafely('feeScheduleFetcher', stopFeeScheduleFetcher);
+      await stopSafely('orphanCleanup', stopOrphanCleanup);
+      await stopSafely('dataRetention', stopRetentionScheduler);
+      await stopSafely('jobQueue', stopJobCleanup);
+      logger.info('All scheduled tasks stopped');
+
+      // Flush in-memory buffers. allSettled preserves per-flush
+      // independence from the imports above.
+      try {
         const { flushQueryLog } = await import('./services/queryLog');
         const { flushTraces } = await import('./services/ragTrace');
         const { flushUsage } = await import('./services/usage');
         const { persistRevocations } = await import('./middleware/tokenService');
         await Promise.allSettled([flushQueryLog(), flushTraces(), flushUsage(), flushJobs(), persistRevocations()]);
         logger.info('All in-memory buffers flushed to S3');
-
-        // Close database pool if connected
-        try {
-          const { closeDatabasePool } = await import('./config/database');
-          await closeDatabasePool();
-        } catch { /* ignore if not configured */ }
       } catch (err) {
-        logger.error('Error during shutdown flush', { error: String(err) });
+        logger.error('Buffer flush step failed', { error: String(err) });
       }
+
+      // Close database pool if connected
+      await stopSafely('closeDatabasePool', async () => {
+        const { closeDatabasePool } = await import('./config/database');
+        await closeDatabasePool();
+      });
 
       process.exit(0);
     };

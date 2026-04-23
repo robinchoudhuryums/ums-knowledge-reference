@@ -651,12 +651,15 @@ export function startSourceMonitor(): void {
     stalenessTickHours: STALENESS_TICK_MS / 3600000,
   });
 
-  // Initial check after 10 minutes (let server warm up, after fee schedule fetcher)
-  setTimeout(() => {
+  // Initial check after 10 minutes (let server warm up, after fee schedule
+  // fetcher). All four timers .unref()'d so a stray pending timer doesn't
+  // block shutdown's event-loop drain.
+  const initialCheck = setTimeout(() => {
     checkAllDueSources().catch(err => {
       logger.error('Source monitor initial check failed', { error: String(err) });
     });
   }, 10 * 60 * 1000);
+  initialCheck.unref();
 
   // Recurring tick
   schedulerInterval = setInterval(() => {
@@ -664,19 +667,22 @@ export function startSourceMonitor(): void {
       logger.error('Source monitor periodic check failed', { error: String(err) });
     });
   }, SCHEDULER_TICK_MS);
+  schedulerInterval.unref();
 
   // Staleness audit: initial run 30 min after boot, then daily
-  setTimeout(() => {
+  const initialStaleness = setTimeout(() => {
     auditStaleSources().catch(err => {
       logger.error('Initial staleness audit failed', { error: String(err) });
     });
   }, 30 * 60 * 1000);
+  initialStaleness.unref();
 
   stalenessInterval = setInterval(() => {
     auditStaleSources().catch(err => {
       logger.error('Periodic staleness audit failed', { error: String(err) });
     });
   }, STALENESS_TICK_MS);
+  stalenessInterval.unref();
 }
 
 export function stopSourceMonitor(): void {

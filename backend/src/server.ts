@@ -481,6 +481,23 @@ app.post('/api/auth/change-password', authenticate, (req, res) => changePassword
 app.post('/api/auth/logout', authenticate, (req, res) => logoutHandler(req as AuthRequest, res));
 app.post('/api/auth/refresh', refreshTokenHandler);
 
+// Session probe — returns the current user when the JWT cookie validates,
+// 401 otherwise. Used by the frontend on mount to detect server-side auth
+// state that wasn't driven by a local login flow (e.g. SSO-minted sessions).
+// Without this, the frontend's localStorage-only gate renders LoginForm even
+// when `authenticate` middleware would happily pass the request through.
+app.get('/api/auth/me', authenticate, (req, res) => {
+  const authReq = req as AuthRequest;
+  if (!authReq.user) { res.status(401).json({ message: 'Not authenticated' }); return; }
+  res.json({
+    user: {
+      id: authReq.user.id,
+      username: authReq.user.username,
+      role: authReq.user.role,
+    },
+  });
+});
+
 // Forgot password routes (unauthenticated, rate-limited)
 import { forgotPasswordHandler, resetPasswordWithCodeHandler, mfaSetupHandler, mfaVerifyHandler, mfaDisableHandler } from './middleware/auth';
 app.post('/api/auth/forgot-password', loginLimiter, forgotPasswordHandler);

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { AuthState } from '../types';
-import { login as apiLogin, logoutServer, cancelActiveStream, SESSION_EXPIRED_EVENT } from '../services/api';
+import { login as apiLogin, logoutServer, cancelActiveStream, fetchMe, SESSION_EXPIRED_EVENT } from '../services/api';
 
 export function useAuth() {
   const [auth, setAuth] = useState<AuthState>(() => {
@@ -11,6 +11,26 @@ export function useAuth() {
       user: userStr ? (() => { try { return JSON.parse(userStr); } catch { return null; } })() : null,
     };
   });
+
+  // Hydrate auth state from the server on mount. The JWT cookie is httpOnly
+  // so localStorage is our only client-readable auth signal — but localStorage
+  // only gets set by RAG's own login flow, so SSO-minted sessions (where the
+  // server mints the JWT via sso.ts middleware on first request) are invisible
+  // to the frontend's initial render. Calling /api/auth/me catches those.
+  // Runs exactly once; failures are silent (falls through to LoginForm).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await fetchMe();
+      if (cancelled) return;
+      if (result?.user) {
+        localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('user', JSON.stringify(result.user));
+        setAuth({ token: 'httponly', user: result.user });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [mfaRequired, setMfaRequired] = useState(false);

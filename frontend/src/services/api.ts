@@ -133,6 +133,23 @@ export async function login(username: string, password: string, mfaCode?: string
   });
 }
 
+/**
+ * Check server-side auth state. Returns the current user if the JWT cookie
+ * validates, or null on any failure (401, network, etc.). Used on mount to
+ * hydrate auth state when the session was minted by SSO or carried over
+ * from a previous tab/reload — the httpOnly JWT cookie is opaque to the
+ * frontend, so localStorage alone can't detect those cases.
+ */
+export async function fetchMe(): Promise<{ user: User } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 // MFA
 export async function mfaSetup(): Promise<{ uri: string; secret: string }> {
   return request('/auth/mfa/setup', { method: 'POST' });

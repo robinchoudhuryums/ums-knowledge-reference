@@ -4,10 +4,14 @@ import { useAuth } from '../useAuth';
 
 // Mock the API module. SESSION_EXPIRED_EVENT must be exported because
 // useAuth imports it for the "silent logout on refresh failure" path (H7).
+// fetchMe defaults to resolving null so the mount-time SSO hydration probe
+// is a no-op in existing specs; tests that want to exercise hydration can
+// override with vi.mocked(fetchMe).mockResolvedValueOnce(...).
 vi.mock('../../services/api', () => ({
   login: vi.fn(),
   logoutServer: vi.fn().mockResolvedValue(undefined),
   cancelActiveStream: vi.fn(),
+  fetchMe: vi.fn().mockResolvedValue(null),
   SESSION_EXPIRED_EVENT: 'ums:session-expired',
 }));
 

@@ -54,15 +54,12 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
   const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
-  // SSO discovery — fetched once on mount. `?local=1` in the URL forces the
-  // local-password flow even when SSO is the configured default (break-glass
-  // for when CA is down). Keeping the escape hatch opt-in via URL means the
-  // happy path stays a single button.
+  // SSO discovery — fetched once on mount. The button surfaces as a
+  // secondary option below the primary username/password form when
+  // SSO is configured server-side. No forceLocal escape hatch needed
+  // anymore because the local-credentials form is always primary.
   const [ssoConfig, setSsoConfig] = useState<SsoConfig | null>(null);
   const [ssoChecked, setSsoChecked] = useState(false);
-  const forceLocal =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('local') === '1';
 
   useEffect(() => {
     let cancelled = false;
@@ -77,12 +74,10 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
     };
   }, []);
 
-  const showSsoPanel =
+  const ssoAvailable =
     ssoChecked &&
     ssoConfig?.enabled === true &&
-    !!ssoConfig.loginUrl &&
-    !forceLocal &&
-    !mfaRequired;
+    !!ssoConfig.loginUrl;
 
   const handleSsoRedirect = () => {
     if (!ssoConfig?.loginUrl) return;
@@ -190,23 +185,7 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
           </div>
         </div>
 
-        <p className="mb-6 text-sm text-muted-foreground">
-          {showSsoPanel ? 'Sign in with your CallAnalyzer account.' : subtitle}
-        </p>
-
-        {showSsoPanel && (
-          <div className="mb-2 flex flex-col gap-3">
-            <Button type="button" onClick={handleSsoRedirect} className="w-full">
-              Sign in with CallAnalyzer
-            </Button>
-            <a
-              href={`${window.location.pathname}?local=1`}
-              className="w-full bg-transparent py-1 text-center text-[13px] text-muted-foreground hover:text-foreground"
-            >
-              Use a local account instead
-            </a>
-          </div>
-        )}
+        <p className="mb-6 text-sm text-muted-foreground">{subtitle}</p>
 
         {forgotMessage && (
           <div
@@ -222,7 +201,6 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
           </div>
         )}
 
-        {!showSsoPanel && (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {forgotMode === 'done' ? (
             <Button
@@ -378,6 +356,33 @@ export function LoginForm({ onLogin, mfaRequired, onMfaSubmit }: Props) {
             </button>
           )}
         </form>
+
+        {/* Secondary SSO entry point. Shown only on the default sign-in step
+            (not during MFA / forgot-password flows) so the user has a clean
+            either/or choice: fill the credentials form above OR bounce to
+            CallAnalyzer. Auto-login for already-authenticated CA users still
+            works regardless of this button — the /api/auth/me probe in
+            useAuth hydrates the session on mount (PR #129). */}
+        {ssoAvailable && forgotMode === 'off' && !mfaRequired && (
+          <>
+            <div
+              className="mt-6 mb-4 flex items-center gap-3 font-mono uppercase text-muted-foreground"
+              style={{ fontSize: 10, letterSpacing: '0.14em' }}
+              role="separator"
+            >
+              <div className="h-px flex-1 bg-border" />
+              <span>or</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSsoRedirect}
+              className="w-full"
+            >
+              Sign in with CallAnalyzer
+            </Button>
+          </>
         )}
       </div>
     </div>

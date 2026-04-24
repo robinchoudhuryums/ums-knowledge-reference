@@ -18,7 +18,7 @@ describe('LoginForm', () => {
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
   });
 
-  it('shows "Sign in with CallAnalyzer" when SSO config is enabled and hides the local form', async () => {
+  it('shows "Sign in with CallAnalyzer" as a secondary option below the local form when SSO is enabled', async () => {
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -32,12 +32,13 @@ describe('LoginForm', () => {
       ),
     );
     render(<LoginForm onLogin={mockOnLogin} />);
+    // Local credentials form is the primary UI and stays visible
+    expect(screen.getByLabelText('Username')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    // SSO button appears below as a secondary option
     expect(
       await screen.findByRole('button', { name: /sign in with callanalyzer/i }),
     ).toBeInTheDocument();
-    // Local form should be hidden under SSO panel
-    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
     fetchSpy.mockRestore();
   });
 

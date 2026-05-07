@@ -156,8 +156,12 @@ export async function logRagTrace(trace: Omit<RagTrace, 'createdAt'>): Promise<v
  */
 export async function logRagFeedback(feedback: Omit<RagFeedback, 'feedbackId' | 'createdAt'>): Promise<RagFeedback> {
   await ensureToday();
+  // INV-02: reviewer-typed notes are free-text and routinely contain PHI
+  // (patient name, MRN, transaction #). The companion saveFeedback() path
+  // already redacts; this trace path was the asymmetric leak.
   const entry: RagFeedback = {
     ...feedback,
+    notes: feedback.notes ? redactPhi(feedback.notes).text : undefined,
     feedbackId: uuidv4(),
     createdAt: new Date().toISOString(),
   };

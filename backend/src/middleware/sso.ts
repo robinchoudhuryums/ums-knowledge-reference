@@ -185,6 +185,22 @@ export async function trySsoIntrospection(
     const verified = await introspectCaSession(rawCookie);
     if (!verified) return next();
 
+    // CA reports whether the introspected session has completed MFA. If the
+    // user hasn't, refuse the SSO bootstrap regardless of ENABLE_NATIVE_MFA:
+    //   - When CA is the auth authority (ENABLE_NATIVE_MFA=false), this is
+    //     the only MFA gate we have.
+    //   - When ENABLE_NATIVE_MFA=true, RAG's own MFA only fires at native
+    //     login, never on SSO bootstrap, so without this check an SSO path
+    //     could silently bypass RAG MFA too.
+    // Pass through to the normal 401 flow on failure; the user can complete
+    // MFA in CA and retry.
+    if (verified.mfaVerified !== true) {
+      logger.warn('SSO bootstrap refused: CA session has not completed MFA', {
+        caUserId: verified.user.id,
+      });
+      return next();
+    }
+
     const { user, jitProvisioned } = await resolveSsoUser(verified.user);
 
     // Mint RAG JWT + set cookie for future requests + populate req.cookies

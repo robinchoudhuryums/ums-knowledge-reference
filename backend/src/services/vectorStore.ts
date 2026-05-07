@@ -711,6 +711,7 @@ export async function addChunksToStore(chunks: DocumentChunk[], embeddings: numb
     pageNumber: chunk.pageNumber,
     sectionHeader: chunk.sectionHeader,
     embedding: embeddings[i],
+    contentHash: chunk.contentHash,
   }));
 
   cachedIndex!.chunks.push(...storedChunks);

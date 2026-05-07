@@ -74,7 +74,10 @@ async function reformulateQuery(
     const reformulated = body.content?.[0]?.text?.trim();
 
     if (reformulated && reformulated.length > 3 && reformulated.length < 500) {
-      logger.info('Query reformulated', { original: question, reformulated });
+      logger.info('Query reformulated', {
+        original: redactPhi(question).text,
+        reformulated: redactPhi(reformulated).text,
+      });
       return reformulated;
     }
   } catch (error) {
@@ -646,7 +649,7 @@ async function runQueryPipeline(
 
   const traceId = generateTraceId();
   const pipelineStart = Date.now();
-  logger.info(`${label} query received`, { question, userId: req.user!.id, traceId });
+  logger.info(`${label} query received`, { question: redactPhi(question).text, userId: req.user!.id, traceId });
 
   // Enforce collection-level access control
   const allowedCollections = await getUserAllowedCollections(req.user!.id, req.user!.role);

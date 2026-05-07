@@ -225,6 +225,10 @@ export async function ingestDocument(
       } else {
         embeddings.push(freshEmbeddings[freshIdx++]);
       }
+      // Persist the hash so the next ingestion of identical content can reuse
+      // this row's embedding. Without this, the SELECT at line ~183 always
+      // returns empty in pgvector mode and reuse never kicks in.
+      chunks[i].contentHash = chunkHashes[i];
     }
 
     // Step 5: Store in vector store

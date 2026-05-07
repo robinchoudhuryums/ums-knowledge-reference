@@ -37,6 +37,8 @@ import { runWithCorrelationId } from './utils/correlationId';
 import { recordRequest, getMetricsSnapshot } from './utils/metrics';
 import { validateEnv } from './utils/envValidation';
 import { initializeAuth, loginHandler, createUserHandler, changePasswordHandler, logoutHandler, refreshTokenHandler, authenticate, requireAdmin, AuthRequest } from './middleware/auth';
+import { verifyToken, AUTH_COOKIE } from './middleware/tokenService';
+import { resolveRateLimitKey } from './utils/rateLimitKey';
 import { initializeVectorStore, getVectorStoreStats } from './services/vectorStore';
 import { s3Client, S3_BUCKET } from './config/aws';
 import { checkDatabaseConnection } from './config/database';
@@ -267,8 +269,15 @@ const apiLimiter = rateLimit({
   ...(rateLimitStore && { store: rateLimitStore }),
 });
 
-// Per-user rate limiting — keyed by JWT user ID to prevent one user from exhausting
-// capacity for others. Falls back to IP for unauthenticated requests (login, health).
+// Per-user rate limiting — keyed by verified JWT user ID to prevent one user
+// from exhausting capacity for others. Falls back to resolveRateLimitKey
+// (req.ip → header hash → per-request UUID) for unauthenticated requests.
+//
+// We verify the signature here, not just decode. An earlier version base64-
+// decoded the payload without checking the signature, which let an attacker
+// craft a Bearer string with `{id: "victim"}` and pool into the victim's
+// bucket — a targeted DoS against a known user. Verifying closes that.
+// Verify is microsecond-cheap; rate-limit hot path tolerance is fine.
 const perUserLimiter = rateLimit({
   windowMs: 60 * 1000,  // 1 minute
   max: 60,               // 60 requests per user per minute
@@ -277,21 +286,19 @@ const perUserLimiter = rateLimit({
   legacyHeaders: false,
   ...(rateLimitStore && { store: rateLimitStore }),
   keyGenerator: (req) => {
-    // Extract user ID from JWT cookie or Authorization header without full verification
-    // (rate limiting runs before auth middleware, so we best-effort extract the key)
-    try {
-      const cookieToken = req.cookies?.['ums_auth_token'];
-      const authHeader = req.headers.authorization;
-      const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
-      if (token) {
-        // Decode without verification (just for keying — auth middleware does real verification)
-        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-        if (payload.id) return `user:${payload.id}`;
+    const cookieToken = req.cookies?.[AUTH_COOKIE];
+    const authHeader = req.headers.authorization;
+    const token = cookieToken || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null);
+    if (token) {
+      try {
+        const payload = verifyToken(token);
+        if (payload?.id) return `user:${payload.id}`;
+      } catch {
+        // Invalid/expired/forged signature — fall through to IP-based key.
+        // Critically, do NOT pool with the user a forged payload claims to be.
       }
-    } catch {
-      // Fall through to IP-based key
     }
-    return `ip:${req.ip}`;
+    return resolveRateLimitKey(req);
   },
 });
 

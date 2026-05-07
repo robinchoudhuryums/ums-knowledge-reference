@@ -35,6 +35,9 @@ export interface DocumentChunk {
   pageNumber?: number;
   sectionHeader?: string;
   embedding?: number[];
+  /** SHA-256 of chunk text. Persisted so duplicate-content uploads can reuse
+   *  the existing embedding instead of re-calling the embedding model. */
+  contentHash?: string;
 }
 
 export interface Collection {
@@ -114,6 +117,10 @@ export interface StoredChunk {
   pageNumber?: number;
   sectionHeader?: string;
   embedding: number[];
+  /** SHA-256 of chunk text. Used by ingestion to reuse existing embeddings
+   *  for identical content across documents. Optional for backward compat
+   *  with chunks persisted before column 011 / pre-reindex rows. */
+  contentHash?: string;
 }
 
 export type ResponseStyle = 'concise' | 'detailed' | 'comprehensive';

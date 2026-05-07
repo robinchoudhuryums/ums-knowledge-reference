@@ -165,15 +165,27 @@ async function splitPdfIntoChunks(
   return chunks;
 }
 
+export interface VisionExtractionResult {
+  /** Concatenated descriptions of visual elements, prefixed/suffixed for chunking. Empty if none found. */
+  text: string;
+  /** Operator-readable, PHI-safe warnings from partial failures: oversized
+   *  pages skipped, individual chunks that errored, the whole pass failing.
+   *  Empty array means clean run. Bubbled up to Document.extractionWarnings
+   *  so users see when a "ready" document is missing image content (F9). */
+  warnings: string[];
+}
+
 /**
  * Send a PDF to Claude Haiku via Bedrock Converse API to describe images/diagrams.
  * For PDFs over the API size limit, splits into page-range chunks.
- * Returns descriptive text for all visual elements found, or empty string if none.
+ * Returns descriptive text for all visual elements found and any warnings
+ * accumulated from partial failures.
  */
 export async function extractImageDescriptions(
   pdfBuffer: Buffer,
   filename: string
-): Promise<string> {
+): Promise<VisionExtractionResult> {
+  const warnings: string[] = [];
   try {
     logger.info('Vision extraction: analyzing PDF for visual elements', {
       filename: safeFilename(filename),
@@ -187,13 +199,16 @@ export async function extractImageDescriptions(
       const result = await analyzeChunk(pdfBuffer, docName);
       if (!result) {
         logger.info('Vision extraction: no visual elements found', { filename: safeFilename(filename) });
-        return '';
+        return { text: '', warnings };
       }
       logger.info('Vision extraction: described visual elements', {
         filename: safeFilename(filename),
         descriptionLength: result.length,
       });
-      return `\n\n--- Image and Visual Element Descriptions ---\n${result}\n--- End Visual Descriptions ---\n`;
+      return {
+        text: `\n\n--- Image and Visual Element Descriptions ---\n${result}\n--- End Visual Descriptions ---\n`,
+        warnings,
+      };
     }
 
     // Large PDF — split into chunks and process each
@@ -205,7 +220,8 @@ export async function extractImageDescriptions(
     const chunks = await splitPdfIntoChunks(pdfBuffer, filename);
     if (chunks.length === 0) {
       logger.warn('Vision extraction: could not produce any chunks under size limit', { filename: safeFilename(filename) });
-      return '';
+      warnings.push('Vision analysis skipped: PDF too large to chunk under the API size limit. Image content not indexed.');
+      return { text: '', warnings };
     }
 
     logger.info('Vision extraction: processing page chunks', {
@@ -215,6 +231,7 @@ export async function extractImageDescriptions(
     });
 
     const descriptions: string[] = [];
+    const failedChunkLabels: string[] = [];
     for (const chunk of chunks) {
       try {
         const chunkName = `${docName} ${chunk.label}`;
@@ -228,12 +245,21 @@ export async function extractImageDescriptions(
           chunk: chunk.label,
           error: String(chunkError),
         });
+        failedChunkLabels.push(chunk.label);
       }
+    }
+
+    if (failedChunkLabels.length > 0) {
+      // List failed page ranges; cap the message length so a 50-chunk PDF
+      // with widespread failures doesn't blow up the warning array.
+      const sample = failedChunkLabels.slice(0, 5).join('; ');
+      const more = failedChunkLabels.length > 5 ? ` (+${failedChunkLabels.length - 5} more)` : '';
+      warnings.push(`Vision analysis failed for ${failedChunkLabels.length} page range${failedChunkLabels.length === 1 ? '' : 's'}: ${sample}${more}.`);
     }
 
     if (descriptions.length === 0) {
       logger.info('Vision extraction: no visual elements found in any chunk', { filename: safeFilename(filename) });
-      return '';
+      return { text: '', warnings };
     }
 
     const combined = descriptions.join('\n\n');
@@ -243,13 +269,17 @@ export async function extractImageDescriptions(
       chunksWithVisuals: descriptions.length,
     });
 
-    return `\n\n--- Image and Visual Element Descriptions ---\n${combined}\n--- End Visual Descriptions ---\n`;
+    return {
+      text: `\n\n--- Image and Visual Element Descriptions ---\n${combined}\n--- End Visual Descriptions ---\n`,
+      warnings,
+    };
   } catch (error) {
     // Vision extraction is optional — log and continue without it
     logger.warn('Vision extraction failed, continuing without image descriptions', {
       filename: safeFilename(filename),
       error: String(error),
     });
-    return '';
+    warnings.push('Vision analysis failed entirely — document was indexed without image content.');
+    return { text: '', warnings };
   }
 }

@@ -269,6 +269,20 @@ function DocRow({
       </td>
       <td className="px-4 py-2.5">
         <StatusBadge status={doc.status} />
+        {doc.extractionWarnings && doc.extractionWarnings.length > 0 && (
+          <span
+            className="ml-1.5 inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider"
+            style={{
+              background: 'var(--amber-soft, #fef3c7)',
+              borderColor: 'var(--amber, #d97706)',
+              color: 'var(--amber, #92400e)',
+            }}
+            title={doc.extractionWarnings.join('\n')}
+            aria-label={`${doc.extractionWarnings.length} extraction warning${doc.extractionWarnings.length === 1 ? '' : 's'}`}
+          >
+            ⚠ {doc.extractionWarnings.length}
+          </span>
+        )}
       </td>
       <td className="px-4 py-2.5 font-mono text-[12px] tabular-nums text-muted-foreground">
         {formatSize(doc.sizeBytes)}

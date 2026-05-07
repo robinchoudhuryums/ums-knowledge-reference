@@ -3,6 +3,13 @@ export interface ExtractedText {
   pageBreaks?: number[];
   /** OCR confidence (0-100) when text was extracted via Textract. Undefined for non-OCR extraction. */
   ocrConfidence?: number;
+  /** Operator-readable warnings from the extraction pipeline — e.g. "vision
+   *  analysis skipped: page 12 too large", "OCR confidence 42% — poorly
+   *  scanned". Populated by textExtractor and visionExtractor on partial
+   *  failure paths that previously logged a `logger.warn` and silently
+   *  returned reduced output. Surfaced on Document.extractionWarnings so
+   *  the user can tell when a "ready" document is actually under-indexed. */
+  warnings?: string[];
 }
 
 export interface Document {
@@ -22,6 +29,11 @@ export interface Document {
   previousVersionId?: string;
   tags?: string[];
   contentHash?: string;
+  /** Non-fatal pipeline warnings from extraction: "vision analysis failed
+   *  for pages 5-8", "OCR confidence 42%", etc. Document is still status:
+   *  'ready' but the user / operator should know the index is incomplete
+   *  on this document. Empty/undefined when extraction was clean. */
+  extractionWarnings?: string[];
 }
 
 export interface DocumentChunk {

@@ -12,7 +12,7 @@ vi.mock('../services/textExtractor', () => ({
 }));
 
 vi.mock('../services/visionExtractor', () => ({
-  extractImageDescriptions: vi.fn().mockResolvedValue(''),
+  extractImageDescriptions: vi.fn().mockResolvedValue({ text: '', warnings: [] }),
 }));
 
 vi.mock('../services/chunker', () => ({

@@ -11,7 +11,8 @@
     "lint": "eslint src/**/*.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "eval:rag": "tsx src/scripts/evalRag.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.1037.0",

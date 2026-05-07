@@ -13,6 +13,10 @@ export interface Document {
   chunkCount: number;
   version: number;
   tags?: string[];
+  /** Non-fatal extraction warnings — vision/OCR partial failures. Document
+   *  is status:'ready' but the index is incomplete. Displayed as a yellow
+   *  flag next to the status badge so users know to expect gaps. */
+  extractionWarnings?: string[];
 }
 
 export interface Collection {

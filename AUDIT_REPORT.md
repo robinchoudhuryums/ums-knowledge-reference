@@ -6,6 +6,24 @@
 
 ---
 
+> ⚠️ **STATUS — HISTORICAL SNAPSHOT (2026-03-28).** Most Critical and High findings
+> in this report are **closed**. SSL cert validation, mass-delete safety, FK
+> constraints, bulk-delete fix, collection ACL, PPD PHI redaction, streaming
+> timeout, and server-side form validation all landed in PR #52 and the FK
+> migration (April 2026). The "Top 10 Recommended Next Steps" section has the
+> per-item status. Test counts and rating numbers in this file pre-date the
+> current 1119-test / 79-file backend suite.
+>
+> **Active sources of truth** (read these first):
+> - `CLAUDE.md` — current architecture, invariants (INV-01 … INV-37), env vars
+> - `CHANGELOG.md` — categorized history of improvements
+> - `ROADMAP.md` — current sprint plan (open items only)
+>
+> This report is preserved for context when reading `git log` against early-
+> 2026 commits and to track what the rating dimensions looked like at audit time.
+
+---
+
 ## Executive Summary
 
 This is a **remarkably ambitious and well-built** single-developer healthcare application. The breadth of functionality — RAG pipeline, HIPAA compliance, OCR, forms, DME reference data, admin tooling — is impressive. The codebase shows clear iterative improvement with strong security awareness. However, there are real bugs, security gaps, and architectural concerns that need attention.

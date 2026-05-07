@@ -67,7 +67,7 @@ vi.mock('../services/textExtractor', () => ({
 }));
 
 vi.mock('../services/visionExtractor', () => ({
-  extractImageDescriptions: vi.fn(async () => null),
+  extractImageDescriptions: vi.fn(async () => ({ text: '', warnings: [] })),
 }));
 
 vi.mock('../services/ocr', () => ({

@@ -5,6 +5,20 @@
 
 ---
 
+> ⚠️ **STATUS — SUPERSEDED by `ROADMAP.md` (2026-04-13+).** This document is a
+> historical snapshot from the April 2026 sprint. Several P1 items marked open
+> here are now done (gold-standard eval harness, MFA recovery codes, OpenTelemetry,
+> audit Object Lock immutability, cross-encoder re-ranking, multi-instance
+> audit chain, Redis integration, glassmorphism + dark-mode fixes, tab
+> consolidation, WCAG AA color contrast, Helmet CSP, CSRF cookie parser
+> centralization, raised CI coverage thresholds). Test count cited (861 / 54)
+> is stale — current backend suite is 1119 tests across 79 files.
+>
+> Use `ROADMAP.md` for the current sprint plan. This file is preserved for
+> historical context only.
+
+---
+
 ## Completed (This Sprint)
 
 ### P0 — Fixed Immediately

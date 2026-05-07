@@ -75,7 +75,7 @@ A HIPAA-aware knowledge base RAG (Retrieval-Augmented Generation) tool for **Uni
 | **Database** | PostgreSQL 17 on AWS RDS (pgvector for embeddings) |
 | **Storage** | Amazon S3 (raw document files), PostgreSQL (metadata, vectors, audit) |
 | **Icons** | Heroicons (UI) + Lucide React (medical: Brain, Stethoscope) |
-| **Styling** | Tailwind CSS v4 + 60+ CSS variables (light/dark themes, semantic status/confidence colors) |
+| **Styling** | Tailwind CSS v3 + 60+ CSS variables (light/dark themes, semantic status/confidence colors). v3 is intentional — downgraded from v4 for shadcn/ui ("new-york" style) compatibility. |
 | **Deployment** | Docker on EC2 behind ALB, auto-deploy via GitHub Actions |
 
 ## Quick Start
@@ -130,7 +130,7 @@ docker run -p 3001:3001 --env-file backend/.env ums-knowledge
 ### Production Deployment (EC2)
 
 The app auto-deploys to EC2 via GitHub Actions when code is pushed to `main`:
-1. CI runs (lint, type-check, 1019 tests)
+1. CI runs (lint, type-check, 1119 tests)
 2. SSHes into EC2 → `git pull` → `docker build` → restart container
 3. Health check verification at `/api/health`
 
@@ -148,7 +148,7 @@ docker run -d --name ums-knowledge --restart unless-stopped --env-file ~/ums-kno
 # Type-check
 cd backend && npx tsc --noEmit
 
-# Run tests (1019 tests across 69 test files)
+# Run tests (1119 backend tests across 79 test files; 101 frontend tests across 14 files)
 cd backend && npm test
 
 # Lint

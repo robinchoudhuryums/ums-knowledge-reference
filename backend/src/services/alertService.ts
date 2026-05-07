@@ -31,7 +31,7 @@ import { escapeHtml } from '../utils/htmlEscape';
 const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const lastAlertTime = new Map<string, number>();
 
-type AlertCategory = 'audit_write_failed' | 'reindex_failed' | 'ingestion_failed' | 'source_stale' | 'malware_scan_unavailable' | 'admin_role_granted';
+type AlertCategory = 'audit_write_failed' | 'audit_chain_fork' | 'reindex_failed' | 'ingestion_failed' | 'source_stale' | 'malware_scan_unavailable' | 'admin_role_granted';
 
 /**
  * Send an operational alert email if not throttled.

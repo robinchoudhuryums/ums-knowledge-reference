@@ -33,14 +33,15 @@ export async function dbAddChunks(chunks: DocumentChunk[], embeddings: number[][
 
       await client.query(`
         INSERT INTO chunks (id, document_id, chunk_index, text, token_count,
-                           start_offset, end_offset, page_number, section_header, embedding)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector)
+                           start_offset, end_offset, page_number, section_header,
+                           embedding, content_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector, $11)
         ON CONFLICT (id) DO NOTHING
       `, [
         chunk.id, chunk.documentId, chunk.chunkIndex, chunk.text,
         chunk.tokenCount, chunk.startOffset, chunk.endOffset,
         chunk.pageNumber || null, chunk.sectionHeader || null,
-        embeddingStr,
+        embeddingStr, chunk.contentHash || null,
       ]);
     }
 

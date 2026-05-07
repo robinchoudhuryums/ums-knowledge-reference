@@ -83,19 +83,33 @@ function deepRedactPhi(value: unknown): unknown {
 
 /**
  * Recover the hash chain from S3 on first audit write after restart.
- * Reads today's (and optionally yesterday's) audit entries to find the most recent hash,
- * preserving chain continuity across server restarts.
+ * Scans back through recent days of audit entries to find the most recent
+ * hash and preserve chain continuity across server restarts. Without this,
+ * multi-day downtime in S3-only mode (no DATABASE_URL) silently forks the
+ * chain — auditors comparing entries across the gap would see continuous
+ * `previousHash` references but a verifiability break.
+ *
+ * Scan window is bounded so a fresh deploy with no prior entries doesn't
+ * loop indefinitely. If audit entries exist somewhere in the bucket but
+ * none within the window, the chain forks and we fire an operational alert
+ * so an operator can investigate (typical cause: server downtime exceeded
+ * the window, or audit-prefix listing access is broken).
+ *
+ * Note: when DATABASE_URL is set, dbAtomicChainWrite handles chain head
+ * via SELECT FOR UPDATE and this S3 path is a fallback only.
  */
+const CHAIN_RECOVERY_DAYS = Math.max(1, parseInt(process.env.AUDIT_CHAIN_RECOVERY_DAYS || '30', 10) || 30);
+
 async function recoverHashChain(): Promise<void> {
   if (chainInitialized) return;
   chainInitialized = true;
 
   try {
-    // Try today first, then yesterday (in case server restarts around midnight)
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
-    for (const date of [today, yesterday]) {
+    // Walk backwards from today, stopping at the first day with an entry
+    // that carries an entryHash. Bounded by CHAIN_RECOVERY_DAYS so a
+    // brand-new deployment with no audit history terminates promptly.
+    for (let dayOffset = 0; dayOffset < CHAIN_RECOVERY_DAYS; dayOffset++) {
+      const date = new Date(Date.now() - dayOffset * 86400000).toISOString().split('T')[0];
       const entries = await getAuditLogs(date);
       if (entries.length > 0) {
         // getAuditLogs sorts descending by timestamp, so [0] is the most recent
@@ -105,17 +119,53 @@ async function recoverHashChain(): Promise<void> {
           logger.info('Audit hash chain recovered from S3', {
             date,
             recoveredFromEntryId: mostRecent.id,
+            dayOffsetFromToday: dayOffset,
           });
           return;
         }
       }
     }
 
-    // No entries found — starting fresh with GENESIS
-    logger.info('No previous audit entries found, starting hash chain from GENESIS');
+    // No entries found in the recovery window. Distinguish two cases by
+    // checking whether the audit prefix has *any* objects at all: a fresh
+    // deploy is fine, but stale entries beyond the window indicate downtime
+    // longer than the configured window and the chain will fork on the
+    // next write — alert an operator.
+    const hasOlderEntries = await auditPrefixHasAnyObjects();
+    if (hasOlderEntries) {
+      logger.error('Audit hash chain recovery exhausted — entries exist beyond recovery window, chain will fork', {
+        recoveryDays: CHAIN_RECOVERY_DAYS,
+      });
+      sendOperationalAlert(
+        'audit_chain_fork',
+        `Audit hash chain forked: no entry found within ${CHAIN_RECOVERY_DAYS} days but older entries exist in the bucket`,
+        { recoveryDays: CHAIN_RECOVERY_DAYS },
+      ).catch(() => {});
+    } else {
+      logger.info('No previous audit entries found, starting hash chain from GENESIS');
+    }
   } catch (err) {
     // Recovery failure is non-fatal — chain starts fresh from GENESIS
     logger.warn('Failed to recover audit hash chain, starting from GENESIS', { error: String(err) });
+  }
+}
+
+/**
+ * Check whether ANY object exists under the audit prefix (with a 1-key
+ * cap so we don't pay for a full listing). Used by recoverHashChain to
+ * distinguish "fresh deploy" from "downtime exceeded recovery window".
+ */
+async function auditPrefixHasAnyObjects(): Promise<boolean> {
+  try {
+    const result = await s3Client.send(new ListObjectsV2Command({
+      Bucket: S3_BUCKET,
+      Prefix: S3_PREFIXES.audit,
+      MaxKeys: 1,
+    }));
+    return (result.Contents?.length ?? 0) > 0;
+  } catch {
+    // If we can't list, assume yes — that's the safer side (we'll alert).
+    return true;
   }
 }
 

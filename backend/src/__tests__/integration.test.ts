@@ -78,7 +78,7 @@ vi.mock('../services/textExtractor', () => ({
 
 // Mock vision extractor — no images in our test doc
 vi.mock('../services/visionExtractor', () => ({
-  extractImageDescriptions: vi.fn(async () => null),
+  extractImageDescriptions: vi.fn(async () => ({ text: '', warnings: [] })),
 }));
 
 // Mock OCR — not needed for text files

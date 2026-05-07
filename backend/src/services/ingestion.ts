@@ -146,12 +146,20 @@ export async function ingestDocument(
       throw new Error('No text could be extracted from the document');
     }
 
+    // F9: collect non-fatal warnings from text + vision extraction so the
+    // user sees a yellow flag on the document instead of trusting a green
+    // 'ready' status on a partially-indexed file.
+    const extractionWarnings: string[] = [...(extracted.warnings ?? [])];
+
     // Step 2b: For PDFs, use vision to describe images/diagrams and append to text
     if (mimeType === 'application/pdf') {
       logger.info('Ingestion: Extracting image descriptions via vision', { documentId });
-      const imageDescriptions = await extractImageDescriptions(fileBuffer, originalName);
-      if (imageDescriptions) {
-        extracted.text += imageDescriptions;
+      const visionResult = await extractImageDescriptions(fileBuffer, originalName);
+      if (visionResult.text) {
+        extracted.text += visionResult.text;
+      }
+      if (visionResult.warnings.length > 0) {
+        extractionWarnings.push(...visionResult.warnings);
       }
     }
 
@@ -225,6 +233,10 @@ export async function ingestDocument(
       } else {
         embeddings.push(freshEmbeddings[freshIdx++]);
       }
+      // Persist the hash so the next ingestion of identical content can reuse
+      // this row's embedding. Without this, the SELECT at line ~183 always
+      // returns empty in pgvector mode and reuse never kicks in.
+      chunks[i].contentHash = chunkHashes[i];
     }
 
     // Step 5: Store in vector store
@@ -282,6 +294,11 @@ export async function ingestDocument(
       // Append new document to index
       document.status = 'ready';
       document.chunkCount = chunks.length;
+      // F9: stamp accumulated warnings before persisting. Empty array →
+      // undefined keeps the column clean for the common no-warning case.
+      if (extractionWarnings.length > 0) {
+        document.extractionWarnings = extractionWarnings;
+      }
       freshDocs.push(document);
       await saveDocumentsIndex(freshDocs);
     });

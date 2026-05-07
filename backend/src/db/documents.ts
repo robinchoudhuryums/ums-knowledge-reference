@@ -20,7 +20,8 @@ export async function dbGetDocuments(collectionId?: string): Promise<Document[]>
   let query = `
     SELECT id, filename, original_name, mime_type, size_bytes, s3_key,
            collection_id, uploaded_by, uploaded_at, status, chunk_count,
-           version, previous_version_id, content_hash, error_message, tags
+           version, previous_version_id, content_hash, error_message, tags,
+           extraction_warnings
     FROM documents ORDER BY uploaded_at DESC
   `;
   const params: unknown[] = [];
@@ -53,8 +54,9 @@ export async function dbSaveDocuments(docs: Document[]): Promise<void> {
       await client.query(`
         INSERT INTO documents (id, filename, original_name, mime_type, size_bytes, s3_key,
                               collection_id, uploaded_by, uploaded_at, status, chunk_count,
-                              version, previous_version_id, content_hash, error_message, tags)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                              version, previous_version_id, content_hash, error_message, tags,
+                              extraction_warnings)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT (id) DO UPDATE SET
           status = EXCLUDED.status,
           chunk_count = EXCLUDED.chunk_count,
@@ -62,13 +64,15 @@ export async function dbSaveDocuments(docs: Document[]): Promise<void> {
           previous_version_id = EXCLUDED.previous_version_id,
           content_hash = EXCLUDED.content_hash,
           error_message = EXCLUDED.error_message,
-          tags = EXCLUDED.tags
+          tags = EXCLUDED.tags,
+          extraction_warnings = EXCLUDED.extraction_warnings
       `, [
         doc.id, doc.filename, doc.originalName, doc.mimeType, doc.sizeBytes,
         doc.s3Key, doc.collectionId, doc.uploadedBy, doc.uploadedAt,
         doc.status, doc.chunkCount, doc.version,
         doc.previousVersionId || null, doc.contentHash || null,
         doc.errorMessage || null, doc.tags || [],
+        doc.extractionWarnings || [],
       ]);
     }
 
@@ -161,6 +165,9 @@ function mapRowToDocument(row: Record<string, unknown>): Document {
     contentHash: row.content_hash as string | undefined,
     errorMessage: row.error_message as string | undefined,
     tags: (row.tags as string[])?.length > 0 ? row.tags as string[] : undefined,
+    extractionWarnings: (row.extraction_warnings as string[])?.length > 0
+      ? row.extraction_warnings as string[]
+      : undefined,
   };
 }
 

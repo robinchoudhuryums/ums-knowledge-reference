@@ -1,0 +1,90 @@
+name: RAG Eval
+
+# Runs the gold-standard RAG evaluation harness (scripts/evalRag.ts) against
+# the production index. Surfaces retrieval-quality regressions before they
+# reach users — the harness exits non-zero when avg recall@10 or MRR fall
+# below the configured thresholds.
+#
+# Schedule: weekly on Mondays at 06:00 UTC. Also runs on demand via
+# workflow_dispatch so an operator can validate retrieval quality after a
+# corpus change, model promotion, or chunker tweak before doing the deploy.
+#
+# Cost: ~$5/run in Bedrock (Titan Embed V2 + retrieval against live RDS).
+# Required repository secrets (configure in GitHub → Settings → Secrets):
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_BUCKET,
+#   DATABASE_URL (production read access for vector search)
+#
+# This workflow does NOT block deploy.yml. It produces an artifact + JUnit
+# XML you can wire into a notification channel; gating deploys on it
+# requires a populated index in CI, which we don't have today.
+
+on:
+  workflow_dispatch:
+    inputs:
+      recall_threshold:
+        description: 'Minimum avg recall@10 (default 0.5)'
+        required: false
+        default: '0.5'
+      mrr_threshold:
+        description: 'Minimum MRR (default 0.4)'
+        required: false
+        default: '0.4'
+  schedule:
+    # Mondays 06:00 UTC — corpus is quiet, results land before the weekly review.
+    - cron: '0 6 * * 1'
+
+jobs:
+  eval:
+    name: RAG gold-standard eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run eval harness
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Embedding model defaults to Titan Embed V2 inside the script.
+          BEDROCK_EMBEDDING_MODEL: ${{ secrets.BEDROCK_EMBEDDING_MODEL || 'amazon.titan-embed-text-v2:0' }}
+          # Thresholds: workflow_dispatch inputs override; fall back to env defaults
+          # which match the harness's own defaults (0.5 recall, 0.4 MRR).
+          RAG_EVAL_RECALL_THRESHOLD: ${{ github.event.inputs.recall_threshold || '0.5' }}
+          RAG_EVAL_MRR_THRESHOLD: ${{ github.event.inputs.mrr_threshold || '0.4' }}
+          RAG_EVAL_OUTPUT_DIR: ./eval-output
+        run: npm run eval:rag
+
+      - name: Upload eval artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: rag-eval-output
+          path: backend/eval-output/
+          retention-days: 90
+
+      - name: Publish JUnit summary
+        # GitHub renders JUnit XML in the workflow summary when published this way.
+        # Non-blocking — the eval job's exit code already gated success/failure.
+        if: always()
+        uses: dorny/test-reporter@v2
+        with:
+          name: 'RAG gold-standard'
+          path: 'backend/eval-output/junit.xml'
+          reporter: java-junit
+          fail-on-error: false

@@ -82,7 +82,7 @@ jobs:
         # GitHub renders JUnit XML in the workflow summary when published this way.
         # Non-blocking — the eval job's exit code already gated success/failure.
         if: always()
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@v3
         with:
           name: 'RAG gold-standard'
           path: 'backend/eval-output/junit.xml'

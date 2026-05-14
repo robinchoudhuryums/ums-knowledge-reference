@@ -640,6 +640,18 @@ async function start() {
     // Initialize auth (create default admin if needed)
     await initializeAuth();
 
+    // Seed the 'default' collection row referenced by the documents UI
+    // and upload route fallback (DocumentManager.tsx + routes/documents.ts).
+    // Runs after initializeAuth so the FK on created_by → users(id) can
+    // resolve. Idempotent; non-fatal — log + continue on failure so a
+    // partial DB outage doesn't block the rest of startup.
+    try {
+      const { ensureDefaultCollection } = await import('./services/defaultCollection');
+      await ensureDefaultCollection();
+    } catch (err) {
+      logger.warn('Default collection seed failed at startup', { error: String(err) });
+    }
+
     // Restore token revocation state from S3 (in-memory mode only; skipped when Redis is configured)
     const { restoreRevocations } = await import('./middleware/tokenService');
     await restoreRevocations();

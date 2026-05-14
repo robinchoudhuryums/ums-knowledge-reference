@@ -17,6 +17,7 @@ import { createAnnotatedPdf } from '../services/pdfAnnotator';
 import { checkForChanges } from '../services/reindexer';
 import { fetchAndIngestFeeSchedule } from '../services/feeScheduleFetcher';
 import { extractClinicalNotes } from '../services/clinicalNoteExtractor';
+import { ensureDefaultCollection, DEFAULT_COLLECTION_ID } from '../services/defaultCollection';
 import { Collection } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
@@ -106,7 +107,23 @@ router.post(
         return;
       }
 
-      const collectionId = req.body.collectionId || 'default';
+      const collectionId = req.body.collectionId || DEFAULT_COLLECTION_ID;
+
+      // Belt-and-suspenders: if the caller fell back to the 'default'
+      // collection, make sure the row exists. Startup also seeds this,
+      // but an admin could have deleted it manually. Scoped strictly to
+      // the 'default' literal — non-default collectionIds that don't
+      // exist still fail the FK so we don't enable arbitrary
+      // write-amplification by upload.
+      if (collectionId === DEFAULT_COLLECTION_ID) {
+        try {
+          await ensureDefaultCollection(req.user!.id);
+        } catch (err) {
+          logger.warn('Lazy default-collection ensure failed; proceeding to ingest', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
 
       const result = await ingestDocument(
         req.file.buffer,
@@ -439,7 +456,11 @@ router.post('/collections', authenticate, requireAdmin, async (req: AuthRequest,
       id: uuidv4(),
       name,
       description: description || '',
-      createdBy: req.user!.username,
+      // FK constraint fk_collections_created_by references users(id), not
+      // users.username. Earlier code stored the username here and worked
+      // only because the S3-only deployment had no FK enforcement; RDS
+      // mode fails the constraint on every collection create.
+      createdBy: req.user!.id,
       createdAt: new Date().toISOString(),
       documentCount: 0,
     };
@@ -453,7 +474,13 @@ router.post('/collections', authenticate, requireAdmin, async (req: AuthRequest,
     });
 
     res.status(201).json({ collection });
-  } catch {
+  } catch (err) {
+    // Bare `catch {}` was swallowing the FK violation here for ~weeks
+    // before this was diagnosed — log enough context to debug next time.
+    logger.error('Failed to create collection', {
+      error: err instanceof Error ? err.message : String(err),
+      userId: req.user?.id,
+    });
     res.status(500).json({ error: 'Failed to create collection' });
   }
 });

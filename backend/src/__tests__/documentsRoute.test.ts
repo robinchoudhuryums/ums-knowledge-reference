@@ -521,7 +521,11 @@ describe('Documents Route', () => {
       expect(res.status).toBe(201);
       expect(res.body.collection.name).toBe('New Collection');
       expect(res.body.collection.description).toBe('Desc');
-      expect(res.body.collection.createdBy).toBe('testadmin');
+      // createdBy must be the user's *id* not their username — the
+      // collections.created_by column is FK to users(id). Previous test
+      // expectation ('testadmin') was locking in the bug that caused
+      // the 2026-05-14 collection-create FK failures.
+      expect(res.body.collection.createdBy).toBe('user-1');
       expect(saveCollectionsIndex).toHaveBeenCalled();
       expect(logAuditEvent).toHaveBeenCalledWith(
         'user-1',

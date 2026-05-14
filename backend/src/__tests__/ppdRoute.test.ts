@@ -352,7 +352,9 @@ describe('PPD Routes', () => {
       expect(res.body.submission.status).toBe('in_review');
       expect(updatePpdStatus).toHaveBeenCalledWith('ppd-001', expect.objectContaining({
         status: 'in_review',
-        reviewedBy: 'tester',
+        // ppd_submissions.reviewed_by FK references users(id), not username.
+        // Old assertion ('tester') was locking in the FK-violation bug.
+        reviewedBy: 'user-1',
         reviewNotes: 'Looking good',
       }));
       expect(logAuditEvent).toHaveBeenCalled();

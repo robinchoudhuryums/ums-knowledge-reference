@@ -130,7 +130,10 @@ router.post(
         req.file.originalname,
         req.file.mimetype,
         collectionId,
-        req.user!.username
+        // documents.uploaded_by FK references users(id), not users.username.
+        // Sibling bug to the collection-create createdBy fix in PR #146 —
+        // S3-only mode hid this; RDS mode fails fk_documents_uploaded_by.
+        req.user!.id
       );
 
       await logAuditEvent(req.user!.id, req.user!.username, 'upload', {

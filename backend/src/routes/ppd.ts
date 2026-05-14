@@ -157,7 +157,9 @@ router.post('/submit', authenticate, submissionLimiter, async (req: AuthRequest,
       responses,
       recommendations: recommendations || [],
       productSelections: productSelections || {},
-      submittedBy: req.user!.username,
+      // ppd_submissions.submitted_by FK references users(id). Same sibling
+      // bug class as F(documents uploaded_by) / collections created_by.
+      submittedBy: req.user!.id,
     });
 
     await logAuditEvent(req.user!.id, req.user!.username, 'query', {
@@ -181,7 +183,10 @@ router.get('/submissions', authenticate, async (req: AuthRequest, res: Response)
 
     const submissions = await listPpdSubmissions({
       status,
-      submittedBy: isAdmin ? undefined : req.user!.username,
+      // Filter must match what submitPpd writes — now an id, not username.
+      // Stale records from S3-only mode (if any) won't match either filter,
+      // but in production that's a fresh-deploy / no-historical-data state.
+      submittedBy: isAdmin ? undefined : req.user!.id,
     });
 
     res.json({ submissions, total: submissions.length });
@@ -224,7 +229,8 @@ router.put('/submissions/:id/status', authenticate, requireAdmin, async (req: Au
     try {
       record = await updatePpdStatus(req.params.id, {
         status,
-        reviewedBy: req.user!.username,
+        // ppd_submissions.reviewed_by FK references users(id).
+        reviewedBy: req.user!.id,
         reviewNotes,
         returnReason,
       });

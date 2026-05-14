@@ -13,6 +13,25 @@ updates:
       major:
         update-types:
           - major
+    # Suppressed major bumps — each requires a deliberate migration PR, not
+    # a Dependabot auto-merge. Re-enable when ready to migrate.
+    #   express 4→5: path-to-regexp 0.x→8.x route syntax change + body-parser
+    #     / finalhandler / serve-static major bumps. Needs middleware audit
+    #     across waf.ts, auth.ts, sso.ts, CSRF, rate limiters.
+    #   @types/express 4→5: coupled to express 5.
+    #   rate-limit-redis 4→5: requires express-rate-limit ≥8.5.0 (we're on
+    #     ^8.4.1); coordinate with that bump.
+    #   typescript 5→6: whole-codebase type re-verification + frontend was
+    #     pre-emptively migrated, backend hasn't been yet.
+    ignore:
+      - dependency-name: "express"
+        versions: ["5.x"]
+      - dependency-name: "@types/express"
+        versions: ["5.x"]
+      - dependency-name: "rate-limit-redis"
+        versions: ["5.x"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /frontend
@@ -27,6 +46,15 @@ updates:
       major:
         update-types:
           - major
+    # Suppressed major bumps:
+    #   tailwindcss 3→4: deliberate downgrade to v3 for shadcn/ui
+    #     ("new-york" style) compatibility — see CLAUDE.md design system note.
+    #   tailwind-merge 2→3: coupled to Tailwind v4.
+    ignore:
+      - dependency-name: "tailwindcss"
+        versions: ["4.x"]
+      - dependency-name: "tailwind-merge"
+        versions: ["3.x"]
 
   - package-ecosystem: github-actions
     directory: /

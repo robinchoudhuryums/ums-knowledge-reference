@@ -91,3 +91,24 @@ The CI sandbox in the Claude session that authored PR #125 couldn't reach `cdn.s
 ### Residual moderate vulns (accepted — no fix path yet)
 
 `fast-xml-parser` — AWS SDK's `@aws-sdk/xml-builder@3.972.18` has an EXACT pin on `5.5.8` (not a range). The fix is at 5.7.0. An npm override would risk AWS SDK runtime break. Track upstream [aws-sdk-js-v3 issues](https://github.com/aws/aws-sdk-js-v3/issues) for a release that bumps the pin; until then, 23 moderate vulns remain. `npm audit`'s suggested "fix" is a semver-major downgrade of `@aws-sdk/client-bedrock` to 3.893.0 — that predates the management SDK with `CreateModelInvocationJobCommand` that Phase C relies on, so we can't take it.
+
+## OpenTelemetry exporter-prometheus + sdk-node CVEs
+
+**What it's for**: `@opentelemetry/exporter-prometheus` is flagged for a Prometheus HTTP-exporter crash (process crash via malformed HTTP request). `@opentelemetry/sdk-node` is transitively flagged because it depends on a vulnerable range of `exporter-prometheus`. Both are now on the CI accepted-risk allow list (`.github/workflows/ci.yml`).
+
+**Why accepted**: this app exports traces via OTLP (`OTEL_EXPORTER_OTLP_ENDPOINT`), never starts the Prometheus exporter HTTP server, and never imports `exporter-prometheus` directly. The exploit surface is zero in this deployment. The only fix is a breaking jump to `@opentelemetry/sdk-node 0.217+`, which would risk the existing custom-span wire-up in `routes/query.ts` and `services/ingestion.ts`.
+
+### When upstream releases a non-breaking patch
+
+Watch for a `@opentelemetry/sdk-node` release that pulls a patched `exporter-prometheus` without a major version bump. Track [opentelemetry-js issues](https://github.com/open-telemetry/opentelemetry-js/issues) for `exporter-prometheus` patches. When available:
+
+```bash
+cd backend
+npm update @opentelemetry/sdk-node @opentelemetry/exporter-prometheus
+npm audit --audit-level=high   # should report 0 high
+# Remove the two packages from the ACCEPTED_PKGS line in .github/workflows/ci.yml
+```
+
+### Or — if you want to fully drop the Prometheus exporter dependency
+
+If we don't intend to use Prometheus at all (current state — we use OTLP), it would be cleaner to switch from `@opentelemetry/sdk-node` (which carries every exporter) to a narrower SDK assembly that pulls only the OTLP HTTP exporter. That's a backend `tracing.ts` refactor; not blocking, but cleaner than the accepted-risk approach long-term.
